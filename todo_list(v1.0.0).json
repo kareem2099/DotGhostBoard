@@ -1,0 +1,194 @@
+{
+  "project": "DotGhostBoard",
+  "version": "v1.0.0",
+  "status": "in_development",
+  "last_updated": "2026-03-23",
+  "todo": [
+    {
+      "id": "T001",
+      "category": "core",
+      "title": "Clipboard Text Capture",
+      "description": "Monitor clipboard every 500ms and capture text changes",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/watcher.py"
+    },
+    {
+      "id": "T002",
+      "category": "core",
+      "title": "Clipboard Image Capture",
+      "description": "Detect QImage in clipboard, save as .png to data/captures/",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/media.py"
+    },
+    {
+      "id": "T003",
+      "category": "core",
+      "title": "Video Path Detection",
+      "description": "Detect if copied text is a valid video file path and log it",
+      "status": "done",
+      "priority": "high",
+      "file": "core/media.py"
+    },
+    {
+      "id": "T004",
+      "category": "core",
+      "title": "SQLite Database Layer",
+      "description": "Full CRUD with context manager to prevent connection leaks",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/storage.py"
+    },
+    {
+      "id": "T005",
+      "category": "core",
+      "title": "Pin / Unpin Items",
+      "description": "Toggle pin state in DB, pinned items protected from deletion",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/storage.py"
+    },
+    {
+      "id": "T006",
+      "category": "ui",
+      "title": "Main Dashboard Window",
+      "description": "PyQt6 main window with scroll area, top bar, stats, search",
+      "status": "done",
+      "priority": "critical",
+      "file": "ui/dashboard.py"
+    },
+    {
+      "id": "T007",
+      "category": "ui",
+      "title": "Item Card Widget",
+      "description": "Custom QFrame card with Pin/Copy/Delete buttons and content preview",
+      "status": "done",
+      "priority": "critical",
+      "file": "ui/widgets.py"
+    },
+    {
+      "id": "T008",
+      "category": "ui",
+      "title": "Dark Neon Theme (QSS)",
+      "description": "Full ghost.qss with #0f0f0f bg, #00ff41 accent, #ffcc00 pin color",
+      "status": "done",
+      "priority": "high",
+      "file": "ui/ghost.qss"
+    },
+    {
+      "id": "T009",
+      "category": "ui",
+      "title": "System Tray Integration",
+      "description": "Tray icon (programmatic), right-click menu, minimize to tray on X",
+      "status": "done",
+      "priority": "high",
+      "file": "ui/dashboard.py"
+    },
+    {
+      "id": "T010",
+      "category": "ui",
+      "title": "Search / Filter",
+      "description": "Real-time search filtering visible cards by text content",
+      "status": "done",
+      "priority": "high",
+      "file": "ui/dashboard.py"
+    },
+    {
+      "id": "T011",
+      "category": "ui",
+      "title": "Clear History Button",
+      "description": "Delete all unpinned items from DB and UI in one click",
+      "status": "done",
+      "priority": "medium",
+      "file": "ui/dashboard.py"
+    },
+    {
+      "id": "T012",
+      "category": "bugfix",
+      "title": "Fix segfault from qimage.bits().tobytes()",
+      "description": "Replaced with safe width/height/sizeInBytes signature",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/watcher.py"
+    },
+    {
+      "id": "T013",
+      "category": "bugfix",
+      "title": "Fix DB connection leak on exception",
+      "description": "Replaced manual open/close with @contextmanager _db()",
+      "status": "done",
+      "priority": "critical",
+      "file": "core/storage.py"
+    },
+    {
+      "id": "T014",
+      "category": "bugfix",
+      "title": "Stop Timer on app quit",
+      "description": "closeEvent now distinguishes tray-minimize vs real quit, stops watcher",
+      "status": "done",
+      "priority": "high",
+      "file": "ui/dashboard.py"
+    },
+    {
+      "id": "T015",
+      "category": "bugfix",
+      "title": "File existence check before image/video load",
+      "description": "os.path.isfile() guard added in widgets.py _build_content()",
+      "status": "done",
+      "priority": "high",
+      "file": "ui/widgets.py"
+    },
+    {
+      "id": "T016",
+      "category": "pending",
+      "title": "Global Hotkey (Ctrl+Shift+V)",
+      "description": "Open/focus DotGhostBoard from anywhere using a global keyboard shortcut",
+      "status": "pending",
+      "priority": "high",
+      "file": "main.py"
+    },
+    {
+      "id": "T017",
+      "category": "pending",
+      "title": "App Icon (.png)",
+      "description": "Design and add a real icon file instead of programmatic QPainter icon",
+      "status": "pending",
+      "priority": "medium",
+      "file": "data/icon.png"
+    },
+    {
+      "id": "T018",
+      "category": "pending",
+      "title": "Startup on Boot",
+      "description": "Add .desktop autostart entry to ~/.config/autostart/",
+      "status": "pending",
+      "priority": "medium",
+      "file": "scripts/install.sh"
+    },
+    {
+      "id": "T019",
+      "category": "pending",
+      "title": "Unit Tests",
+      "description": "Write pytest tests for storage.py CRUD and media.py detection logic",
+      "status": "pending",
+      "priority": "medium",
+      "file": "tests/"
+    },
+    {
+      "id": "T020",
+      "category": "pending",
+      "title": "README.md",
+      "description": "Project overview, installation steps, usage, and screenshots",
+      "status": "pending",
+      "priority": "low",
+      "file": "README.md"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "done": 15,
+    "pending": 5,
+    "completion_percent": 75
+  }
+}

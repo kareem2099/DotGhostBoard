@@ -1,0 +1,68 @@
+# ────────────────────────────────────────────
+# DotGhostBoard .gitignore
+# ────────────────────────────────────────────
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual Environments ──
+venv/
+.venv/
+env/
+.env/
+
+# ── Environment / Secrets ──
+.env
+*.env
+.env.local
+
+# ── Database (local data — never commit) ──
+ghost.db
+ghost.db-shm
+ghost.db-wal
+*.sqlite
+*.sqlite3
+
+# ── Captured Media (user data) ──
+data/captures/
+data/pins/
+data/v_logs/
+
+# ── IDE / Editor ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs ──
+*.log
+logs/
+
+# ── PyInstaller ──
+*.spec
+dist/
+build/
+
+# ── pytest / Coverage ──
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── MyPy ──
+.mypy_cache/
+
+# ── Ruff / Linting ──
+.ruff_cache/

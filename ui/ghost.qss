@@ -1,0 +1,211 @@
+/* ════════════════════════════════════════════
+   DotGhostBoard — Ghost Dark Theme
+   ════════════════════════════════════════════ */
+
+/* ── Global ── */
+* {
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+    font-size: 13px;
+    color: #e0e0e0;
+    outline: none;
+}
+
+QWidget {
+    background-color: #0f0f0f;
+    border: none;
+}
+
+/* ── Main Window ── */
+QMainWindow {
+    background-color: #0f0f0f;
+}
+
+/* ── Search Bar ── */
+QLineEdit {
+    background-color: #1a1a1a;
+    color: #00ff41;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    selection-background-color: #00ff4133;
+}
+QLineEdit:focus {
+    border: 1px solid #00ff41;
+    background-color: #111;
+}
+QLineEdit::placeholder {
+    color: #444;
+}
+
+/* ── Scroll Area ── */
+QScrollArea {
+    background-color: #0f0f0f;
+    border: none;
+}
+QScrollBar:vertical {
+    background: #111;
+    width: 6px;
+    border-radius: 3px;
+}
+QScrollBar::handle:vertical {
+    background: #2a2a2a;
+    border-radius: 3px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #00ff41;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical { height: 0px; }
+
+/* ── Clipboard Item Card ── */
+QFrame#ItemCard {
+    background-color: #161616;
+    border: 1px solid #222;
+    border-radius: 8px;
+    padding: 4px;
+}
+QFrame#ItemCard:hover {
+    border: 1px solid #00ff4166;
+    background-color: #1a1a1a;
+}
+QFrame#ItemCard[pinned="true"] {
+    border: 1px solid #ffcc00;
+    background-color: #1a1800;
+}
+
+/* ── Text inside cards ── */
+QLabel#ItemText {
+    color: #cccccc;
+    background: transparent;
+    padding: 2px 4px;
+}
+QLabel#ItemMeta {
+    color: #444;
+    font-size: 11px;
+    background: transparent;
+}
+QLabel#TypeBadge {
+    color: #0f0f0f;
+    font-size: 10px;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+QLabel#TypeBadge[type="text"]  { background-color: #00ff41; }
+QLabel#TypeBadge[type="image"] { background-color: #00aaff; }
+QLabel#TypeBadge[type="video"] { background-color: #ff4444; }
+
+/* ── Buttons ── */
+QPushButton {
+    background-color: #1e1e1e;
+    color: #888;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    padding: 4px 10px;
+}
+QPushButton:hover {
+    background-color: #252525;
+    color: #e0e0e0;
+    border-color: #444;
+}
+QPushButton:pressed {
+    background-color: #00ff4122;
+    color: #00ff41;
+    border-color: #00ff41;
+}
+
+/* Pin Button */
+QPushButton#PinBtn[pinned="false"] {
+    color: #555;
+    background: transparent;
+    border: none;
+    font-size: 15px;
+}
+QPushButton#PinBtn[pinned="true"] {
+    color: #ffcc00;
+    background: transparent;
+    border: none;
+    font-size: 15px;
+}
+QPushButton#PinBtn:hover { color: #ffcc00; }
+
+/* Delete Button */
+QPushButton#DeleteBtn {
+    color: #555;
+    background: transparent;
+    border: none;
+    font-size: 14px;
+}
+QPushButton#DeleteBtn:hover { color: #ff4444; }
+
+/* Copy Button */
+QPushButton#CopyBtn {
+    color: #555;
+    background: transparent;
+    border: none;
+    font-size: 14px;
+}
+QPushButton#CopyBtn:hover { color: #00ff41; }
+
+/* ── Stats Bar ── */
+QLabel#StatLabel {
+    color: #555;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* ── Toolbar / Header ── */
+QFrame#TopBar {
+    background-color: #111;
+    border-bottom: 1px solid #1e1e1e;
+    padding: 4px;
+}
+
+/* ── Tabs (if used) ── */
+QTabWidget::pane {
+    border: none;
+    background: #0f0f0f;
+}
+QTabBar::tab {
+    background: #111;
+    color: #555;
+    padding: 6px 16px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected {
+    color: #00ff41;
+    border-bottom: 2px solid #00ff41;
+}
+QTabBar::tab:hover { color: #aaa; }
+
+/* ── Tooltip ── */
+QToolTip {
+    background-color: #1a1a1a;
+    color: #00ff41;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+/* ── System Tray Menu ── */
+QMenu {
+    background-color: #161616;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 6px 20px;
+    border-radius: 4px;
+}
+QMenu::item:selected {
+    background-color: #00ff4122;
+    color: #00ff41;
+}
+QMenu::separator {
+    height: 1px;
+    background: #2a2a2a;
+    margin: 4px 8px;
+}
