@@ -1,3 +1,4 @@
+import os
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSizePolicy
@@ -29,7 +30,7 @@ class ItemCard(QFrame):
 
     def __init__(self, item: dict, parent=None):
         super().__init__(parent)
-        self.item_id  = item["id"]
+        self.item_id   = item["id"]
         self.is_pinned = bool(item.get("is_pinned", 0))
         self.item_type = item.get("type", "text")
 
@@ -46,7 +47,7 @@ class ItemCard(QFrame):
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(4)
 
-        # ── Row 1: Badge + Meta + Actions ──
+        # ── Top row: badge + meta + buttons ──
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
@@ -67,21 +68,20 @@ class ItemCard(QFrame):
         top_row.addWidget(meta)
         top_row.addStretch()
 
-        # ─ Action buttons ─
-        self.pin_btn = QPushButton("Pin" if not self.is_pinned else "Unpin")
+        self.pin_btn = QPushButton("📍" if self.is_pinned else "📌")
         self.pin_btn.setObjectName("PinBtn")
         self.pin_btn.setProperty("pinned", str(self.is_pinned).lower())
         self.pin_btn.setFixedSize(28, 28)
         self.pin_btn.setToolTip("Pin / Unpin")
         self.pin_btn.clicked.connect(lambda: self.sig_pin.emit(self.item_id))
 
-        copy_btn = QPushButton("Copy")
+        copy_btn = QPushButton("⎘")
         copy_btn.setObjectName("CopyBtn")
         copy_btn.setFixedSize(28, 28)
         copy_btn.setToolTip("Copy to Clipboard")
         copy_btn.clicked.connect(lambda: self.sig_copy.emit(self.item_id))
 
-        del_btn = QPushButton("Delete")
+        del_btn = QPushButton("✕")
         del_btn.setObjectName("DeleteBtn")
         del_btn.setFixedSize(28, 28)
         del_btn.setToolTip("Delete (pinned items are protected)")
@@ -93,47 +93,66 @@ class ItemCard(QFrame):
 
         main_layout.addLayout(top_row)
 
-        # ── Row 2: Content Preview ──
+        # ── Content preview ──
+        content_widget = self._build_content(item)
+        if content_widget:
+            main_layout.addWidget(content_widget)
+
+    def _build_content(self, item: dict) -> QLabel | None:
+        """
+        FIX #5: return None if content is empty
+        """
+        label = QLabel()
+        label.setObjectName("ItemText")
+        label.setWordWrap(True)
+
         if item["type"] == "text":
             text = item["content"]
             if len(text) > self.PREVIEW_MAX_LEN:
                 text = text[:self.PREVIEW_MAX_LEN] + "…"
-            content_label = QLabel(text)
-            content_label.setObjectName("ItemText")
-            content_label.setWordWrap(True)
-            content_label.setTextInteractionFlags(
+            label.setText(text)
+            label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
-            main_layout.addWidget(content_label)
 
         elif item["type"] == "image":
-            img_label = QLabel()
-            pixmap = QPixmap(item["content"])
-            if not pixmap.isNull():
+            file_path = item["content"]
+            # FIX #5: handle missing or invalid image files gracefully
+            if not file_path or not os.path.isfile(file_path):
+                label.setText("⚠ Image file not found")
+                label.setStyleSheet("color: #ff4444;")
+                return label
+
+            try:
+                pixmap = QPixmap(file_path)
+                if pixmap.isNull():
+                    raise ValueError("Invalid image file")
                 pixmap = pixmap.scaledToWidth(
-                    300,
-                    Qt.TransformationMode.SmoothTransformation
+                    300, Qt.TransformationMode.SmoothTransformation
                 )
+                img_label = QLabel()
                 img_label.setPixmap(pixmap)
-            else:
-                img_label.setText("Image file not found")
-                img_label.setObjectName("ItemText")
-            main_layout.addWidget(img_label)
+                return img_label
+            except Exception as e:
+                label.setText(f"⚠ Failed to load image: {e}")
+                label.setStyleSheet("color: #ff4444;")
 
         elif item["type"] == "video":
-            path_label = QLabel(f"Video: {item['content']}")
-            path_label.setObjectName("ItemText")
-            path_label.setWordWrap(True)
-            main_layout.addWidget(path_label)
+            file_path = item["content"]
+            # FIX #5: handle missing video files gracefully
+            if not file_path or not os.path.isfile(file_path):
+                label.setText(f"⚠ Video not found:\n{file_path}")
+                label.setStyleSheet("color: #ff4444;")
+                return label
+            label.setText(f"🎬 {file_path}")
 
-    # ──────────────────────────────────────────────
+        return label
+
     def update_pin_state(self, is_pinned: bool):
-        """Update card appearance after toggle"""
         self.is_pinned = is_pinned
         self.setProperty("pinned", str(is_pinned).lower())
-        self.pin_btn.setText("Unpin" if is_pinned else "Pin")
+        self.pin_btn.setText("📍" if is_pinned else "📌")
         self.pin_btn.setProperty("pinned", str(is_pinned).lower())
-        # reapply QSS styling
         self.style().unpolish(self)
         self.style().polish(self)
         self.pin_btn.style().unpolish(self.pin_btn)

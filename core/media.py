@@ -1,17 +1,17 @@
 import os
+import shutil
 from datetime import datetime
 from PyQt6.QtGui import QImage
 from PyQt6.QtCore import QBuffer, QIODevice
+from PyQt6.QtCore import QMimeData  # type hint
 
-# ─────────────────────────────────────────────
-# Basic paths
-# ─────────────────────────────────────────────
 BASE_DIR      = os.path.dirname(os.path.dirname(__file__))
 CAPTURES_DIR  = os.path.join(BASE_DIR, "data", "captures")
 PINS_DIR      = os.path.join(BASE_DIR, "data", "pins")
 VLOGS_DIR     = os.path.join(BASE_DIR, "data", "v_logs")
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv"}
+
 
 def _ensure_dirs():
     for d in [CAPTURES_DIR, PINS_DIR, VLOGS_DIR]:
@@ -35,18 +35,28 @@ def save_image_from_qimage(qimage: QImage) -> str | None:
     filename  = f"capture_{timestamp}.png"
     filepath  = os.path.join(CAPTURES_DIR, filename)
 
-    # convert QImage → bytes → save
-    buffer = QBuffer()
-    buffer.open(QIODevice.OpenMode.ReadWrite)
-    qimage.save(buffer, "PNG")
-    buffer.seek(0)
-    raw_bytes = bytes(buffer.data())
-    buffer.close()
+    try:
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenMode.ReadWrite)
+        saved = qimage.save(buffer, "PNG")
+        if not saved:
+            print("[Media] Failed to encode image to PNG")
+            return None
+        buffer.seek(0)
+        raw_bytes = bytes(buffer.data())
+        buffer.close()
 
-    with open(filepath, "wb") as f:
-        f.write(raw_bytes)
+        with open(filepath, "wb") as f:
+            f.write(raw_bytes)
 
-    return filepath
+        return filepath
+
+    except OSError as e:
+        print(f"[Media] File write error: {e}")
+        return None
+    except Exception as e:
+        print(f"[Media] Unexpected error saving image: {e}")
+        return None
 
 
 def copy_image_to_pins(src_path: str) -> str | None:
@@ -59,12 +69,13 @@ def copy_image_to_pins(src_path: str) -> str | None:
 
     filename  = os.path.basename(src_path)
     dest_path = os.path.join(PINS_DIR, filename)
-
-    if not os.path.exists(dest_path):
-        import shutil
-        shutil.copy2(src_path, dest_path)
-
-    return dest_path
+    try:
+        if not os.path.exists(dest_path):
+            shutil.copy2(src_path, dest_path)
+        return dest_path
+    except OSError as e:
+        print(f"[Media] Failed to copy to pins: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -90,20 +101,26 @@ def log_video_path(video_path: str) -> str:
     Returns the path as is (for saving in DB).
     """
     log_file = os.path.join(VLOGS_DIR, "video_log.txt")
-    timestamp = datetime.now().isoformat()
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] {video_path}\n")
+    try:
+        timestamp = datetime.now().isoformat()
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {video_path}\n")
+    except OSError as e:
+        print(f"[Media] Failed to log video path: {e}")
     return video_path
 
 
 # ─────────────────────────────────────────────
 # Content type detection
 # ─────────────────────────────────────────────
-def detect_content_type(mime_data) -> str:
+# FIX #8: type hint for parameter
+def detect_content_type(mime_data: "QMimeData") -> str:
     """
     Takes QMimeData and returns:
     'image' | 'video' | 'text' | 'unknown'
     """
+    if mime_data is None:
+        return "unknown"
     if mime_data.hasImage():
         return "image"
     if mime_data.hasText():
@@ -128,8 +145,7 @@ def cleanup_captures(keep_last: int = 100):
             [os.path.join(CAPTURES_DIR, f) for f in os.listdir(CAPTURES_DIR)],
             key=os.path.getmtime
         )
-        to_delete = files[:-keep_last] if len(files) > keep_last else []
-        for f in to_delete:
+        for f in files[:-keep_last] if len(files) > keep_last else []:
             os.remove(f)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Media] Cleanup error: {e}")

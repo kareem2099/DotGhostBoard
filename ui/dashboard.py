@@ -1,9 +1,6 @@
 import os
 import sys
 
-# suppress D-Bus / StatusNotifierWatcher warnings before any Qt import
-os.environ.setdefault("QT_LOGGING_RULES", "*.debug=false;qt.dbus.*=false")
-
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QScrollArea, QLabel, QPushButton,
@@ -53,7 +50,7 @@ class Dashboard(QMainWindow):
         top_layout = QHBoxLayout(top_bar)
         top_layout.setContentsMargins(12, 8, 12, 8)
 
-        logo = QLabel("DotGhostBoard")
+        logo = QLabel("👻 DotGhostBoard")
         logo.setStyleSheet("font-size:15px; font-weight:bold; color:#00ff41;")
 
         self.stats_label = QLabel("")
@@ -78,13 +75,13 @@ class Dashboard(QMainWindow):
         search_layout.setContentsMargins(0, 0, 0, 0)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search text items…")
+        self.search_box.setPlaceholderText("🔍  Search text items…")
         self.search_box.textChanged.connect(self._on_search)
 
         search_layout.addWidget(self.search_box)
         root.addWidget(search_frame)
 
-        # ── Scroll Area (list of cards) ──
+        # ── Scroll Area ──
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -172,7 +169,7 @@ class Dashboard(QMainWindow):
         self.watcher.start()
 
     # ══════════════════════════════════════════
-    # Load history from DB
+    # Load history
     # ══════════════════════════════════════════
     def _load_history(self):
         items = storage.get_all_items()
@@ -193,10 +190,9 @@ class Dashboard(QMainWindow):
         card.sig_delete.connect(self._on_delete)
 
         self._cards[item["id"]] = card
-
         layout = self.cards_layout
         if at_top:
-            layout.insertWidget(0, card)   # above stretch (index 0)
+            layout.insertWidget(0, card)
         else:
             layout.insertWidget(layout.count() - 1, card)
 
@@ -214,9 +210,8 @@ class Dashboard(QMainWindow):
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
-            self.statusBar().showMessage(
-                f"Text captured: {text[:40]}…" if len(text) > 40 else f"Text captured: {text}"
-            )
+            preview = text[:40] + "…" if len(text) > 40 else text
+            self.statusBar().showMessage(f"Text captured: {preview}")
 
     def _on_new_image(self, item_id: int, file_path: str):
         item = storage.get_item_by_id(item_id)
@@ -238,16 +233,17 @@ class Dashboard(QMainWindow):
     def _on_copy(self, item_id: int):
         item = storage.get_item_by_id(item_id)
         if item:
+            # ✅ FIX #1: mark_self_paste to avoid infinite loop
+            self.watcher.mark_self_paste()
             self.watcher.paste_item_to_clipboard(item)
-            self.statusBar().showMessage("Copied!")
+            self.statusBar().showMessage("Copied! ⎘")
 
     def _on_pin(self, item_id: int):
         new_state = storage.toggle_pin(item_id)
         card = self._cards.get(item_id)
         if card:
             card.update_pin_state(new_state)
-        state_text = "Pinned" if new_state else "Unpinned"
-        self.statusBar().showMessage(state_text)
+        self.statusBar().showMessage("Pinned 📍" if new_state else "Unpinned 📌")
         self._refresh_stats()
 
     def _on_delete(self, item_id: int):
@@ -255,9 +251,9 @@ class Dashboard(QMainWindow):
         if success:
             self._remove_card(item_id)
             self._refresh_stats()
-            self.statusBar().showMessage("Deleted")
+            self.statusBar().showMessage("Deleted ✕")
         else:
-            self.statusBar().showMessage("Pinned items cannot be deleted!")
+            self.statusBar().showMessage("⚠ Pinned items cannot be deleted!")
 
     # ══════════════════════════════════════════
     # Search
@@ -265,13 +261,11 @@ class Dashboard(QMainWindow):
     def _on_search(self, query: str):
         query = query.strip()
         if not query:
-            # show all cards
             for card in self._cards.values():
                 card.setVisible(True)
             return
 
-        results = storage.search_items(query)
-        result_ids = {r["id"] for r in results}
+        result_ids = {r["id"] for r in storage.search_items(query)}
         for item_id, card in self._cards.items():
             card.setVisible(item_id in result_ids)
 
@@ -280,11 +274,7 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     def _clear_history(self):
         storage.delete_unpinned_items()
-        # remove unpinned cards from the interface
-        to_remove = [
-            iid for iid, card in self._cards.items()
-            if not card.is_pinned
-        ]
+        to_remove = [iid for iid, card in self._cards.items() if not card.is_pinned]
         for iid in to_remove:
             self._remove_card(iid)
         self._refresh_stats()
@@ -294,21 +284,28 @@ class Dashboard(QMainWindow):
     # Stats
     # ══════════════════════════════════════════
     def _refresh_stats(self):
-        stats = storage.get_stats()
+        s = storage.get_stats()
         self.stats_label.setText(
-            f"Total: {stats['total']}  |  Pinned: {stats['pinned']}  |  "
-            f"Text: {stats['texts']}  Images: {stats['images']}"
+            f"Total: {s['total']}  |  📌 {s['pinned']}  |  "
+            f"T: {s['texts']}  I: {s['images']}"
         )
 
     # ══════════════════════════════════════════
-    # Window close → minimize to tray
+    # ✅ FIX #4: closeEvent to minimize to tray instead of exiting
     # ══════════════════════════════════════════
     def closeEvent(self, event):
-        event.ignore()
-        self.hide()
-        self.tray.showMessage(
-            "DotGhostBoard",
-            "Running in background. Click tray icon to restore.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000
-        )
+        if event.spontaneous():
+            # user clicked the window's close button → minimize to tray
+            event.ignore()
+            self.hide()
+            self.tray.showMessage(
+                "DotGhostBoard",
+                "Running in background. Click tray icon to restore.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+        else:
+            # programmatic close (e.g. from tray menu) → exit app
+            self.watcher.stop()   # stop the watcher thread gracefully
+            self.tray.hide()
+            event.accept()
