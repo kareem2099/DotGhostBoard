@@ -1,0 +1,4 @@
+PyQt6>=6.6.0
+Pillow>=10.0.0
+pynput>=1.7.0
+pytest>=7.0.0

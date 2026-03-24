@@ -12,6 +12,7 @@ from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont
 
 from core import storage
 from core.watcher import ClipboardWatcher
+# from core.hotkey import HotkeyListener
 from ui.widgets import ItemCard
 
 QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
@@ -23,6 +24,7 @@ class Dashboard(QMainWindow):
         self.setWindowTitle("DotGhostBoard")
         self.resize(520, 680)
         self.setMinimumWidth(400)
+        self.setWindowIcon(self._make_tray_icon())
 
         # ── map of item cards {item_id: ItemCard} ──
         self._cards: dict[int, ItemCard] = {}
@@ -115,6 +117,14 @@ class Dashboard(QMainWindow):
     @staticmethod
     def _make_tray_icon() -> QIcon:
         """Create a simple green icon programmatically"""
+
+        icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "icons", "icon.png"
+        )
+        if os.path.isfile(icon_path):
+            return QIcon(icon_path)
+
         px = QPixmap(22, 22)
         px.fill(QColor(0, 0, 0, 0))           # transparent
         painter = QPainter(px)
@@ -182,7 +192,7 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     def _add_card(self, item: dict, at_top: bool = True):
         if item["id"] in self._cards:
-            return  # already exists
+            return
 
         card = ItemCard(item)
         card.sig_copy.connect(self._on_copy)
@@ -218,14 +228,14 @@ class Dashboard(QMainWindow):
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
-            self.statusBar().showMessage("Image captured")
+            self.statusBar().showMessage("Image captured 📸")
 
     def _on_new_video(self, item_id: int, video_path: str):
         item = storage.get_item_by_id(item_id)
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
-            self.statusBar().showMessage(f"Video path captured")
+            self.statusBar().showMessage("Video path captured 🎬")
 
     # ══════════════════════════════════════════
     # Card action slots
@@ -291,7 +301,7 @@ class Dashboard(QMainWindow):
         )
 
     # ══════════════════════════════════════════
-    # ✅ FIX #4: closeEvent to minimize to tray instead of exiting
+    # Close → minimize to tray / real quit
     # ══════════════════════════════════════════
     def closeEvent(self, event):
         if event.spontaneous():
@@ -305,7 +315,7 @@ class Dashboard(QMainWindow):
                 2000
             )
         else:
-            # programmatic close (e.g. from tray menu) → exit app
-            self.watcher.stop()   # stop the watcher thread gracefully
+            # program is exiting → clean up resources before quitting
+            self.watcher.stop()       # stop clipboard timer
             self.tray.hide()
             event.accept()
