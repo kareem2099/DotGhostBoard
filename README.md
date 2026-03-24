@@ -2,7 +2,8 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.0.0-00ff41?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.1.0-00ff41?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Phantom-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-00ff41?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-00ff41?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-00ff41?style=flat-square&labelColor=0f0f0f)
@@ -34,8 +35,12 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Clear history** — Wipe unpinned items in one click (pinned items always stay)
 - **System tray** — Lives quietly in your tray, always available
 - **IPC shortcut** — `Ctrl+Alt+V` shows the window from anywhere via local socket
-- **App icon** — Auto-generated ghost icon via `scripts/generate_icon.py`
+- **App icon** — Auto-generated neon ghost icon via `scripts/generate_icon.py`
 - **Dark Neon UI** — Custom QSS theme built for dark desktops
+- **Settings panel** — ⚙ Max history limit, privacy clear-on-exit, theme toggle
+- **Keyboard navigation** — `↑`/`↓` to move between cards, `Enter` to copy, `Esc` to clear focus
+- **Double-click to paste** — Double-click any card to copy it instantly
+- **Standalone autostart** — `scripts/setup_autostart.py` sets up boot entry without bash
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with your desktop environment dock and app launcher.
@@ -55,21 +60,25 @@ DotGhostBoard/
 │   ├── storage.py               # Database CRUD layer
 │   └── media.py                 # Image/video handler
 ├── ui/
-│   ├── dashboard.py             # Main window
-│   ├── widgets.py               # Item card widget
+│   ├── dashboard.py             # Main window + keyboard nav + settings wiring
+│   ├── widgets.py               # Item card widget (double-click, focus)
+│   ├── settings.py              # Settings dialog (v1.1.0)
 │   └── ghost.qss                # Dark neon stylesheet
 ├── data/
-│   ├── icons/                   # Generated app icons (all sizes)
+│   ├── icons/                   # Generated app icons + ghost.svg source
 │   ├── captures/                # Saved images (.png)
 │   ├── pins/                    # Backup copies of pinned images
-│   └── v_logs/                  # Video path log file
+│   ├── v_logs/                  # Video path log file
+│   └── settings.json            # User settings (v1.1.0)
 ├── scripts/
 │   ├── generate_icon.py         # Draws ghost icon at 16/32/48/64/128/256px
-│   └── install.sh               # Autostart + shortcut + .desktop installer
+│   ├── install.sh               # Autostart + shortcut + .desktop installer
+│   └── setup_autostart.py       # Standalone Python autostart installer (v1.1.0)
 ├── tests/
 │   ├── test_storage.py          # 32 tests — full CRUD coverage
 │   └── test_media.py            # 27 tests — media detection & file ops
 ├── todo_list(v1.0.0).json
+├── todo_list(v1.1.0).json
 ├── roadmap(v1.x).json
 ├── pytest.ini
 ├── requirements.txt
@@ -140,10 +149,12 @@ This sets up autostart on login and registers the `Ctrl+Alt+V` shortcut via `xfc
 | Show window | Press `Ctrl+Alt+V` from anywhere |
 | Pin an item | Click 📌 on any card |
 | Unpin an item | Click 📍 on a pinned card |
-| Copy back | Click ⎘ on any card to restore it to clipboard |
+| Copy back | Click ⎘ on any card — or **double-click** the card |
 | Delete an item | Click ✕ — pinned items are protected |
 | Search | Type in the search bar at the top |
+| Keyboard navigation | Press `↑` / `↓` to move focus; `Enter` or `Space` to copy; `Esc` to clear |
 | Clear history | Click "Clear History" — pinned items are never deleted |
+| Settings | Click ⚙ in the top bar — adjust history limit, privacy options |
 | Minimize | Click X — the app stays alive in the system tray |
 | Quit | Right-click the tray icon → Quit |
 
@@ -168,14 +179,14 @@ tests/test_storage.py  ................................ 32 passed
 
 ## Roadmap
 
-| Version | Codename | Goal |
-|---------|----------|------|
-| v1.0.0 | Ghost | Stable base ← **current** |
-| v1.1.0 | Phantom | Settings panel, keyboard nav, double-click paste |
-| v1.2.0 | Specter | Image thumbnails, video preview via ffmpeg |
-| v1.3.0 | Wraith | Tags, collections, multi-select, export |
-| v1.4.0 | Eclipse | AES-256 encryption, master lock, stealth mode |
-| v1.5.0 | Nexus | Local network sync, CLI companion, plugin system |
+| Version | Codename | Status | Goal |
+|---------|----------|--------|------|
+| v1.0.0 | Ghost | ✅ Released | Stable base — clipboard, pin system, dark UI, SQLite |
+| v1.1.0 | Phantom | ✅ Released | Settings panel, keyboard nav, double-click paste, SVG icon |
+| v1.2.0 | Specter | 📋 Planned | Image thumbnails, video preview via ffmpeg |
+| v1.3.0 | Wraith | 📋 Planned | Tags, collections, multi-select, export |
+| v1.4.0 | Eclipse | 📋 Planned | AES-256 encryption, master lock, stealth mode |
+| v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |
 
 Full details in [`roadmap(v1.x).json`](roadmap(v1.x).json)
 

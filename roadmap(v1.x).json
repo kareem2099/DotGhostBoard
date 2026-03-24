@@ -6,8 +6,8 @@
     {
       "version": "v1.0.0",
       "codename": "Ghost",
-      "status": "in_development",
-      "target_date": "2026-04-01",
+      "status": "released",
+      "released_date": "2026-03-24",
       "goal": "Stable base — clipboard monitor, pin system, dark UI, SQLite storage",
       "features": [
         "Text capture from clipboard",
@@ -19,7 +19,11 @@
         "Real-time search / filter",
         "Clear History (keeps pinned)",
         "System tray (minimize + quit)",
-        "Dark Neon QSS theme"
+        "Dark Neon QSS theme",
+        "IPC local server (Ctrl+Alt+V via QLocalServer)",
+        "App icon generator (scripts/generate_icon.py)",
+        "Install script (autostart + .desktop + shortcut)",
+        "59 unit tests — 100% passing (test_storage.py + test_media.py)"
       ],
       "known_issues": [
         "D-Bus StatusNotifierWatcher warning on non-KDE desktops (cosmetic only)",
@@ -29,9 +33,9 @@
     {
       "version": "v1.1.0",
       "codename": "Phantom",
-      "status": "planned",
-      "target_date": "2026-05-01",
-      "goal": "Usability — hotkeys, autostart, real icon, settings panel",
+      "status": "released",
+      "released_date": "2026-03-24",
+      "goal": "Usability — global hotkey, autostart, real icon, settings panel, keyboard nav",
       "features": [
         "Global hotkey Ctrl+Shift+V to show/hide window from anywhere",
         "Autostart on boot via ~/.config/autostart/ .desktop file",

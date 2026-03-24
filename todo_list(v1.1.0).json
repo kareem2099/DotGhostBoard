@@ -1,0 +1,89 @@
+{
+  "project": "DotGhostBoard",
+  "version": "v1.1.0",
+  "codename": "Phantom",
+  "status": "Released",
+  "started": "2026-03-24",
+  "last_updated": "2026-03-24",
+  "todo": [
+    {
+      "id": "P001",
+      "category": "cleanup",
+      "title": "Delete core/hotkey.py",
+      "description": "Remove core/hotkey.py entirely — pynput is a resource-heavy keylogger that breaks on Wayland. The existing IPC QLocalServer + xfconf-query system shortcut (Ctrl+Alt+V) is the correct Linux-native approach. Also clean up the dead comment in dashboard.py.",
+      "status": "done",
+      "priority": "critical",
+      "files": [
+        "core/hotkey.py",
+        "ui/dashboard.py"
+      ]
+    },
+    {
+      "id": "P002",
+      "category": "setup",
+      "title": "Standalone Autostart Script",
+      "description": "Create scripts/setup_autostart.py — a pure-Python script that writes ~/.config/autostart/DotGhostBoard.desktop and ~/.local/share/applications/DotGhostBoard.desktop without requiring bash or install.sh.",
+      "status": "done",
+      "priority": "high",
+      "files": [
+        "scripts/setup_autostart.py"
+      ]
+    },
+    {
+      "id": "P003",
+      "category": "assets",
+      "title": "Real App Icon (SVG + PNG)",
+      "description": "Create data/icons/ghost.svg with neon ghost design (#00ff41, #0f0f0f). Update generate_icon.py to render SVG → PNG at all sizes. The fallback QPainter circle in dashboard.py is replaced automatically when icon.png is regenerated.",
+      "status": "done",
+      "priority": "high",
+      "files": [
+        "data/icons/ghost.svg",
+        "scripts/generate_icon.py"
+      ]
+    },
+    {
+      "id": "P004",
+      "category": "ui",
+      "title": "Settings Panel",
+      "description": "New ui/settings.py QDialog with: (1) Max history spinbox [10-5000, default 200], (2) Clear history on exit checkbox [default off — privacy feature], (3) Theme combo [Dark Neon / Light coming soon], (4) Read-only hotkey hint label. Reads/writes data/settings.json. Dashboard loads settings on startup and enforces them.",
+      "status": "done",
+      "priority": "high",
+      "files": [
+        "ui/settings.py",
+        "ui/dashboard.py",
+        "data/settings.json"
+      ]
+    },
+    {
+      "id": "P005",
+      "category": "ui",
+      "title": "Keyboard Navigation (Up/Down/Enter)",
+      "description": "Override keyPressEvent in Dashboard: Up/Down moves focus between visible cards, Enter/Space copies focused card. Use scroll.ensureWidgetVisible(card) so the scrollbar follows automatically. Add set_focused(bool) to ItemCard + focused QSS rule in ghost.qss.",
+      "status": "done",
+      "priority": "medium",
+      "files": [
+        "ui/dashboard.py",
+        "ui/widgets.py",
+        "ui/ghost.qss"
+      ]
+    },
+    {
+      "id": "P006",
+      "category": "ui",
+      "title": "Double-click Card to Paste",
+      "description": "Override mouseDoubleClickEvent in ItemCard → emit sig_copy(self.item_id). Instant copy without needing to click the copy button.",
+      "status": "done",
+      "priority": "medium",
+      "files": [
+        "ui/widgets.py"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "done": 6,
+    "in_progress": 0,
+    "pending": 0,
+    "completion_percent": 100
+  }
+}

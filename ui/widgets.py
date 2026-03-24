@@ -148,6 +148,16 @@ class ItemCard(QFrame):
 
         return label
 
+    def mouseDoubleClickEvent(self, event):
+        """P006: Double-click anywhere on the card to copy immediately."""
+        self.sig_copy.emit(self.item_id)
+
+    def set_focused(self, focused: bool):
+        """P005: Toggle keyboard-nav focus highlight."""
+        self.setProperty("focused", str(focused).lower())
+        self.style().unpolish(self)
+        self.style().polish(self)
+
     def update_pin_state(self, is_pinned: bool):
         self.is_pinned = is_pinned
         self.setProperty("pinned", str(is_pinned).lower())

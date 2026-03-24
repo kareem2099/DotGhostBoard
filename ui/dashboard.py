@@ -8,12 +8,12 @@ from PyQt6.QtWidgets import (
     QApplication
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEvent
 
 from core import storage
 from core.watcher import ClipboardWatcher
-# from core.hotkey import HotkeyListener
 from ui.widgets import ItemCard
+from ui.settings import SettingsDialog, load_settings, save_settings
 
 QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
 
@@ -28,6 +28,12 @@ class Dashboard(QMainWindow):
 
         # ── map of item cards {item_id: ItemCard} ──
         self._cards: dict[int, ItemCard] = {}
+
+        # ── keyboard nav state ──
+        self._focused_idx: int = -1
+
+        # ── settings ──
+        self._settings: dict = load_settings()
 
         self._load_stylesheet()
         self._build_ui()
@@ -58,6 +64,12 @@ class Dashboard(QMainWindow):
         self.stats_label = QLabel("")
         self.stats_label.setObjectName("StatLabel")
 
+        settings_btn = QPushButton("⚙")
+        settings_btn.setObjectName("SettingsBtn")
+        settings_btn.setFixedSize(28, 28)
+        settings_btn.setToolTip("Settings")
+        settings_btn.clicked.connect(self._open_settings)
+
         clear_btn = QPushButton("Clear History")
         clear_btn.setFixedHeight(28)
         clear_btn.setToolTip("Delete all un-pinned items")
@@ -67,6 +79,8 @@ class Dashboard(QMainWindow):
         top_layout.addStretch()
         top_layout.addWidget(self.stats_label)
         top_layout.addSpacing(8)
+        top_layout.addWidget(settings_btn)
+        top_layout.addSpacing(4)
         top_layout.addWidget(clear_btn)
         root.addWidget(top_bar)
 
@@ -99,9 +113,13 @@ class Dashboard(QMainWindow):
 
         # ── Status bar ──
         self.statusBar().setStyleSheet(
-            "background:#111; color:#333; font-size:11px;"
+            "background:#111; color:#00ff41; font-size:11px;"
         )
         self.statusBar().showMessage("Watching clipboard…")
+
+        # Allow the scroll area to receive key events via the dashboard
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.cards_container.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     # ══════════════════════════════════════════
     # Stylesheet
@@ -116,8 +134,7 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     @staticmethod
     def _make_tray_icon() -> QIcon:
-        """Create a simple green icon programmatically"""
-
+        """Load icon.png if available, else draw a minimal fallback."""
         icon_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             "data", "icons", "icon.png"
@@ -126,14 +143,12 @@ class Dashboard(QMainWindow):
             return QIcon(icon_path)
 
         px = QPixmap(22, 22)
-        px.fill(QColor(0, 0, 0, 0))           # transparent
+        px.fill(QColor(0, 0, 0, 0))
         painter = QPainter(px)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # green circle
         painter.setBrush(QColor("#00ff41"))
         painter.setPen(QColor("#00cc33"))
         painter.drawEllipse(2, 2, 18, 18)
-        # white G letter
         painter.setPen(QColor("#0f0f0f"))
         font = QFont("monospace", 9, QFont.Weight.Bold)
         painter.setFont(font)
@@ -169,6 +184,31 @@ class Dashboard(QMainWindow):
         self.activateWindow()
 
     # ══════════════════════════════════════════
+    # Settings
+    # ══════════════════════════════════════════
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
+        if dlg.exec():
+            old_limit = self._settings.get("max_history", 200)
+            self._settings = dlg.settings
+            # If limit tightened, trim excess cards from the UI
+            if self._settings["max_history"] < old_limit:
+                self._enforce_history_limit()
+            self.statusBar().showMessage("Settings saved ✓")
+
+    def _enforce_history_limit(self):
+        """Trim unpinned cards if count exceeds max_history."""
+        limit = self._settings.get("max_history", 200)
+        unpinned = [iid for iid, c in self._cards.items() if not c.is_pinned]
+        excess = len(self._cards) - limit
+        if excess > 0:
+            to_remove = unpinned[-excess:]   # oldest are at the end of the list
+            for iid in to_remove:
+                storage.delete_item(iid)
+                self._remove_card(iid)
+            self._refresh_stats()
+
+    # ══════════════════════════════════════════
     # Watcher
     # ══════════════════════════════════════════
     def _start_watcher(self):
@@ -182,8 +222,9 @@ class Dashboard(QMainWindow):
     # Load history
     # ══════════════════════════════════════════
     def _load_history(self):
-        items = storage.get_all_items()
-        for item in reversed(items):   # oldest first so newest appears on top
+        limit = self._settings.get("max_history", 200)
+        items = storage.get_all_items(limit=limit)
+        for item in reversed(items):
             self._add_card(item)
         self._refresh_stats()
 
@@ -206,9 +247,15 @@ class Dashboard(QMainWindow):
         else:
             layout.insertWidget(layout.count() - 1, card)
 
+        # Auto-trim if over limit (newest item just added)
+        self._enforce_history_limit()
+
     def _remove_card(self, item_id: int):
         card = self._cards.pop(item_id, None)
         if card:
+            # Clear keyboard focus if this card was focused
+            if self._focused_idx >= 0:
+                self._focused_idx = -1
             card.setParent(None)
             card.deleteLater()
 
@@ -243,7 +290,6 @@ class Dashboard(QMainWindow):
     def _on_copy(self, item_id: int):
         item = storage.get_item_by_id(item_id)
         if item:
-            # ✅ FIX #1: mark_self_paste to avoid infinite loop
             self.watcher.mark_self_paste()
             self.watcher.paste_item_to_clipboard(item)
             self.statusBar().showMessage("Copied! ⎘")
@@ -269,6 +315,7 @@ class Dashboard(QMainWindow):
     # Search
     # ══════════════════════════════════════════
     def _on_search(self, query: str):
+        self._focused_idx = -1   # reset keyboard focus on new search
         query = query.strip()
         if not query:
             for card in self._cards.values():
@@ -287,6 +334,7 @@ class Dashboard(QMainWindow):
         to_remove = [iid for iid, card in self._cards.items() if not card.is_pinned]
         for iid in to_remove:
             self._remove_card(iid)
+        self._focused_idx = -1
         self._refresh_stats()
         self.statusBar().showMessage("History cleared (pinned items kept)")
 
@@ -301,11 +349,74 @@ class Dashboard(QMainWindow):
         )
 
     # ══════════════════════════════════════════
+    # Keyboard Navigation (P005)
+    # ══════════════════════════════════════════
+    def _visible_cards(self) -> list[ItemCard]:
+        """Return ordered list of currently visible ItemCards (top → bottom)."""
+        result = []
+        layout = self.cards_layout
+        for i in range(layout.count() - 1):   # -1 to skip trailing stretch
+            item = layout.itemAt(i)
+            if item and item.widget() and item.widget().isVisible():
+                result.append(item.widget())
+        return result
+
+    def _set_card_focus(self, cards: list[ItemCard], new_idx: int):
+        """Move keyboard focus to card at new_idx; clear previous focus."""
+        # Clear old focus
+        if 0 <= self._focused_idx < len(cards):
+            cards[self._focused_idx].set_focused(False)
+
+        self._focused_idx = new_idx
+        if 0 <= new_idx < len(cards):
+            card = cards[new_idx]
+            card.set_focused(True)
+            # Auto-scroll so the card is visible
+            self.scroll.ensureWidgetVisible(card)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        key = event.key()
+        cards = self._visible_cards()
+
+        if not cards:
+            super().keyPressEvent(event)
+            return
+
+        if key == Qt.Key.Key_Down:
+            new_idx = min(self._focused_idx + 1, len(cards) - 1)
+            if self._focused_idx == -1:
+                new_idx = 0
+            self._set_card_focus(cards, new_idx)
+
+        elif key == Qt.Key.Key_Up:
+            if self._focused_idx <= 0:
+                new_idx = 0
+            else:
+                new_idx = self._focused_idx - 1
+            self._set_card_focus(cards, new_idx)
+
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            if 0 <= self._focused_idx < len(cards):
+                focused_card = cards[self._focused_idx]
+                self._on_copy(focused_card.item_id)
+            else:
+                super().keyPressEvent(event)
+
+        elif key == Qt.Key.Key_Escape:
+            # Clear focus on Escape
+            if 0 <= self._focused_idx < len(cards):
+                cards[self._focused_idx].set_focused(False)
+            self._focused_idx = -1
+
+        else:
+            super().keyPressEvent(event)
+
+    # ══════════════════════════════════════════
     # Close → minimize to tray / real quit
     # ══════════════════════════════════════════
     def closeEvent(self, event):
         if event.spontaneous():
-            # user clicked the window's close button → minimize to tray
+            # User clicked X → minimize to tray
             event.ignore()
             self.hide()
             self.tray.showMessage(
@@ -315,7 +426,9 @@ class Dashboard(QMainWindow):
                 2000
             )
         else:
-            # program is exiting → clean up resources before quitting
-            self.watcher.stop()       # stop clipboard timer
+            # Real quit — check clear_on_exit setting
+            if self._settings.get("clear_on_exit", False):
+                storage.delete_unpinned_items()
+            self.watcher.stop()
             self.tray.hide()
             event.accept()

@@ -9,10 +9,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned for v1.1.0 — *Phantom*
-- Settings panel (history limit, theme toggle)
-- Keyboard navigation inside cards list (Up/Down/Enter)
-- Double-click card to paste directly
+### Planned for v1.2.0 — *Specter*
+- Image thumbnail previews with lazy loading
+- Video thumbnail via ffmpeg first-frame extraction
+- Auto-cleanup: keep last N captures (configurable)
+- Image viewer popup on card click
+- Copy image back to clipboard from saved .png
+- Drag & drop cards to reorder pinned items
+
+---
+
+## [1.1.0] — 2026-03-24 — *Phantom*
+
+Usability release — settings panel, keyboard navigation, double-click paste, standalone autostart, and real SVG icon source.
+
+### Added
+- **Settings panel** — `ui/settings.py` `SettingsDialog` opened via ⚙ button in the top bar; persists to `data/settings.json`
+  - **Max history** — `QSpinBox` (10–5000, default 200); enforced on startup and on every new capture
+  - **Clear history on exit** — privacy checkbox; wipes all unpinned items on app quit (pinned items always survive)
+  - **Theme selector** — Dark Neon active; Light placeholder grayed out (v1.2.0+)
+  - **Hotkey hint** — read-only label showing `Ctrl+Alt+V`
+- **Keyboard navigation** — `Up`/`Down` arrows move focus between visible cards; `Enter`/`Space` copies the focused card; `Escape` clears focus; `scroll.ensureWidgetVisible()` keeps focused card in viewport automatically
+- **Double-click to paste** — `mouseDoubleClickEvent` on any `ItemCard` emits `sig_copy` instantly — no need to click the copy button
+- **Standalone autostart installer** — `scripts/setup_autostart.py`; pure-Python, supports `--remove` flag; writes `~/.config/autostart/DotGhostBoard.desktop` and `~/.local/share/applications/DotGhostBoard.desktop` without requiring bash
+- **Ghost SVG icon** — `data/icons/ghost.svg`; neon ghost design (`#00ff41` / `#0f0f0f`); pixel-perfect source for all sizes; `generate_icon.py` remains the PNG renderer
+
+### Changed
+- **Dashboard top bar** — ⚙ settings button added between stats label and Clear History; `_load_history()` now respects `max_history` from settings
+- **`closeEvent`** — on real quit, checks `clear_on_exit` setting before calling `watcher.stop()`
+- **`ghost.qss`** — added `ItemCard[focused="true"]` rule (neon green border + dark green tint); added `ItemCard[pinned="true"][focused="true"]` combined rule; added `#SettingsBtn` styles
+
+### Removed
+- **`core/hotkey.py`** — deleted entirely; `pynput` keylogger approach (resource-heavy, Wayland-incompatible) replaced by the existing `QLocalServer` IPC + system-level `Ctrl+Alt+V` shortcut registered by `scripts/install.sh`
 
 ---
 
