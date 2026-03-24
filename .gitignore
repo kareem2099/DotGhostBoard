@@ -66,3 +66,13 @@ coverage.xml
 
 # ── Ruff / Linting ──
 .ruff_cache/
+
+# ── Generated Data & Thumbnails (v1.2.0+) ──
+data/captures/
+!data/captures/.gitkeep  # Keep the folder structure
+data/pins/
+!data/pins/.gitkeep    # Keep the folder structure
+data/v_logs/
+!data/v_logs/.gitkeep  # Keep the folder structure
+data/thumbnails/   # S002: Video/Image thumbnails folder
+!data/thumbnails/.gitkeep  # Keep the folder structure

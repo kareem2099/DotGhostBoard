@@ -17,7 +17,6 @@ from ui.settings import SettingsDialog, load_settings, save_settings
 
 QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
 
-
 class Dashboard(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -40,6 +39,8 @@ class Dashboard(QMainWindow):
         self._setup_tray()
         self._start_watcher()
         self._load_history()
+        # S003: clean old captures after loading history
+        self._clean_captures()
 
     # ══════════════════════════════════════════
     # Build UI
@@ -110,6 +111,12 @@ class Dashboard(QMainWindow):
 
         self.scroll.setWidget(self.cards_container)
         root.addWidget(self.scroll)
+
+        # S006: enable drop on the cards container
+        self.cards_container.setAcceptDrops(True)
+        self.cards_container.dragEnterEvent = self._drag_enter
+        self.cards_container.dragMoveEvent  = self._drag_move
+        self.cards_container.dropEvent      = self._drop_event
 
         # ── Status bar ──
         self.statusBar().setStyleSheet(
@@ -194,6 +201,8 @@ class Dashboard(QMainWindow):
             # If limit tightened, trim excess cards from the UI
             if self._settings["max_history"] < old_limit:
                 self._enforce_history_limit()
+            # S003: re-run cleanup if max_captures changed
+            self._clean_captures()
             self.statusBar().showMessage("Settings saved ✓")
 
     def _enforce_history_limit(self):
@@ -202,11 +211,23 @@ class Dashboard(QMainWindow):
         unpinned = [iid for iid, c in self._cards.items() if not c.is_pinned]
         excess = len(self._cards) - limit
         if excess > 0:
-            to_remove = unpinned[-excess:]   # oldest are at the end of the list
+            to_remove = unpinned[-excess:]
             for iid in to_remove:
                 storage.delete_item(iid)
                 self._remove_card(iid)
             self._refresh_stats()
+
+    # S003: auto-cleanup of old capture files
+    def _clean_captures(self):
+        keep = self._settings.get("max_captures", 100)
+        removed = storage.clean_old_captures(keep)
+        if removed:
+            current_ids = {r["id"] for r in storage.get_all_items(limit=9999)}
+            gone = [iid for iid in list(self._cards) if iid not in current_ids]
+            for iid in gone:
+                self._remove_card(iid)
+            self._refresh_stats()
+            print(f"[Dashboard] Auto-cleanup removed {removed} old capture(s)")
 
     # ══════════════════════════════════════════
     # Watcher
@@ -216,6 +237,8 @@ class Dashboard(QMainWindow):
         self.watcher.new_text_captured.connect(self._on_new_text)
         self.watcher.new_image_captured.connect(self._on_new_image)
         self.watcher.new_video_captured.connect(self._on_new_video)
+        # S002: when video thumbnail is ready, update the card
+        self.watcher.thumb_ready.connect(self._on_thumb_ready)
         self.watcher.start()
 
     # ══════════════════════════════════════════
@@ -283,6 +306,12 @@ class Dashboard(QMainWindow):
             self._add_card(item, at_top=True)
             self._refresh_stats()
             self.statusBar().showMessage("Video path captured 🎬")
+
+    # S002: update card when video thumbnail is extracted
+    def _on_thumb_ready(self, item_id: int, thumb_path: str):
+        card = self._cards.get(item_id)
+        if card:
+            card.update_video_thumb(thumb_path)
 
     # ══════════════════════════════════════════
     # Card action slots
@@ -432,3 +461,69 @@ class Dashboard(QMainWindow):
             self.watcher.stop()
             self.tray.hide()
             event.accept()
+
+    # ══════════════════════════════════════════
+    # S006: Drag & Drop drop handler
+    # ══════════════════════════════════════════
+    def _drag_enter(self, event):
+        if event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            event.acceptProposedAction()
+
+    def _drag_move(self, event):
+        if event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            event.acceptProposedAction()
+
+    def _drop_event(self, event):
+        if not event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            return
+        try:
+            dragged_id = int(
+                event.mimeData().data("application/x-dotghost-card-id").data().decode()
+            )
+        except (ValueError, AttributeError):
+            return
+
+        # Find which card is at the drop position
+        drop_pos = event.position().toPoint()
+        target_card = None
+        layout = self.cards_layout
+        for i in range(layout.count() - 1):
+            item = layout.itemAt(i)
+            if item and item.widget():
+                w = item.widget()
+                if w.geometry().contains(drop_pos) and w.item_id != dragged_id:
+                    target_card = w
+                    break
+
+        if target_card is None:
+            return
+
+        # Collect pinned cards in current order
+        pinned_cards = [
+            layout.itemAt(i).widget()
+            for i in range(layout.count() - 1)
+            if layout.itemAt(i) and layout.itemAt(i).widget()
+            and layout.itemAt(i).widget().is_pinned
+        ]
+
+        dragged_card = self._cards.get(dragged_id)
+        if dragged_card and dragged_card in pinned_cards:
+            pinned_cards.remove(dragged_card)
+            target_idx = (
+                pinned_cards.index(target_card)
+                if target_card in pinned_cards
+                else len(pinned_cards)
+            )
+            pinned_cards.insert(target_idx, dragged_card)
+
+            # Persist new order
+            for order, card in enumerate(pinned_cards):
+                storage.update_sort_order(card.item_id, order)
+
+            # Re-insert cards in new visual order
+            for card in pinned_cards:
+                layout.removeWidget(card)
+            for order, card in enumerate(pinned_cards):
+                layout.insertWidget(order, card)
+
+        event.acceptProposedAction()

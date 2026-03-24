@@ -1,5 +1,6 @@
 {
   "max_history": 200,
+  "max_captures": 100,
   "theme": "dark",
   "clear_on_exit": false
 }

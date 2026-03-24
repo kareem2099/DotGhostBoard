@@ -1,10 +1,18 @@
+"""
+ui/widgets.py
+─────────────
+Item card widget for DotGhostBoard.
+v1.2.0: lazy image loading (S001), image viewer on click (S004),
+        drag handle for pinned reorder (S006).
+"""
+
 import os
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QSizePolicy
+    QLabel, QPushButton, QSizePolicy, QApplication
 )
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap, QDrag, QImage
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QByteArray
 from datetime import datetime
 
 
@@ -26,13 +34,18 @@ class ItemCard(QFrame):
     sig_pin    = pyqtSignal(int)   # pin/unpin request
     sig_delete = pyqtSignal(int)   # delete request
 
-    PREVIEW_MAX_LEN = 120          # max chars to show in text preview
+    PREVIEW_MAX_LEN = 120
+    THUMB_MAX_W     = 300
+    THUMB_MAX_H     = 180
 
     def __init__(self, item: dict, parent=None):
         super().__init__(parent)
         self.item_id   = item["id"]
-        self.is_pinned = bool(item.get("is_pinned", 0))
         self.item_type = item.get("type", "text")
+        self.is_pinned = bool(item.get("is_pinned", 0))
+        self._file_path = item.get("content", "")
+        self._preview   = item.get("preview") or self._file_path
+        self._img_label: QLabel | None = None
 
         self.setObjectName("ItemCard")
         self.setProperty("pinned", str(self.is_pinned).lower())
@@ -47,9 +60,19 @@ class ItemCard(QFrame):
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(4)
 
-        # ── Top row: badge + meta + buttons ──
+        # ── Top row: drag handle (pinned only) + badge + meta + buttons ──
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
+
+        # S006: drag handle for pinned cards
+        if self.is_pinned:
+            handle = QLabel("⠿")
+            handle.setObjectName("DragHandle")
+            handle.setFixedWidth(16)
+            handle.setToolTip("Drag to reorder")
+            handle.setStyleSheet("color:#555; font-size:16px;")
+            handle.setCursor(Qt.CursorShape.OpenHandCursor)
+            top_row.addWidget(handle)
 
         # Type badge
         badge = QLabel(item["type"].upper())
@@ -90,7 +113,6 @@ class ItemCard(QFrame):
         top_row.addWidget(self.pin_btn)
         top_row.addWidget(copy_btn)
         top_row.addWidget(del_btn)
-
         main_layout.addLayout(top_row)
 
         # ── Content preview ──
@@ -98,10 +120,8 @@ class ItemCard(QFrame):
         if content_widget:
             main_layout.addWidget(content_widget)
 
+    # ──────────────────────────────────────────────
     def _build_content(self, item: dict) -> QLabel | None:
-        """
-        FIX #5: return None if content is empty
-        """
         label = QLabel()
         label.setObjectName("ItemText")
         label.setWordWrap(True)
@@ -114,50 +134,138 @@ class ItemCard(QFrame):
             label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
             )
+            return label
 
         elif item["type"] == "image":
-            file_path = item["content"]
-            # FIX #5: handle missing or invalid image files gracefully
-            if not file_path or not os.path.isfile(file_path):
+            if not self._file_path or not os.path.isfile(self._file_path):
                 label.setText("⚠ Image file not found")
                 label.setStyleSheet("color: #ff4444;")
                 return label
-
-            try:
-                pixmap = QPixmap(file_path)
-                if pixmap.isNull():
-                    raise ValueError("Invalid image file")
-                pixmap = pixmap.scaledToWidth(
-                    300, Qt.TransformationMode.SmoothTransformation
-                )
-                img_label = QLabel()
-                img_label.setPixmap(pixmap)
-                return img_label
-            except Exception as e:
-                label.setText(f"⚠ Failed to load image: {e}")
-                label.setStyleSheet("color: #ff4444;")
+            # S001: lazy load — show placeholder, load thumbnail after paint
+            self._img_label = QLabel("🖼  Loading…")
+            self._img_label.setObjectName("ItemText")
+            self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._img_label.setStyleSheet("color:#444; min-height:40px;")
+            # Make image label clickable → open viewer (S004)
+            self._img_label.mousePressEvent = self._on_image_click
+            self._img_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            # Defer actual pixel load
+            QTimer.singleShot(0, self._load_thumbnail)
+            return self._img_label
 
         elif item["type"] == "video":
-            file_path = item["content"]
-            # FIX #5: handle missing video files gracefully
+            file_path = self._file_path
             if not file_path or not os.path.isfile(file_path):
                 label.setText(f"⚠ Video not found:\n{file_path}")
                 label.setStyleSheet("color: #ff4444;")
                 return label
+            # S002: if thumbnail exists show it, else show path text
+            preview = item.get("preview")
+            if preview and os.path.isfile(preview):
+                self._img_label = QLabel("🖼  Loading…")
+                self._img_label.setObjectName("ItemText")
+                self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._img_label.setStyleSheet("color:#444; min-height:40px;")
+                self._preview = preview
+                QTimer.singleShot(0, self._load_thumbnail)
+                return self._img_label
             label.setText(f"🎬 {file_path}")
+            return label
 
         return label
 
+    # ──────────────────────────────────────────────
+    # S001: Lazy thumbnail loader
+    # ──────────────────────────────────────────────
+    def _load_thumbnail(self):
+        """Load thumbnail from disk after card is painted."""
+        if not self._img_label:
+            return
+        path = self._preview or self._file_path
+        if not path or not os.path.isfile(path):
+            self._img_label.setText("⚠ File not found")
+            return
+        try:
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                self._img_label.setText("⚠ Invalid image")
+                return
+            # Cap at THUMB_MAX_W × THUMB_MAX_H
+            if pixmap.width() > self.THUMB_MAX_W:
+                pixmap = pixmap.scaledToWidth(
+                    self.THUMB_MAX_W, Qt.TransformationMode.SmoothTransformation
+                )
+            if pixmap.height() > self.THUMB_MAX_H:
+                pixmap = pixmap.scaledToHeight(
+                    self.THUMB_MAX_H, Qt.TransformationMode.SmoothTransformation
+                )
+            self._img_label.setPixmap(pixmap)
+            self._img_label.setStyleSheet("")
+        except Exception as e:
+            self._img_label.setText(f"⚠ {e}")
+
+    # ──────────────────────────────────────────────
+    # S004: Open image viewer on thumbnail click
+    # ──────────────────────────────────────────────
+    def _on_image_click(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            from ui.image_viewer import ImageViewer
+            viewer = ImageViewer(self._file_path, self)
+            viewer.exec()
+
+    # ──────────────────────────────────────────────
+    # S006: Update thumbnail when video thumb is ready
+    # ──────────────────────────────────────────────
+    def update_video_thumb(self, thumb_path: str):
+        """Called by Dashboard when thumb_ready signal fires."""
+        self._preview = thumb_path
+        if self._img_label is None:
+            # Create the image label now
+            layout = self.layout()
+            self._img_label = QLabel("🖼  Loading…")
+            self._img_label.setObjectName("ItemText")
+            self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(self._img_label)
+        QTimer.singleShot(0, self._load_thumbnail)
+
+    # ──────────────────────────────────────────────
+    # P006: Double-click → copy
+    # ──────────────────────────────────────────────
     def mouseDoubleClickEvent(self, event):
-        """P006: Double-click anywhere on the card to copy immediately."""
         self.sig_copy.emit(self.item_id)
 
+    # P005: Keyboard focus highlight
     def set_focused(self, focused: bool):
-        """P005: Toggle keyboard-nav focus highlight."""
         self.setProperty("focused", str(focused).lower())
         self.style().unpolish(self)
         self.style().polish(self)
 
+    # ──────────────────────────────────────────────
+    # S006: Drag & drop (pinned cards only)
+    # ──────────────────────────────────────────────
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_pinned:
+            self._drag_start_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self.is_pinned
+                and event.buttons() == Qt.MouseButton.LeftButton
+                and hasattr(self, "_drag_start_pos")):
+            dist = (event.position().toPoint() - self._drag_start_pos).manhattanLength()
+            if dist > QApplication.startDragDistance():
+                self._do_drag()
+        super().mouseMoveEvent(event)
+
+    def _do_drag(self):
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData("application/x-dotghost-card-id",
+                     QByteArray(str(self.item_id).encode()))
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+
+    # ──────────────────────────────────────────────
     def update_pin_state(self, is_pinned: bool):
         self.is_pinned = is_pinned
         self.setProperty("pinned", str(is_pinned).lower())

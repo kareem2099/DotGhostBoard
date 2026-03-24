@@ -23,6 +23,7 @@ SETTINGS_PATH  = os.path.join(_BASE_DIR, "data", "settings.json")
 
 _DEFAULTS: dict = {
     "max_history":  200,
+    "max_captures": 100,
     "theme":        "dark",
     "clear_on_exit": False,
 }
@@ -104,7 +105,19 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Max history:", self._max_history)
 
-        # 2. Clear on exit
+        # 2. Max captures (S003)
+        self._max_captures = QSpinBox()
+        self._max_captures.setRange(10, 2000)
+        self._max_captures.setSingleStep(10)
+        self._max_captures.setSuffix("  files")
+        self._max_captures.setValue(self._settings.get("max_captures", 100))
+        self._max_captures.setToolTip(
+            "Maximum number of saved image/video capture files to keep.\n"
+            "Oldest unpinned captures are deleted from disk automatically."
+        )
+        form.addRow("Max captures:", self._max_captures)
+
+        # 3. Clear on exit
         self._clear_on_exit = QCheckBox("Clear history when app quits")
         self._clear_on_exit.setChecked(bool(self._settings["clear_on_exit"]))
         self._clear_on_exit.setToolTip(
@@ -113,13 +126,13 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Privacy:", self._clear_on_exit)
 
-        # 3. Theme
+        # 4. Theme
         self._theme = QComboBox()
         self._theme.addItems(["Dark Neon", "Light  (coming soon)"])
         self._theme.setCurrentIndex(
             0 if self._settings.get("theme", "dark") == "dark" else 1
         )
-        self._theme.model().item(1).setEnabled(False)   # Light not ready
+        self._theme.model().item(1).setEnabled(False)
         form.addRow("Theme:", self._theme)
 
         layout.addLayout(form)
@@ -166,8 +179,9 @@ class SettingsDialog(QDialog):
     # ──────────────────────────────────────────
     def _save_and_close(self):
         self._settings["max_history"]   = self._max_history.value()
+        self._settings["max_captures"]  = self._max_captures.value()
         self._settings["clear_on_exit"] = self._clear_on_exit.isChecked()
-        self._settings["theme"]         = "dark"   # light not implemented yet
+        self._settings["theme"]         = "dark"
         save_settings(self._settings)
         self.accept()
 

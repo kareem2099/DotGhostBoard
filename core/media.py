@@ -36,24 +36,12 @@ def save_image_from_qimage(qimage: QImage) -> str | None:
     filepath  = os.path.join(CAPTURES_DIR, filename)
 
     try:
-        buffer = QBuffer()
-        buffer.open(QIODevice.OpenMode.ReadWrite)
-        saved = qimage.save(buffer, "PNG")
-        if not saved:
-            print("[Media] Failed to encode image to PNG")
+        if qimage.save(filepath, "PNG"):
+            return filepath
+        else:
+            print("[Media] Failed to save image to disk")
             return None
-        buffer.seek(0)
-        raw_bytes = bytes(buffer.data())
-        buffer.close()
 
-        with open(filepath, "wb") as f:
-            f.write(raw_bytes)
-
-        return filepath
-
-    except OSError as e:
-        print(f"[Media] File write error: {e}")
-        return None
     except Exception as e:
         print(f"[Media] Unexpected error saving image: {e}")
         return None
