@@ -2,13 +2,13 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.1.0-00ff41?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Phantom-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Python](https://img.shields.io/badge/python-3.11+-00ff41?style=flat-square&labelColor=0f0f0f)
-![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-00ff41?style=flat-square&labelColor=0f0f0f)
-![Platform](https://img.shields.io/badge/platform-Linux-00ff41?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-59%20passed-00ff41?style=flat-square&labelColor=0f0f0f)
-![License](https://img.shields.io/badge/license-MIT-00ff41?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.2.0-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Specter-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
+![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Platform](https://img.shields.io/badge/platform-Linux-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-94%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
+![License](https://img.shields.io/badge/license-MIT-ffcc00?style=flat-square&labelColor=0f0f0f)
 
 ---
 
@@ -41,6 +41,12 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Keyboard navigation** — `↑`/`↓` to move between cards, `Enter` to copy, `Esc` to clear focus
 - **Double-click to paste** — Double-click any card to copy it instantly
 - **Standalone autostart** — `scripts/setup_autostart.py` sets up boot entry without bash
+- **Image thumbnail previews** — Lazy-loaded thumbnails capped at 300×180px; deferred rendering via `QTimer.singleShot`
+- **Video thumbnails via ffmpeg** — First-frame extraction from video files; background thread processing; graceful fallback if ffmpeg unavailable
+- **Auto-cleanup** — Configurable `max_captures` limit (default 100); oldest unpinned captures deleted from disk on startup
+- **Image viewer popup** — Full-size image preview with smooth scaling; `Ctrl+C` to copy image; `Escape` to close
+- **Copy image to clipboard** — Image items now copy actual image data (not file path) back to clipboard
+- **Drag & drop reorder** — Pinned cards show drag handle; reorder persists via `sort_order` in database
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with your desktop environment dock and app launcher.
@@ -168,9 +174,13 @@ python3 -m pytest
 
 Expected output:
 ```
-tests/test_media.py    ........................... 27 passed
-tests/test_storage.py  ................................ 32 passed
-59 passed in 0.23s
+tests/test_media.py ...........................                         [ 28%]
+tests/test_settings.py ............                                     [ 41%]
+tests/test_storage.py ................................                  [ 75%]
+tests/test_storage_v120.py ..............                               [ 90%]
+tests/test_thumbnailer.py .........                                     [100%]
+
+94 passed in 0.40s
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -183,7 +193,7 @@ tests/test_storage.py  ................................ 32 passed
 |---------|----------|--------|------|
 | v1.0.0 | Ghost | ✅ Released | Stable base — clipboard, pin system, dark UI, SQLite |
 | v1.1.0 | Phantom | ✅ Released | Settings panel, keyboard nav, double-click paste, SVG icon |
-| v1.2.0 | Specter | 📋 Planned | Image thumbnails, video preview via ffmpeg |
+| v1.2.0 | Specter | ✅ Released | Image thumbnails, video preview via ffmpeg, auto-cleanup, image viewer |
 | v1.3.0 | Wraith | 📋 Planned | Tags, collections, multi-select, export |
 | v1.4.0 | Eclipse | 📋 Planned | AES-256 encryption, master lock, stealth mode |
 | v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |

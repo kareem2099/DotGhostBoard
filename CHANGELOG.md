@@ -9,13 +9,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned for v1.2.0 — *Specter*
-- Image thumbnail previews with lazy loading
-- Video thumbnail via ffmpeg first-frame extraction
-- Auto-cleanup: keep last N captures (configurable)
-- Image viewer popup on card click
-- Copy image back to clipboard from saved .png
-- Drag & drop cards to reorder pinned items
+### Planned for v1.3.0 — *Wraith*
+- Tag system: assign custom tags to items (#code, #link, #pass)
+- Filter by tag in search bar
+- Collections: group pinned items into named folders
+- Multi-select: Ctrl+Click to select multiple cards
+- Bulk delete / bulk pin selected items
+- Export selected items to .txt or .json
+
+---
+
+## [1.2.0] — 2026-03-25 — *Specter*
+
+Media & preview release — lazy image thumbnails, video first-frame extraction via ffmpeg, auto-cleanup, full-size image viewer, clipboard image copy, and drag-to-reorder pinned items.
+
+### Added
+- **Image thumbnail previews (lazy loading)** — `ItemCard._load_thumbnail()` in `ui/widgets.py`; uses `QTimer.singleShot(0, ...)` to defer pixel loading until after the card is painted; caps thumbnails at 300×180px; QPixmap stored on label to avoid re-loading on every repaint
+- **Video thumbnail via ffmpeg** — `core/thumbnailer.py` runs `ffmpeg -ss 0 -frames:v 1 -vf scale=300:-1` in a subprocess to extract the first frame as `.png` into `~/.config/dotghostboard/thumbnails/<item_id>.png`; `_ThumbWorker` QThread in `core/watcher.py` runs extraction in background; `thumb_ready` signal updates the card when done; graceful fallback if ffmpeg is not installed
+- **Auto-cleanup of old captures** — `storage.clean_old_captures(keep=N)` deletes the oldest unpinned image/video items beyond the limit, removes their `.png` files from `data/captures/` and `data/thumbnails/`, and deletes DB rows; called on startup via `Dashboard._clean_captures()`; configurable via `max_captures` setting (default 100) with QSpinBox in settings dialog
+- **Image viewer popup** — `ui/image_viewer.py` `ImageViewer` QDialog; shows full-size image with smooth scaling in a scrollable viewport; "Copy Image" button and "Close" button; keyboard shortcuts: `Escape` to close, `Ctrl+C` to copy; opens on single-click on any image/video thumbnail in a card
+- **Copy image back to clipboard** — `ImageViewer._copy_image()` loads the `.png` into `QImage` and puts it on `QClipboard` as image data (not text path); `ClipboardWatcher.paste_item_to_clipboard()` now sets `QImage` directly for image items instead of copying the file path as text
+- **Drag & drop to reorder pinned cards** — `ItemCard` shows a `⠿` drag handle on pinned cards; `mousePressEvent` / `mouseMoveEvent` initiate `QDrag` with `application/x-dotghost-card-id` MIME data; `Dashboard._drop_event` reorders pinned cards in the layout and persists `sort_order` via `storage.update_sort_order()`; DB migration adds `sort_order INTEGER DEFAULT 0` column
+
+### Changed
+- **`ui/widgets.py`** — `ItemCard._build_content()` now handles `video` type: shows thumbnail if `preview` path exists, falls back to path text; `_on_image_click()` opens `ImageViewer` on thumbnail single-click; `update_video_thumb()` called by dashboard when `thumb_ready` fires
+- **`ui/dashboard.py`** — `_start_watcher()` connects `thumb_ready` signal to `_on_thumb_ready()` slot; `_on_thumb_ready()` calls `card.update_video_thumb()`; `_clean_captures()` runs on startup and after settings change; `_drag_enter`, `_drag_move`, `_drop_event` handlers added for S006 reorder
+- **`core/watcher.py`** — `_ThumbWorker` QThread added for background ffmpeg extraction; `_start_thumb_worker()` spawns worker and tracks it; `_on_thumb_done()` stores preview path in DB and emits `thumb_ready`; `paste_item_to_clipboard()` now handles image type by loading `QImage` instead of setting text path
+- **`core/storage.py`** — `clean_old_captures(keep=100)` function added; `update_preview(item_id, preview_path)` stores thumbnail path; `update_sort_order(item_id, order)` persists drag order; `sort_order` column added via migration
+- **`ui/settings.py`** — `max_captures` spinbox (10–2000, default 100) added to form; tooltip explains auto-cleanup behavior
 
 ---
 

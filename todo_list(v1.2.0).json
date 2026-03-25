@@ -2,7 +2,7 @@
   "project": "DotGhostBoard",
   "version": "v1.2.0",
   "codename": "Specter",
-  "status": "in_development",
+  "status": "Released",
   "started": "2026-03-24",
   "last_updated": "2026-03-24",
   "todo": [
@@ -11,7 +11,7 @@
       "category": "ui",
       "title": "Image Thumbnail Previews (Lazy Loading)",
       "description": "Replace the current blocking QPixmap load in widgets.py with a lazy-loading approach. Use QTimer.singleShot(0, ...) to defer thumbnail rendering until after the card is painted. Cap thumbnail at 300x180px. Store the QPixmap on the card to avoid re-loading on every repaint.",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "files": ["ui/widgets.py"]
     },
@@ -20,7 +20,7 @@
       "category": "core",
       "title": "Video Thumbnail via ffmpeg",
       "description": "Add core/thumbnailer.py: run ffmpeg subprocess to extract first frame of a video as .png into data/thumbnails/<item_id>.png. Store thumbnail path in the existing 'preview' DB column. Display thumbnail in ItemCard for video items instead of plain file path.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "files": ["core/thumbnailer.py", "core/watcher.py", "ui/widgets.py"]
     },
@@ -29,7 +29,7 @@
       "category": "core",
       "title": "Auto-cleanup of Old Captures",
       "description": "Add clean_old_captures(keep=100) to storage.py — deletes .png files from data/captures/ and data/thumbnails/ AND removes DB rows beyond the N-th oldest unpinned item. Call on startup. Add 'max_captures' to settings.json (default 100) with a spinbox in the settings dialog.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "files": ["core/storage.py", "ui/dashboard.py", "ui/settings.py", "data/settings.json"]
     },
@@ -38,7 +38,7 @@
       "category": "ui",
       "title": "Image Viewer Popup",
       "description": "Create ui/image_viewer.py: QDialog showing the full-size image with smooth scaling, a close button, and a 'Copy Image' button. Opens on single-click on the thumbnail in the card (not the whole card — double-click still copies as text path).",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "files": ["ui/image_viewer.py", "ui/widgets.py"]
     },
@@ -47,7 +47,7 @@
       "category": "ui",
       "title": "Copy Image Back to Clipboard",
       "description": "In image viewer, 'Copy Image' button loads the .png into QImage and puts it on QClipboard as image data (not text path). Also fix sig_copy for image items in dashboard._on_copy() to push the actual image to clipboard instead of file-path text.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "files": ["ui/image_viewer.py", "ui/dashboard.py", "core/watcher.py"]
     },
@@ -56,16 +56,16 @@
       "category": "ui",
       "title": "Drag & Drop to Reorder Pinned Items",
       "description": "Enable QDrag reordering for pinned cards only. Add 'sort_order' INTEGER column to DB via migration. Show a drag handle (⠿) on pinned cards. On drop, update sort_order in DB. Dashboard._visible_cards() respects sort_order for pinned items.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "files": ["ui/widgets.py", "ui/dashboard.py", "core/storage.py"]
     }
   ],
   "summary": {
     "total": 6,
-    "done": 0,
+    "done": 6,
     "in_progress": 0,
-    "pending": 6,
-    "completion_percent": 0
+    "pending": 0,
+    "completion_percent": 100
   }
 }
