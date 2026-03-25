@@ -1,0 +1,176 @@
+name: dotghostboard
+title: DotGhostBoard
+summary: Advanced clipboard manager for Linux — DotSuite
+description: |
+  DotGhostBoard is a lightweight, privacy-first clipboard manager built natively
+  for Linux. It runs silently in the background, capturing everything you copy —
+  text, images, and video paths — and stores them locally in a SQLite database.
+  No cloud. No telemetry. No Electron.
+
+  Features:
+  - Text, image, and video path capture
+  - Pin system — pinned items are protected from deletion forever
+  - Persistent SQLite storage — survives reboots
+  - Real-time search and keyboard navigation
+  - Settings panel — history limit, privacy clear-on-exit
+  - IPC shortcut Ctrl+Alt+V — show window from anywhere
+  - Dark Neon UI built for dark desktops
+
+# ── Metadata ────────────────────────────────────────────────────────
+contact: https://github.com/kareem2099/DotGhostBoard/issues
+issues: https://github.com/kareem2099/DotGhostBoard/issues
+source-code: https://github.com/kareem2099/DotGhostBoard
+website: https://github.com/kareem2099/DotGhostBoard
+license: MIT
+
+adopt-info: dotghostboard
+grade: stable
+base: core22
+confinement: classic
+compression: lzo
+
+architectures:
+  - build-on: [amd64]
+    build-for: [amd64]
+
+# ── Silence linter warnings for unused PyQt6 modules ────────────────
+lint:
+  ignore:
+    - library
+
+apps:
+  dotghostboard:
+    # ✅ FIX: python3.10 explicitly — python3 symlink doesn't land in prime
+    command: usr/bin/python3.10 $SNAP/main.py
+    desktop: share/applications/dotghostboard.desktop
+    environment:
+      QT_QPA_PLATFORM: xcb
+      QT_LOGGING_RULES: "*.debug=false;qt.dbus.*=false"
+      PYTHONPATH: $SNAP:$SNAP/usr/lib/python3/dist-packages
+      HOME: $SNAP_USER_COMMON
+
+parts:
+  dotghostboard:
+    plugin: nil
+    source: .
+
+    build-packages:
+      - python3.10
+      - python3-pip
+      - python3.10-venv
+      - python3.10-distutils   # ✅ needed by pip on Debian/Ubuntu
+      - curl                   # ✅ fallback for get-pip.py
+      - libgl1-mesa-dev
+      - libegl1-mesa-dev
+      - libxkbcommon-dev
+      - libxcb-cursor-dev
+      - libxcb-icccm4-dev
+      - libxcb-keysyms1-dev
+      - libxcb-shape0-dev
+      - libxcb-xinerama0-dev
+      - libxcb-xkb-dev
+
+    stage-packages:
+      # ── Python runtime ──────────────────────────────────────────────
+      - python3.10          # ✅ explicit — provides usr/bin/python3.10
+      - python3.10-minimal
+      - libpython3.10
+      - libpython3.10-stdlib
+      - libpython3.10-minimal
+      - python3-distutils
+      # ── OpenGL (required by QtGui / QtWidgets) ──────────────────────
+      - libgl1              # libGL.so.1
+      - libglx0             # libGLX.so.0
+      - libgl1-mesa-dri
+      - libegl1-mesa
+      # ── XCB / X11 ───────────────────────────────────────────────────
+      - libxkbcommon0
+      - libxkbcommon-x11-0  # libxkbcommon-x11.so.0
+      - libxcb1
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-keysyms1
+      - libxcb-shape0
+      - libxcb-xinerama0
+      - libxcb-xkb1
+      - libxcb-glx0          # libxcb-glx.so.0
+      - libx11-6
+      - libxext6
+      # ── Fonts / rendering ───────────────────────────────────────────
+      - libfontconfig1
+      - libfreetype6
+      - libharfbuzz0b
+      - libpng16-16
+      - zlib1g
+      # ── Other ───────────────────────────────────────────────────────
+      - libsqlite3-0
+      - libatomic1           # libatomic.so.1 (QtPdf)
+
+    override-pull: |
+      craftctl default
+      VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.1.0")
+      echo "Detected version: $VERSION"
+      craftctl set version=$VERSION
+
+    override-build: |
+      craftctl default
+
+      INSTALL_DIR="$CRAFT_PART_INSTALL"
+      PY_PKGS="$INSTALL_DIR/usr/lib/python3/dist-packages"
+
+      # ── Bootstrap pip via apt (ensurepip is stripped on Debian/Ubuntu) ──
+      apt-get install -y python3-pip python3.10-distutils 2>/dev/null || true
+
+      # ── Verify pip works ────────────────────────────────────────────
+      python3.10 -m pip --version || {
+        # Last resort: get-pip.py
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+      }
+
+      # ── Install Python deps ─────────────────────────────────────────
+      python3.10 -m pip install \
+        --target="$PY_PKGS" \
+        --upgrade \
+        PyQt6 \
+        Pillow
+
+      # ── Generate icon ───────────────────────────────────────────────
+      PYTHONPATH="$PY_PKGS" python3.10 scripts/generate_icon.py
+
+      # ── Copy app source ─────────────────────────────────────────────
+      cp    main.py  "$INSTALL_DIR/main.py"
+      cp -r core     "$INSTALL_DIR/core"
+      cp -r ui       "$INSTALL_DIR/ui"
+      cp -r data     "$INSTALL_DIR/data"
+
+      # ── .desktop entry ──────────────────────────────────────────────
+      mkdir -p "$INSTALL_DIR/share/applications"
+      cat > "$INSTALL_DIR/share/applications/dotghostboard.desktop" << 'DESKTOP'
+      [Desktop Entry]
+      Type=Application
+      Name=DotGhostBoard
+      GenericName=Clipboard Manager
+      Comment=Advanced clipboard manager — DotSuite
+      Exec=dotghostboard
+      Icon=dotghostboard
+      Categories=Utility;
+      Keywords=clipboard;copy;paste;pin;ghost;dotsuite;
+      StartupNotify=false
+      Terminal=false
+      DESKTOP
+
+      # ── Icons ───────────────────────────────────────────────────────
+      mkdir -p "$INSTALL_DIR/share/pixmaps"
+      for SIZE in 16 32 48 64 128 256; do
+        mkdir -p "$INSTALL_DIR/share/icons/hicolor/${SIZE}x${SIZE}/apps"
+        cp "data/icons/icon_${SIZE}.png" \
+           "$INSTALL_DIR/share/icons/hicolor/${SIZE}x${SIZE}/apps/dotghostboard.png"
+      done
+      cp data/icons/icon.png "$INSTALL_DIR/share/pixmaps/dotghostboard.png"
+
+      # ── Set permissions ────────────────────────────────────────────
+      chmod 755 "$INSTALL_DIR/main.py"
+      chmod 644 "$INSTALL_DIR/share/applications/dotghostboard.desktop"
+      chmod 644 "$INSTALL_DIR/share/pixmaps/dotghostboard.png"
+      chmod 644 "$INSTALL_DIR"/share/icons/hicolor/*/apps/dotghostboard.png
+      chmod -R a+rX "$INSTALL_DIR/core" "$INSTALL_DIR/ui" "$INSTALL_DIR/data"

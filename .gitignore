@@ -76,3 +76,5 @@ data/v_logs/
 !data/v_logs/.gitkeep  # Keep the folder structure
 data/thumbnails/   # S002: Video/Image thumbnails folder
 !data/thumbnails/.gitkeep  # Keep the folder structure
+
+*.snap

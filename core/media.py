@@ -5,10 +5,10 @@ from PyQt6.QtGui import QImage
 from PyQt6.QtCore import QBuffer, QIODevice
 from PyQt6.QtCore import QMimeData  # type hint
 
-BASE_DIR      = os.path.dirname(os.path.dirname(__file__))
-CAPTURES_DIR  = os.path.join(BASE_DIR, "data", "captures")
-PINS_DIR      = os.path.join(BASE_DIR, "data", "pins")
-VLOGS_DIR     = os.path.join(BASE_DIR, "data", "v_logs")
+_USER_DATA    = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+CAPTURES_DIR  = os.path.join(_USER_DATA, "captures")
+PINS_DIR      = os.path.join(_USER_DATA, "pins")
+VLOGS_DIR     = os.path.join(_USER_DATA, "v_logs")
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv"}
 

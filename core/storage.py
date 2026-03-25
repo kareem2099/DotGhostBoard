@@ -3,10 +3,12 @@ import os
 from contextlib import contextmanager
 from datetime import datetime
 
-DB_PATH    = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ghost.db")
-BASE_DIR   = os.path.dirname(os.path.dirname(__file__))
-THUMB_DIR  = os.path.join(BASE_DIR, "data", "thumbnails")
-CAPTURES_DIR = os.path.join(BASE_DIR, "data", "captures")
+_USER_DATA = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+os.makedirs(_USER_DATA, exist_ok=True)
+
+DB_PATH      = os.path.join(_USER_DATA, "ghost.db")
+THUMB_DIR    = os.path.join(_USER_DATA, "thumbnails")
+CAPTURES_DIR = os.path.join(_USER_DATA, "captures")
 
 
 # FIX #2: Context manager for DB connections to ensure proper cleanup

@@ -18,8 +18,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 # ── Settings file path ────────────────────────────────────────────────────────
-_BASE_DIR      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTINGS_PATH  = os.path.join(_BASE_DIR, "data", "settings.json")
+_USER_DATA     = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+SETTINGS_PATH  = os.path.join(_USER_DATA, "settings.json")
 
 _DEFAULTS: dict = {
     "max_history":  200,

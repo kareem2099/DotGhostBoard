@@ -8,8 +8,8 @@ Fails gracefully if ffmpeg is not installed — never crashes the app.
 import os
 import subprocess
 
-BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-THUMB_DIR  = os.path.join(BASE_DIR, "data", "thumbnails")
+_USER_DATA = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+THUMB_DIR  = os.path.join(_USER_DATA, "thumbnails")
 
 
 def _ensure_thumb_dir():
