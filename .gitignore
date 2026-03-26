@@ -55,6 +55,11 @@ logs/
 dist/
 build/
 
+# ── AppImage ──
+*.AppImage
+appimagetool
+AppDir/
+
 # ── pytest / Coverage ──
 .pytest_cache/
 .coverage

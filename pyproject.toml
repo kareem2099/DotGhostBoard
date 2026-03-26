@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dotghostboard"
+version = "1.3.0"
+description = "Advanced clipboard manager for Linux — DotSuite"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "FreeRave", email = "kareem209907@gmail.com"},
+]
+keywords = ["clipboard", "manager", "pyqt6", "linux", "dotsuite"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "PyQt6>=6.6.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/kareem2099/DotGhostBoard"
+Repository = "https://github.com/kareem2099/DotGhostBoard"
+Issues = "https://github.com/kareem2099/DotGhostBoard/issues"
+
+[project.scripts]
+dotghostboard = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "ui*", "data*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.qss", "*.json", "*.png", "*.svg"]

@@ -66,7 +66,7 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Drag & drop visual feedback** — Ghost pixmap with neon border while dragging; source card dims to 35%; drop targets highlight with dashed green border
 
 **Native Desktop Integration:**
-DotGhostBoard integrates seamlessly with your desktop environment dock and app launcher.
+DotGhostBoard integrates seamlessly with  desktop environment dock and app launcher.
 
 <img src="data/assets/dock-icon.png" width="100%" alt="Kali Dock Integration" />
 
@@ -153,7 +153,25 @@ python3 scripts/generate_icon.py
 python3 main.py
 ```
 
-### Option C — Full install (autostart + shortcut + icon)
+### Option C — pip install (PyPI)
+
+```bash
+pip install dotghostboard
+dotghostboard
+```
+
+### Option D — AppImage (Portable)
+
+Download the `.AppImage` from [Releases](https://github.com/kareem2099/DotGhostBoard/releases), then:
+
+```bash
+chmod +x DotGhostBoard-*.AppImage
+./DotGhostBoard-*.AppImage
+```
+
+No installation needed — runs on ANY Linux distro.
+
+### Option E — Full install (autostart + shortcut + icon)
 
 ```bash
 chmod +x scripts/install.sh
@@ -161,6 +179,14 @@ chmod +x scripts/install.sh
 ```
 
 This sets up autostart on login and registers the `Ctrl+Alt+V` shortcut via `xfconf-query`.
+
+### Option F — Build AppImage from source
+
+```bash
+pip install pyinstaller
+chmod +x scripts/build_appimage.sh
+./scripts/build_appimage.sh
+```
 
 ---
 
