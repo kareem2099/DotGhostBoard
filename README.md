@@ -2,7 +2,7 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.3.0-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.3.1-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Wraith-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
@@ -118,6 +118,17 @@ DotGhostBoard/
 | PyQt6      | 6.6.0+   |
 | Pillow     | 10.0.0+  |
 | pytest     | 7.0.0+   |
+
+---
+
+## 📥 Download
+
+**Download for your platform:**
+
+- 🐧 [AppImage (Linux)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
+- 📦 [DEB (Ubuntu/Debian)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
+- 🪟 [EXE (Windows)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
+- 🍎 [DMG (macOS)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
 
 ---
 
