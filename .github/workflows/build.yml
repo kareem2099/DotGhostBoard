@@ -6,16 +6,34 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
 
   linux-appimage:
     runs-on: ubuntu-latest
     steps:
+      - name: Check authorization
+        run: |
+          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
+            echo "❌ Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install system dependencies
         run: |
@@ -84,11 +102,26 @@ jobs:
   linux-deb:
     runs-on: ubuntu-latest
     steps:
+      - name: Check authorization
+        run: |
+          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
+            echo "❌ Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install system dependencies
         run: |
@@ -147,11 +180,26 @@ jobs:
   windows-exe:
     runs-on: windows-latest
     steps:
+      - name: Check authorization
+        run: |
+          if ("${{ secrets.BUILD_TOKEN }}" -eq "") {
+            Write-Error "Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          }
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: pip install PyQt6 Pillow pyinstaller
@@ -176,11 +224,26 @@ jobs:
   macos-dmg:
     runs-on: macos-latest
     steps:
+      - name: Check authorization
+        run: |
+          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
+            echo "❌ Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: pip install PyQt6 Pillow pyinstaller
