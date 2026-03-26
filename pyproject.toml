@@ -7,7 +7,7 @@ name = "dotghostboard"
 version = "1.3.0"
 description = "Advanced clipboard manager for Linux — DotSuite"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "LICENSE"}
 requires-python = ">=3.11"
 authors = [
     {name = "FreeRave", email = "kareem209907@gmail.com"},

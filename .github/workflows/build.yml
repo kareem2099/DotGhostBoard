@@ -13,13 +13,67 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build AppImage via Docker (Ubuntu 20.04 - GLIBC 2.31)
-        run: |
-          docker build -t dotghostboard-builder .
-          docker run --rm -v ${{ github.workspace }}:/app dotghostboard-builder
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Check Output
-        run: ls -lh *.AppImage || echo "Checking dist folder..." && ls -lh DotGhostBoard-*.AppImage 2>/dev/null || find . -name "*.AppImage"
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libfuse2 \
+            libxcb-xinerama0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0
+
+      - name: Build
+        run: |
+          pip install PyQt6 Pillow pyinstaller
+          python scripts/generate_icon.py
+          pyinstaller --noconsole --onedir --add-data "data:data" \
+            --hidden-import "PyQt6.sip" --name dotghostboard main.py
+
+      - name: Create AppDir
+        run: |
+          APPDIR="DotGhostBoard.AppDir"
+          mkdir -p "$APPDIR"/{usr/bin,usr/share/applications,usr/share/icons/hicolor/256x256/apps,usr/share/metainfo}
+
+          cp -r dist/dotghostboard/* "$APPDIR/usr/bin/"
+          cp data/icons/icon_256.png "$APPDIR/dotghostboard.png"
+          cp data/icons/icon_256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
+          cp data/dotghostboard.appdata.xml \
+            "$APPDIR/usr/share/metainfo/com.github.kareem2099.dotghostboard.metainfo.xml"
+
+          cat > "$APPDIR/AppRun" << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export QT_QPA_PLATFORM=xcb
+          export QT_LOGGING_RULES="*.debug=false;qt.dbus.*=false"
+          cd "${HERE}/usr/bin"
+          exec ./dotghostboard "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          cat > "$APPDIR/dotghostboard.desktop" << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=DotGhostBoard
+          Exec=dotghostboard
+          Icon=dotghostboard
+          Categories=Utility;
+          Terminal=false
+          EOF
+          cp "$APPDIR/dotghostboard.desktop" "$APPDIR/usr/share/applications/"
+
+      - name: Build AppImage
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          VERSION=${GITHUB_REF_NAME#v}
+          [ -z "$VERSION" ] && VERSION="dev"
+          ARCH=x86_64 ./appimagetool DotGhostBoard.AppDir "DotGhostBoard-${VERSION}-x86_64.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
