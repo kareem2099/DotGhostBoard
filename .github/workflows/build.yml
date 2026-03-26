@@ -1,0 +1,260 @@
+name: Build All Platforms
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+
+  linux-appimage:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libfuse2 \
+            libxcb-xinerama0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0
+
+      - name: Build
+        run: |
+          pip install PyQt6 Pillow pyinstaller
+          python scripts/generate_icon.py
+          pyinstaller --noconsole --onedir --add-data "data:data" \
+            --hidden-import "PyQt6.sip" --name dotghostboard main.py
+
+      - name: Create AppDir
+        run: |
+          APPDIR="DotGhostBoard.AppDir"
+          mkdir -p "$APPDIR"/{usr/bin,usr/share/applications,usr/share/icons/hicolor/256x256/apps,usr/share/metainfo}
+
+          cp -r dist/dotghostboard/* "$APPDIR/usr/bin/"
+          cp data/icons/icon_256.png "$APPDIR/dotghostboard.png"
+          cp data/icons/icon_256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
+          cp data/dotghostboard.appdata.xml \
+            "$APPDIR/usr/share/metainfo/com.github.kareem2099.dotghostboard.metainfo.xml"
+
+          cat > "$APPDIR/AppRun" << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export QT_QPA_PLATFORM=xcb
+          export QT_LOGGING_RULES="*.debug=false;qt.dbus.*=false"
+          cd "${HERE}/usr/bin"
+          exec ./dotghostboard "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          cat > "$APPDIR/dotghostboard.desktop" << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=DotGhostBoard
+          Exec=dotghostboard
+          Icon=dotghostboard
+          Categories=Utility;
+          Terminal=false
+          EOF
+          cp "$APPDIR/dotghostboard.desktop" "$APPDIR/usr/share/applications/"
+
+      - name: Build AppImage
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          VERSION=${GITHUB_REF_NAME#v}
+          [ -z "$VERSION" ] && VERSION="dev"
+          ARCH=x86_64 ./appimagetool DotGhostBoard.AppDir "DotGhostBoard-${VERSION}-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: DotGhostBoard-*.AppImage
+
+
+  linux-deb:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev debhelper fakeroot
+
+      - name: Build
+        run: |
+          pip install PyQt6 Pillow pyinstaller
+          python scripts/generate_icon.py
+          pyinstaller --noconsole --onedir --add-data "data:data" \
+            --hidden-import "PyQt6.sip" --name dotghostboard main.py
+
+      - name: Create DEB
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          [ -z "$VERSION" ] && VERSION="1.3.0"
+
+          PKGDIR="dotghostboard_${VERSION}_amd64"
+          mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,usr/share/applications,usr/share/icons/hicolor/256x256/apps}
+
+          cp -r dist/dotghostboard "$PKGDIR/usr/bin/dotghostboard"
+          cp data/icons/icon_256.png "$PKGDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
+
+          cat > "$PKGDIR/usr/share/applications/dotghostboard.desktop" << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=DotGhostBoard
+          Exec=/usr/bin/dotghostboard/dotghostboard
+          Icon=dotghostboard
+          Categories=Utility;
+          Terminal=false
+          EOF
+
+          cat > "$PKGDIR/DEBIAN/control" << EOF
+          Package: dotghostboard
+          Version: ${VERSION}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0
+          Maintainer: FreeRave <kareem209907@gmail.com>
+          Description: Advanced clipboard manager for Linux
+           DotGhostBoard is a feature-rich clipboard manager
+           built with PyQt6 for Linux desktops.
+          EOF
+
+          fakeroot dpkg-deb --build "$PKGDIR"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dotghostboard_*_amd64.deb
+
+
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install PyQt6 Pillow pyinstaller
+
+      - name: Build
+        run: |
+          python scripts/generate_icon.py
+          pyinstaller `
+            --noconsole `
+            --onefile `
+            --add-data "data;data" `
+            --hidden-import "PyQt6.sip" `
+            --name dotghostboard `
+            main.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/dotghostboard.exe
+
+
+  macos-dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install PyQt6 Pillow pyinstaller
+
+      - name: Build
+        run: |
+          python scripts/generate_icon.py
+          pyinstaller \
+            --noconsole \
+            --onedir \
+            --add-data "data:data" \
+            --hidden-import "PyQt6.sip" \
+            --name dotghostboard \
+            main.py
+
+      - name: Create DMG
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          [ -z "$VERSION" ] && VERSION="1.3.0"
+
+          mkdir -p dist/dotghostboard.app/Contents/{MacOS,Resources}
+          cp -r dist/dotghostboard/* dist/dotghostboard.app/Contents/MacOS/
+          cp data/icons/icon_256.png dist/dotghostboard.app/Contents/Resources/icon.png
+
+          cat > dist/dotghostboard.app/Contents/Info.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>DotGhostBoard</string>
+            <key>CFBundleExecutable</key><string>dotghostboard</string>
+            <key>CFBundleIconFile</key><string>icon</string>
+            <key>CFBundleIdentifier</key><string>com.github.kareem2099.dotghostboard</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+          </dict>
+          </plist>
+          EOF
+
+          hdiutil create \
+            -volname "DotGhostBoard" \
+            -srcfolder dist/dotghostboard.app \
+            -ov -format UDZO \
+            "DotGhostBoard-${VERSION}-macos.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: DotGhostBoard-*-macos.dmg
+
+
+  release:
+    needs: [linux-appimage, linux-deb, windows-exe, macos-dmg]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize Files
+        run: |
+          mkdir out
+          find artifacts -type f \( \
+            -name "*.AppImage" -o \
+            -name "*.deb" -o \
+            -name "*.exe" -o \
+            -name "*.dmg" \
+          \) -exec cp {} out/ \;
+          echo "Files to release:"
+          ls -lh out/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: out/*
