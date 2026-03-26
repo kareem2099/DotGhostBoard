@@ -1,20 +1,30 @@
 #!/bin/bash
 # ════════════════════════════════════════════
-# DotGhostBoard — AppImage Builder (Fixed Edition)
+# DotGhostBoard — AppImage Builder (Docker Edition)
 # ════════════════════════════════════════════
 
 set -e
 
 APP_NAME="DotGhostBoard"
-# Get version from README or default to 1.3.0
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.3.0")
+VERSION=$(grep -oP "version-v\K[0-9]+\.[0-9]+\.[0-9]+" README.md | head -1 || echo "1.3.1")
 ARCH="x86_64"
 APPDIR="${APP_NAME}.AppDir"
 
+# Detect if running inside Docker
+if [ -f /.dockerenv ]; then
+    echo "🐳 Running inside Docker container"
+    PYTHON=python3.9
+else
+    PYTHON=python3
+fi
+
 echo "🚀 Compiling Python code with PyInstaller..."
-# Using onedir so AppImage handles final compression
-# --add-data "data:data" is critical to include the data folder
-pyinstaller --noconsole --onedir --add-data "data:data" --name dotghostboard main.py
+# Generate icon first
+$PYTHON scripts/generate_icon.py
+
+# Build with PyInstaller
+pyinstaller --noconsole --onedir --add-data "data:data" \
+    --hidden-import "PyQt6.sip" --name dotghostboard main.py
 
 echo "🔨 Building ${APP_NAME} v${VERSION} AppImage structure..."
 
@@ -67,7 +77,7 @@ cp data/icons/icon_256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/dotghos
 
 # ── AppStream Metadata ──
 mkdir -p "$APPDIR/usr/share/metainfo"
-cp data/dotghostboard.appdata.xml "$APPDIR/usr/share/metainfo/"
+cp data/dotghostboard.appdata.xml "$APPDIR/usr/share/metainfo/com.github.kareem2099.dotghostboard.metainfo.xml"
 
 # ── Download appimagetool if not present ──
 if [ ! -f appimagetool ]; then
@@ -78,7 +88,8 @@ fi
 
 # ── Build AppImage ──
 echo "📦 Packaging AppImage..."
-./appimagetool "$APPDIR" "${APP_NAME}-${VERSION}-${ARCH}.AppImage"
+export ARCH=x86_64
+./appimagetool --appimage-extract-and-run "$APPDIR" "${APP_NAME}-${VERSION}-${ARCH}.AppImage"
 
 # ── Cleanup ──
 rm -rf "$APPDIR"
