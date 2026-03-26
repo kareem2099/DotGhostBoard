@@ -1,11 +1,13 @@
 import os
 import sys
+import logging
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QScrollArea, QLabel, QPushButton,
     QFrame, QSizePolicy, QSystemTrayIcon, QMenu,
-    QApplication
+    QApplication, QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
+    QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEvent
@@ -14,6 +16,9 @@ from core import storage
 from core.watcher import ClipboardWatcher
 from ui.widgets import ItemCard
 from ui.settings import SettingsDialog, load_settings, save_settings
+
+# Debug logger for drag & drop
+logger = logging.getLogger(__name__)
 
 QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
 
@@ -39,16 +44,64 @@ class Dashboard(QMainWindow):
         self._setup_tray()
         self._start_watcher()
         self._load_history()
+        self._refresh_sidebar()
         # S003: clean old captures after loading history
         self._clean_captures()
 
     # ══════════════════════════════════════════
-    # Build UI
+    # Build UI  (W005 — Collections Sidebar)
     # ══════════════════════════════════════════
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+
+        # ── Main Horizontal Layout (Sidebar + Content) ──
+        main_hbox = QHBoxLayout(central)
+        main_hbox.setContentsMargins(0, 0, 0, 0)
+        main_hbox.setSpacing(0)
+
+        # ── W005: Collections Sidebar ──
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("Sidebar")
+        self.sidebar.setFixedWidth(160)
+
+        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_layout.setContentsMargins(8, 12, 8, 8)
+        sidebar_layout.setSpacing(10)
+
+        sidebar_header = QHBoxLayout()
+        coll_label = QLabel("📁 COLLECTIONS")
+        coll_label.setStyleSheet("color: #666; font-weight: bold; font-size: 11px; letter-spacing: 1px;")
+
+        add_coll_btn = QPushButton("+")
+        add_coll_btn.setObjectName("AddCollBtn")
+        add_coll_btn.setFixedSize(24, 24)
+        add_coll_btn.setToolTip("New Collection")
+        add_coll_btn.clicked.connect(self._create_collection)
+
+        sidebar_header.addWidget(coll_label)
+        sidebar_header.addStretch()
+        sidebar_header.addWidget(add_coll_btn)
+
+        self.collections_list = QListWidget()
+        self.collections_list.setObjectName("CollectionsList")
+        self.collections_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.collections_list.customContextMenuRequested.connect(self._on_collection_context_menu)
+        self.collections_list.currentItemChanged.connect(self._on_collection_selected)
+        self.collections_list.setAcceptDrops(True)
+        self.collections_list.setDropIndicatorShown(True)
+        self.collections_list.dragEnterEvent = self._sidebar_drag_enter
+        self.collections_list.dragMoveEvent = self._sidebar_drag_move
+        self.collections_list.dropEvent = self._sidebar_drop_event
+
+        sidebar_layout.addLayout(sidebar_header)
+        sidebar_layout.addWidget(self.collections_list)
+
+        main_hbox.addWidget(self.sidebar)
+
+        # ── Main Content Area ──
+        main_area = QWidget()
+        root = QVBoxLayout(main_area)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -92,11 +145,45 @@ class Dashboard(QMainWindow):
         search_layout.setContentsMargins(0, 0, 0, 0)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("🔍  Search text items…")
+        self.search_box.setPlaceholderText("🔍  Search… or type #tag to filter by tag")
         self.search_box.textChanged.connect(self._on_search)
 
         search_layout.addWidget(self.search_box)
         root.addWidget(search_frame)
+
+        # ── W006: Multi-select hint strip (shown once) ──
+        self._hint_strip = QFrame()
+        self._hint_strip.setObjectName("HintStrip")
+        self._hint_strip.setFixedHeight(32)
+
+        hint_layout = QHBoxLayout(self._hint_strip)
+        hint_layout.setContentsMargins(12, 0, 8, 0)
+        hint_layout.setSpacing(16)
+
+        hint_text = QLabel(
+            "💡  Multi-select:  "
+            "<span style='color:#00ff41'>Ctrl+Click</span> to select  •  "
+            "<span style='color:#00ff41'>Shift+Click</span> to range  •  "
+            "<span style='color:#00ff41'>Esc</span> to clear"
+        )
+        hint_text.setObjectName("HintText")
+        hint_text.setTextFormat(Qt.TextFormat.RichText)
+
+        dismiss_btn = QPushButton("✕ got it")
+        dismiss_btn.setObjectName("HintDismissBtn")
+        dismiss_btn.setFixedHeight(22)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.clicked.connect(self._dismiss_hint)
+
+        hint_layout.addWidget(hint_text)
+        hint_layout.addStretch()
+        hint_layout.addWidget(dismiss_btn)
+
+        root.addWidget(self._hint_strip)
+
+        # Hide immediately if already dismissed
+        if self._settings.get("multiselect_hint_dismissed", False):
+            self._hint_strip.hide()
 
         # ── Scroll Area ──
         self.scroll = QScrollArea()
@@ -118,6 +205,53 @@ class Dashboard(QMainWindow):
         self.cards_container.dragMoveEvent  = self._drag_move
         self.cards_container.dropEvent      = self._drop_event
 
+        # ── W007: Bulk Actions Toolbar (hidden by default) ──
+        self._bulk_bar = QFrame()
+        self._bulk_bar.setObjectName("BulkBar")
+        self._bulk_bar.setFixedHeight(52)
+
+        bulk_layout = QHBoxLayout(self._bulk_bar)
+        bulk_layout.setContentsMargins(16, 0, 16, 0)
+        bulk_layout.setSpacing(8)
+
+        self._bulk_count_lbl = QLabel("0 selected")
+        self._bulk_count_lbl.setObjectName("BulkCountLabel")
+
+        btn_pin    = QPushButton("📍 Pin All")
+        btn_unpin  = QPushButton("📌 Unpin All")
+        btn_delete = QPushButton("✕ Delete All")
+        btn_export = QPushButton("📤 Export")
+        btn_tag    = QPushButton("🏷 Add Tag")
+        btn_cancel = QPushButton("✕ Cancel")
+
+        btn_pin.setObjectName("BulkBtn")
+        btn_unpin.setObjectName("BulkBtn")
+        btn_export.setObjectName("BulkBtn")
+        btn_tag.setObjectName("BulkBtn")
+        btn_delete.setObjectName("BulkBtnDanger")
+        btn_cancel.setObjectName("BulkBtnCancel")
+
+        btn_pin.clicked.connect(lambda: self._bulk_pin(True))
+        btn_unpin.clicked.connect(lambda: self._bulk_pin(False))
+        btn_delete.clicked.connect(self._bulk_delete)
+        btn_export.clicked.connect(self._bulk_export)
+        btn_tag.clicked.connect(self._bulk_add_tag)
+        btn_cancel.clicked.connect(self._clear_selection)
+
+        bulk_layout.addWidget(self._bulk_count_lbl)
+        bulk_layout.addStretch()
+        bulk_layout.addWidget(btn_pin)
+        bulk_layout.addWidget(btn_unpin)
+        bulk_layout.addWidget(btn_tag)
+        bulk_layout.addWidget(btn_export)
+        bulk_layout.addWidget(btn_delete)
+        bulk_layout.addWidget(btn_cancel)
+
+        root.addWidget(self._bulk_bar)
+        self._bulk_bar.hide()   # hidden until 2+ selected
+
+        main_hbox.addWidget(main_area)
+
         # ── Status bar ──
         self.statusBar().setStyleSheet(
             "background:#111; color:#00ff41; font-size:11px;"
@@ -127,6 +261,14 @@ class Dashboard(QMainWindow):
         # Allow the scroll area to receive key events via the dashboard
         self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.cards_container.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        # State tracker for collections
+        self.active_collection_id = None
+
+        # W006: multi-select state
+        self._selected_ids: set[int] = set()
+        self._last_clicked_id: int | None = None   # W006: for shift-range
+        self._drop_target_card: "ItemCard | None" = None   # drag-over highlight
 
     # ══════════════════════════════════════════
     # Stylesheet
@@ -252,6 +394,103 @@ class Dashboard(QMainWindow):
         self._refresh_stats()
 
     # ══════════════════════════════════════════
+    # W005 — Collections Logic
+    # ══════════════════════════════════════════
+    def _refresh_sidebar(self):
+        """Reload collections from DB and update the sidebar UI."""
+        self.collections_list.blockSignals(True)
+        self.collections_list.clear()
+
+        # Default item (All items)
+        all_item = QListWidgetItem("❖ All Items")
+        all_item.setData(Qt.ItemDataRole.UserRole, None)
+        self.collections_list.addItem(all_item)
+
+        # Load from DB
+        colls = storage.get_collections()
+        for c in colls:
+            item = QListWidgetItem(f"📁 {c['name']} ({c['item_count']})")
+            item.setData(Qt.ItemDataRole.UserRole, c['id'])
+            self.collections_list.addItem(item)
+
+            # Keep previous selection active if exists
+            if self.active_collection_id == c['id']:
+                item.setSelected(True)
+
+        if not self.collections_list.selectedItems():
+            all_item.setSelected(True)
+
+        self.collections_list.blockSignals(False)
+
+    def _create_collection(self):
+        name, ok = QInputDialog.getText(self, "New Collection", "Collection Name:",
+                                        QLineEdit.EchoMode.Normal, "")
+        if ok and name.strip():
+            storage.create_collection(name.strip())
+            self._refresh_sidebar()
+            self.statusBar().showMessage(f"Collection '{name}' created")
+
+    def _on_collection_context_menu(self, pos):
+        item = self.collections_list.itemAt(pos)
+        if not item:
+            return
+        coll_id = item.data(Qt.ItemDataRole.UserRole)
+        if coll_id is None:
+            return  # "All Items" — no rename/delete
+
+        menu = QMenu(self)
+        rename_action = QAction("✏️ Rename", self)
+        delete_action = QAction("🗑️ Delete", self)
+
+        rename_action.triggered.connect(lambda: self._rename_collection(coll_id))
+        delete_action.triggered.connect(lambda: self._delete_collection(coll_id))
+
+        menu.addAction(rename_action)
+        menu.addAction(delete_action)
+        menu.exec(self.collections_list.mapToGlobal(pos))
+
+    def _rename_collection(self, coll_id: int):
+        colls = storage.get_collections()
+        old_name = next((c["name"] for c in colls if c["id"] == coll_id), "")
+        new_name, ok = QInputDialog.getText(self, "Rename Collection", "New Name:",
+                                            QLineEdit.EchoMode.Normal, old_name)
+        if ok and new_name.strip() and new_name.strip() != old_name:
+            storage.rename_collection(coll_id, new_name.strip())
+            self._refresh_sidebar()
+            self.statusBar().showMessage("Collection renamed ✓")
+
+    def _delete_collection(self, coll_id: int):
+        reply = QMessageBox.question(
+            self, "Delete Collection",
+            "Delete this collection?\n(Items will NOT be deleted, just uncategorized)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            storage.delete_collection(coll_id)
+            if self.active_collection_id == coll_id:
+                self.active_collection_id = None
+            self._refresh_sidebar()
+            self._on_collection_selected(self.collections_list.currentItem(), None)
+            self.statusBar().showMessage("Collection deleted ✓")
+
+    def _on_collection_selected(self, current, previous):
+        if not current:
+            return
+
+        self.active_collection_id = current.data(Qt.ItemDataRole.UserRole)
+
+        # Clear current UI cards
+        for card in list(self._cards.values()):
+            self._remove_card(card.item_id)
+
+        # Fetch items for this collection (or all if None)
+        items = storage.get_items_by_collection(self.active_collection_id)
+        for item in reversed(items):
+            self._add_card(item)
+
+        self._refresh_stats()
+
+    # ══════════════════════════════════════════
     # Cards management
     # ══════════════════════════════════════════
     def _add_card(self, item: dict, at_top: bool = True):
@@ -262,6 +501,9 @@ class Dashboard(QMainWindow):
         card.sig_copy.connect(self._on_copy)
         card.sig_pin.connect(self._on_pin)
         card.sig_delete.connect(self._on_delete)
+        card.sig_tag_added.connect(self._on_tag_added)      # W002
+        card.sig_tag_removed.connect(self._on_tag_removed)  # W002
+        card.sig_clicked.connect(self._on_card_clicked)     # W006
 
         self._cards[item["id"]] = card
         layout = self.cards_layout
@@ -341,17 +583,204 @@ class Dashboard(QMainWindow):
             self.statusBar().showMessage("⚠ Pinned items cannot be deleted!")
 
     # ══════════════════════════════════════════
-    # Search
+    # W006 — Multi-Select
+    # ══════════════════════════════════════════
+    def _on_card_clicked(self, item_id: int, modifiers):
+        cards = self._visible_cards()
+        card_ids = [c.item_id for c in cards]
+
+        # Show hint if still visible (first interaction teaches them)
+        if (modifiers & Qt.KeyboardModifier.ControlModifier
+                and not self._settings.get("multiselect_hint_dismissed", False)):
+            self._hint_strip.show()
+
+        if modifiers & Qt.KeyboardModifier.ShiftModifier and self._last_clicked_id in card_ids:
+            # ── Shift+Click: select range ──────────────────────────
+            a = card_ids.index(self._last_clicked_id)
+            b = card_ids.index(item_id)
+            lo, hi = min(a, b), max(a, b)
+            for iid in card_ids[lo : hi + 1]:
+                self._selected_ids.add(iid)
+                self._cards[iid].set_selected(True)
+
+        elif modifiers & Qt.KeyboardModifier.ControlModifier:
+            # ── Ctrl+Click: toggle single ──────────────────────────
+            if item_id in self._selected_ids:
+                self._selected_ids.discard(item_id)
+                self._cards[item_id].set_selected(False)
+            else:
+                self._selected_ids.add(item_id)
+                self._cards[item_id].set_selected(True)
+            self._last_clicked_id = item_id
+
+        else:
+            # ── Plain click: clear selection + move focus ──────────
+            self._clear_selection()
+            card = self._cards.get(item_id)
+            if card in cards:
+                self._set_card_focus(cards, cards.index(card))
+            self._last_clicked_id = item_id
+
+        self._update_bulk_bar()
+
+        count = len(self._selected_ids)
+        if count > 0:
+            self.statusBar().showMessage(f"{count} item(s) selected  •  Ctrl+click to add, Shift+click to range")
+        else:
+            self.statusBar().showMessage("Watching clipboard…")
+
+    def _clear_selection(self):
+        for iid in self._selected_ids:
+            card = self._cards.get(iid)
+            if card:
+                card.set_selected(False)
+        self._selected_ids.clear()
+        self._last_clicked_id = None
+        self._update_bulk_bar()
+
+    def _dismiss_hint(self):
+        """Hide multi-select hint strip and persist dismissal."""
+        self._hint_strip.hide()
+        self._settings["multiselect_hint_dismissed"] = True
+        save_settings(self._settings)
+
+    # ══════════════════════════════════════════
+    # W007 — Bulk Actions
+    # ══════════════════════════════════════════
+    def _update_bulk_bar(self):
+        count = len(self._selected_ids)
+        if count >= 2:
+            self._bulk_count_lbl.setText(f"{count} selected")
+            self._bulk_bar.show()
+        else:
+            self._bulk_bar.hide()
+
+    def _bulk_pin(self, pin: bool):
+        for iid in list(self._selected_ids):
+            item = storage.get_item_by_id(iid)
+            if item:
+                if bool(item.get("is_pinned", 0)) != pin:
+                    new_state = storage.toggle_pin(iid)
+                    card = self._cards.get(iid)
+                    if card:
+                        card.update_pin_state(new_state)
+        action = "Pinned" if pin else "Unpinned"
+        self.statusBar().showMessage(f"{action} {len(self._selected_ids)} items ✓")
+        self._refresh_stats()
+
+    def _bulk_delete(self):
+        count = len(self._selected_ids)
+        reply = QMessageBox.question(
+            self, "Delete Selected",
+            f"Delete {count} selected item(s)?\nPinned items will be skipped.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        deleted = 0
+        for iid in list(self._selected_ids):
+            if storage.delete_item(iid):
+                self._remove_card(iid)
+                deleted += 1
+        self._selected_ids.clear()
+        self._update_bulk_bar()
+        self._refresh_stats()
+        self.statusBar().showMessage(f"Deleted {deleted} item(s) ✓")
+
+    def _bulk_export(self):
+        if not self._selected_ids:
+            return
+        fmt, ok = QInputDialog.getItem(
+            self, "Export Format", "Choose format:",
+            ["txt", "json"], 0, False
+        )
+        if not ok:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Items",
+            f"dotghost_export.{fmt}",
+            f"{'Text' if fmt == 'txt' else 'JSON'} Files (*.{fmt})"
+        )
+        if not path:
+            return
+        content = storage.export_items(list(self._selected_ids), fmt)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        self.statusBar().showMessage(f"Exported {len(self._selected_ids)} items → {path} ✓")
+
+    def _bulk_add_tag(self):
+        tag, ok = QInputDialog.getText(
+            self, "Add Tag", "Tag to add to all selected items:",
+            QLineEdit.EchoMode.Normal, "#"
+        )
+        if not ok or not tag.strip():
+            return
+        tag = tag.strip().lower()
+        tag = tag if tag.startswith("#") else f"#{tag}"
+        for iid in list(self._selected_ids):
+            updated = storage.add_tag(iid, tag)
+            card = self._cards.get(iid)
+            if card and tag in updated:
+                card.on_tag_added(tag)
+        self.statusBar().showMessage(f"Tag {tag} added to {len(self._selected_ids)} items ✓")
+
+    # ══════════════════════════════════════════
+    # W002 — Tag slots
+    # ══════════════════════════════════════════
+    def _on_tag_added(self, item_id: int, tag: str):
+        """Write tag to DB, then confirm back to the card's chip row."""
+        updated = storage.add_tag(item_id, tag)
+        card = self._cards.get(item_id)
+        if card and tag in updated:
+            card.on_tag_added(tag)
+            self.statusBar().showMessage(f"Tag added: {tag}")
+
+    def _on_tag_removed(self, item_id: int, tag: str):
+        """Remove tag from DB, then confirm back to the card's chip row."""
+        storage.remove_tag(item_id, tag)
+        card = self._cards.get(item_id)
+        if card:
+            card.on_tag_removed(tag)
+            self.statusBar().showMessage(f"Tag removed: {tag}")
+
+    # ══════════════════════════════════════════
+    # W003 — Search (text + optional #tag filter)
     # ══════════════════════════════════════════
     def _on_search(self, query: str):
-        self._focused_idx = -1   # reset keyboard focus on new search
-        query = query.strip()
-        if not query:
+        """
+        Parse the search box value and apply text + tag filtering.
+
+        Supported formats:
+          "python"          → text search only
+          "#code"           → tag filter only (show all items with that tag)
+          "python #code"    → text search AND tag filter combined
+        """
+        self._focused_idx = -1
+        raw = query.strip()
+
+        if not raw:
             for card in self._cards.values():
                 card.setVisible(True)
             return
 
-        result_ids = {r["id"] for r in storage.search_items(query)}
+        # ── split out tag tokens (words starting with #) ──
+        tokens = raw.split()
+        tag_tokens = [t for t in tokens if t.startswith("#")]
+        text_tokens = [t for t in tokens if not t.startswith("#")]
+
+        text_query = " ".join(text_tokens)
+        # Support one active tag filter for now (first #tag wins)
+        tag_filter = tag_tokens[0] if tag_tokens else None
+
+        if tag_filter and not text_query:
+            # Tag-only: use get_items_by_tag for all item types (not just text)
+            result_ids = {r["id"] for r in storage.get_items_by_tag(tag_filter)}
+        else:
+            # Text search (with optional tag filter via search_items)
+            result_ids = {
+                r["id"] for r in storage.search_items(text_query, tag_filter)
+            }
+
         for item_id, card in self._cards.items():
             card.setVisible(item_id in result_ids)
 
@@ -412,22 +841,16 @@ class Dashboard(QMainWindow):
             return
 
         if key == Qt.Key.Key_Down:
-            new_idx = min(self._focused_idx + 1, len(cards) - 1)
-            if self._focused_idx == -1:
-                new_idx = 0
+            new_idx = 0 if self._focused_idx == -1 else min(self._focused_idx + 1, len(cards) - 1)
             self._set_card_focus(cards, new_idx)
 
         elif key == Qt.Key.Key_Up:
-            if self._focused_idx <= 0:
-                new_idx = 0
-            else:
-                new_idx = self._focused_idx - 1
+            new_idx = 0 if self._focused_idx <= 0 else self._focused_idx - 1
             self._set_card_focus(cards, new_idx)
 
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
             if 0 <= self._focused_idx < len(cards):
-                focused_card = cards[self._focused_idx]
-                self._on_copy(focused_card.item_id)
+                self._on_copy(cards[self._focused_idx].item_id)
             else:
                 super().keyPressEvent(event)
 
@@ -436,6 +859,7 @@ class Dashboard(QMainWindow):
             if 0 <= self._focused_idx < len(cards):
                 cards[self._focused_idx].set_focused(False)
             self._focused_idx = -1
+            self._clear_selection()
 
         else:
             super().keyPressEvent(event)
@@ -463,67 +887,162 @@ class Dashboard(QMainWindow):
             event.accept()
 
     # ══════════════════════════════════════════
-    # S006: Drag & Drop drop handler
+    # S006: Drag & Drop
     # ══════════════════════════════════════════
     def _drag_enter(self, event):
+        logger.debug(f"[Dashboard] _drag_enter called, hasMimeData={event.mimeData().hasFormat('application/x-dotghost-card-id')}")
         if event.mimeData().hasFormat("application/x-dotghost-card-id"):
             event.acceptProposedAction()
+
+    # ══════════════════════════════════════════
+    # W005: Drag & Drop to Sidebar Collections
+    # ══════════════════════════════════════════
+    def _sidebar_drag_enter(self, event):
+        if event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            event.acceptProposedAction()
+
+    def _sidebar_drag_move(self, event):
+        if event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            item = self.collections_list.itemAt(event.position().toPoint())
+            if item:
+                self.collections_list.setCurrentItem(item)
+            event.acceptProposedAction()
+
+    def _sidebar_drop_event(self, event):
+        logger.debug(f"[Dashboard] _sidebar_drop_event called")
+        if not event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            logger.debug(f"[Dashboard] No mime data format match")
+            return
+
+        try:
+            dragged_id = int(
+                event.mimeData().data("application/x-dotghost-card-id").data().decode()
+            )
+            logger.debug(f"[Dashboard] Dragged item_id: {dragged_id}")
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"[Dashboard] Failed to parse dragged_id: {e}")
+            return
+
+        item = self.collections_list.itemAt(event.position().toPoint())
+        if not item:
+            logger.debug(f"[Dashboard] No item at drop position")
+            return
+
+        target_coll_id = item.data(Qt.ItemDataRole.UserRole)
+        logger.debug(f"[Dashboard] Target collection_id: {target_coll_id}")
+
+        card = self._cards.get(dragged_id)
+        if not card:
+            logger.debug(f"[Dashboard] Card {dragged_id} not found in _cards")
+            return
+
+        storage.move_to_collection(dragged_id, target_coll_id)
+
+        if target_coll_id != self.active_collection_id:
+            self._remove_card(dragged_id)
+
+        self._refresh_sidebar()
+        self.statusBar().showMessage("Card moved to collection ✓")
+        logger.debug(f"[Dashboard] Card {dragged_id} moved to collection {target_coll_id}")
+
+        event.acceptProposedAction()
 
     def _drag_move(self, event):
-        if event.mimeData().hasFormat("application/x-dotghost-card-id"):
-            event.acceptProposedAction()
+        if not event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            return
+
+        drop_pos = event.position().toPoint()
+        layout   = self.cards_layout
+        new_target = None
+
+        for i in range(layout.count() - 1):
+            w_item = layout.itemAt(i)
+            if w_item and w_item.widget() and w_item.widget().geometry().contains(drop_pos):
+                new_target = w_item.widget()
+                break
+
+        # Clear old highlight
+        if self._drop_target_card and self._drop_target_card is not new_target:
+            self._drop_target_card.set_drop_target(False)
+
+        # Apply new highlight
+        if new_target:
+            new_target.set_drop_target(True)
+
+        self._drop_target_card = new_target
+        event.acceptProposedAction()
 
     def _drop_event(self, event):
+        logger.debug(f"[Dashboard] _drop_event called")
+
+        # Clear drop-target highlight
+        if self._drop_target_card:
+            self._drop_target_card.set_drop_target(False)
+            self._drop_target_card = None
+
         if not event.mimeData().hasFormat("application/x-dotghost-card-id"):
+            logger.debug(f"[Dashboard] No mime data format match")
             return
         try:
             dragged_id = int(
                 event.mimeData().data("application/x-dotghost-card-id").data().decode()
             )
-        except (ValueError, AttributeError):
+            logger.debug(f"[Dashboard] Dragged item_id: {dragged_id}")
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"[Dashboard] Failed to parse dragged_id: {e}")
             return
 
         # Find which card is at the drop position
         drop_pos = event.position().toPoint()
+        logger.debug(f"[Dashboard] Drop position: {drop_pos}")
         target_card = None
         layout = self.cards_layout
         for i in range(layout.count() - 1):
             item = layout.itemAt(i)
             if item and item.widget():
                 w = item.widget()
+                logger.debug(f"[Dashboard] Checking card {w.item_id} at geometry {w.geometry()}")
                 if w.geometry().contains(drop_pos) and w.item_id != dragged_id:
                     target_card = w
+                    logger.debug(f"[Dashboard] Found target card: {w.item_id}")
                     break
 
         if target_card is None:
+            logger.debug(f"[Dashboard] No target card at drop position {drop_pos}")
             return
 
-        # Collect pinned cards in current order
-        pinned_cards = [
+        logger.debug(f"[Dashboard] Target card item_id: {target_card.item_id}")
+
+        # Collect ALL cards in current order (not just pinned ones)
+        all_cards = [
             layout.itemAt(i).widget()
             for i in range(layout.count() - 1)
             if layout.itemAt(i) and layout.itemAt(i).widget()
-            and layout.itemAt(i).widget().is_pinned
         ]
+        logger.debug(f"[Dashboard] All cards: {[c.item_id for c in all_cards]}")
 
         dragged_card = self._cards.get(dragged_id)
-        if dragged_card and dragged_card in pinned_cards:
-            pinned_cards.remove(dragged_card)
+        logger.debug(f"[Dashboard] Dragged card: {dragged_card}, is_pinned={dragged_card.is_pinned if dragged_card else 'N/A'}")
+        if dragged_card and dragged_card in all_cards:
+            all_cards.remove(dragged_card)
             target_idx = (
-                pinned_cards.index(target_card)
-                if target_card in pinned_cards
-                else len(pinned_cards)
+                all_cards.index(target_card)
+                if target_card in all_cards
+                else len(all_cards)
             )
-            pinned_cards.insert(target_idx, dragged_card)
+            all_cards.insert(target_idx, dragged_card)
+            logger.debug(f"[Dashboard] Reordered all cards: {[c.item_id for c in all_cards]}")
 
-            # Persist new order
-            for order, card in enumerate(pinned_cards):
+            # Persist new order for all cards
+            for order, card in enumerate(all_cards):
                 storage.update_sort_order(card.item_id, order)
 
             # Re-insert cards in new visual order
-            for card in pinned_cards:
+            for card in all_cards:
                 layout.removeWidget(card)
-            for order, card in enumerate(pinned_cards):
+            for order, card in enumerate(all_cards):
                 layout.insertWidget(order, card)
+        else:
+            logger.debug(f"[Dashboard] Dragged card not in all cards, skipping reorder")
 
         event.acceptProposedAction()

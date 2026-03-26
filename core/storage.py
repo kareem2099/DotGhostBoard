@@ -47,6 +47,28 @@ def init_db():
         except Exception:
             pass  # column already exists
 
+        # Migration: add tags column for v1.3.0
+        try:
+            conn.execute("ALTER TABLE clipboard_items ADD COLUMN tags TEXT DEFAULT ''")
+        except Exception:
+            pass  # column already exists
+
+        # Create collections table for v1.3.0
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS collections (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE,
+                created_at  TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            )
+        """)
+
+        # Migration: add collection_id to existing databases
+        try:
+            conn.execute("ALTER TABLE clipboard_items ADD COLUMN collection_id INTEGER DEFAULT NULL REFERENCES collections(id)")
+        except Exception:
+            pass  # column already exists
+
 
 # ─────────────────────────────────────────────
 # CREATE
@@ -107,8 +129,45 @@ def get_item_by_id(item_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def search_items(query: str) -> list:
-    """Search text items only"""
+def search_items(query: str, tag_filter: str | None = None) -> list[dict]:
+    """
+    Search text items by content.
+
+    Args:
+        query:      Free-text search (empty string → all text items).
+        tag_filter: Optional tag string like '#code'. When provided, only
+                    items that carry that tag are returned.
+
+    Combines results as:  content LIKE query  AND  tag_filter (if set).
+    """
+    if tag_filter:
+        tag = tag_filter.strip().lower()
+        if not tag.startswith("#"):
+            tag = f"#{tag}"
+
+        sql = """
+            SELECT * FROM clipboard_items
+            WHERE type = 'text' AND content LIKE :query
+              AND (
+                  tags = :tag
+                  OR tags LIKE :tag_start
+                  OR tags LIKE :tag_mid
+                  OR tags LIKE :tag_end
+              )
+            ORDER BY is_pinned DESC, created_at DESC
+        """
+        params = {
+            "query":     f"%{query}%",
+            "tag":       tag,
+            "tag_start": f"{tag},%",
+            "tag_mid":   f"%,{tag},%",
+            "tag_end":   f"%,{tag}",
+        }
+        with _db() as conn:
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ── simple path (no tag filter) — same behaviour as before ──
     with _db() as conn:
         cursor = conn.execute("""
             SELECT * FROM clipboard_items
@@ -159,6 +218,360 @@ def update_sort_order(item_id: int, order: int) -> None:
             "UPDATE clipboard_items SET sort_order = ? WHERE id = ?",
             (order, item_id)
         )
+
+
+# ─────────────────────────────────────────────
+# TAGS  (W001)
+# ─────────────────────────────────────────────
+
+def _parse_tags(raw: str) -> list[str]:
+    """Convert stored '#tag1,#tag2' string → clean list, drop empty strings."""
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def _serialize_tags(tags: list[str]) -> str:
+    """Convert list → '#tag1,#tag2' string ready for DB."""
+    return ",".join(tags)
+
+
+def get_tags(item_id: int) -> list[str]:
+    """Return the list of tags for a given item. Empty list if item not found."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT tags FROM clipboard_items WHERE id = ?", (item_id,)
+        ).fetchone()
+    if not row:
+        return []
+    return _parse_tags(row["tags"] or "")
+
+
+def add_tag(item_id: int, tag: str) -> list[str]:
+    """
+    Add a tag to an item (idempotent — won't add duplicates).
+    Tag is normalised to lowercase and prefixed with '#' if missing.
+    Returns the updated tag list.
+    """
+    tag = tag.strip().lower()
+    if not tag.startswith("#"):
+        tag = f"#{tag}"
+
+    current = get_tags(item_id)
+    if tag in current:
+        return current  # already there — nothing to do
+
+    updated = current + [tag]
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET tags = ?, updated_at = ? WHERE id = ?",
+            (_serialize_tags(updated), now, item_id),
+        )
+    return updated
+
+
+def remove_tag(item_id: int, tag: str) -> list[str]:
+    """
+    Remove a tag from an item.
+    Returns the updated tag list (unchanged if tag wasn't present).
+    """
+    tag = tag.strip().lower()
+    if not tag.startswith("#"):
+        tag = f"#{tag}"
+
+    current = get_tags(item_id)
+    if tag not in current:
+        return current
+
+    updated = [t for t in current if t != tag]
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET tags = ?, updated_at = ? WHERE id = ?",
+            (_serialize_tags(updated), now, item_id),
+        )
+    return updated
+
+
+def get_items_by_tag(tag: str) -> list[dict]:
+    """
+    Return all items that contain the given tag.
+    Pinned items first, then descending by date.
+    """
+    tag = tag.strip().lower()
+    if not tag.startswith("#"):
+        tag = f"#{tag}"
+
+    # Four LIKE patterns cover every position in the comma-separated string:
+    # exact match, tag at start, tag in middle, tag at end.
+    with _db() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM clipboard_items
+            WHERE tags = ?
+               OR tags LIKE ?
+               OR tags LIKE ?
+               OR tags LIKE ?
+            ORDER BY is_pinned DESC, created_at DESC
+            """,
+            (tag, f"{tag},%", f"%,{tag},%", f"%,{tag}"),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+# ─────────────────────────────────────────────
+# COLLECTIONS  (W004)
+# ─────────────────────────────────────────────
+
+def create_collection(name: str) -> int:
+    """Create a new collection. Returns its ID. Ignores duplicate names."""
+    name = name.strip()
+    if not name:
+        raise ValueError("Collection name cannot be empty")
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO collections (name, created_at, updated_at) VALUES (?, ?, ?)",
+            (name, now, now),
+        )
+        if cursor.lastrowid:
+            return cursor.lastrowid
+        # Already exists — return existing ID
+        row = conn.execute(
+            "SELECT id FROM collections WHERE name = ?", (name,)
+        ).fetchone()
+        return row["id"] if row else 0
+
+
+def delete_collection(collection_id: int) -> bool:
+    """Delete a collection. Items in it become uncategorized (collection_id = NULL)."""
+    with _db() as conn:
+        # Unlink items first
+        conn.execute(
+            "UPDATE clipboard_items SET collection_id = NULL WHERE collection_id = ?",
+            (collection_id,),
+        )
+        conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
+    return True
+
+
+def get_collections() -> list[dict]:
+    """Return all collections with item counts."""
+    with _db() as conn:
+        rows = conn.execute("""
+            SELECT c.id, c.name, c.created_at,
+                   COUNT(ci.id) AS item_count
+            FROM collections c
+            LEFT JOIN clipboard_items ci ON ci.collection_id = c.id
+            GROUP BY c.id
+            ORDER BY c.name
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_collection_by_id(collection_id: int) -> dict | None:
+    """Get a single collection by ID."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT * FROM collections WHERE id = ?", (collection_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def rename_collection(collection_id: int, new_name: str) -> bool:
+    """Rename an existing collection."""
+    new_name = new_name.strip()
+    if not new_name:
+        return False
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE collections SET name = ?, updated_at = ? WHERE id = ?",
+            (new_name, now, collection_id),
+        )
+    return True
+
+
+def move_to_collection(item_id: int, collection_id: int | None) -> None:
+    """Move an item to a collection (or uncategorized if collection_id is None)."""
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET collection_id = ?, updated_at = ? WHERE id = ?",
+            (collection_id, now, item_id),
+        )
+
+
+def get_items_by_collection(collection_id: int | None) -> list[dict]:
+    """
+    Return items in a specific collection.
+    If collection_id is None, return uncategorized items.
+    """
+    with _db() as conn:
+        if collection_id is None:
+            cursor = conn.execute("""
+                SELECT * FROM clipboard_items
+                WHERE collection_id IS NULL
+                ORDER BY is_pinned DESC, created_at DESC
+            """)
+        else:
+            cursor = conn.execute("""
+                SELECT * FROM clipboard_items
+                WHERE collection_id = ?
+                ORDER BY is_pinned DESC, created_at DESC
+            """, (collection_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_all_tags() -> list[str]:
+    """Return a deduplicated list of all tags used across all items."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT tags FROM clipboard_items WHERE tags != ''"
+        ).fetchall()
+    tags = set()
+    for row in rows:
+        for tag in _parse_tags(row["tags"]):
+            tags.add(tag)
+    return sorted(tags)
+
+
+def rename_tag(old_tag: str, new_tag: str) -> int:
+    """
+    Rename a tag globally across all items.
+    Returns the number of items updated.
+    """
+    old_tag = old_tag.strip().lower()
+    new_tag = new_tag.strip().lower()
+    if not old_tag.startswith("#"):
+        old_tag = f"#{old_tag}"
+    if not new_tag.startswith("#"):
+        new_tag = f"#{new_tag}"
+    if old_tag == new_tag:
+        return 0
+
+    updated = 0
+    items = get_items_by_tag(old_tag)
+    for item in items:
+        tags = get_tags(item["id"])
+        if old_tag in tags:
+            tags = [new_tag if t == old_tag else t for t in tags]
+            now = datetime.now().isoformat()
+            with _db() as conn:
+                conn.execute(
+                    "UPDATE clipboard_items SET tags = ?, updated_at = ? WHERE id = ?",
+                    (_serialize_tags(tags), now, item["id"]),
+                )
+            updated += 1
+    return updated
+
+
+def delete_tag(tag: str) -> int:
+    """
+    Remove a tag globally from all items.
+    Returns the number of items updated.
+    """
+    tag = tag.strip().lower()
+    if not tag.startswith("#"):
+        tag = f"#{tag}"
+
+    updated = 0
+    items = get_items_by_tag(tag)
+    for item in items:
+        tags = get_tags(item["id"])
+        if tag in tags:
+            tags = [t for t in tags if t != tag]
+            now = datetime.now().isoformat()
+            with _db() as conn:
+                conn.execute(
+                    "UPDATE clipboard_items SET tags = ?, updated_at = ? WHERE id = ?",
+                    (_serialize_tags(tags), now, item["id"]),
+                )
+            updated += 1
+    return updated
+
+
+# ─────────────────────────────────────────────
+# EXPORT  (W008)
+# ─────────────────────────────────────────────
+
+def export_items_txt(item_ids: list[int]) -> str:
+    """Export items as plain text. One block per item."""
+    lines = []
+    for iid in item_ids:
+        item = get_item_by_id(iid)
+        if not item:
+            continue
+        lines.append(f"[{item['type'].upper()}] {item['created_at']}")
+        if item["type"] == "text":
+            lines.append(item["content"])
+        else:
+            lines.append(item["content"])
+        if item.get("tags"):
+            lines.append(f"Tags: {item['tags']}")
+        lines.append("")  # blank separator
+    return "\n".join(lines)
+
+
+def export_items_json(item_ids: list[int]) -> list[dict]:
+    """Export items as a JSON-serializable list of dicts."""
+    result = []
+    for iid in item_ids:
+        item = get_item_by_id(iid)
+        if item:
+            result.append({
+                "id": item["id"],
+                "type": item["type"],
+                "content": item["content"],
+                "tags": item.get("tags", ""),
+                "is_pinned": item["is_pinned"],
+                "created_at": item["created_at"],
+            })
+    return result
+
+# ══════════════════════════════════════════
+# W008 — Export
+# ══════════════════════════════════════════
+def export_items(item_ids: list[int], fmt: str) -> str:
+    """
+    Export items to a formatted string.
+    fmt: 'txt' or 'json'
+    Returns the formatted string content.
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    if fmt == "json":
+        rows = []
+        for iid in item_ids:
+            item = get_item_by_id(iid)
+            if item:
+                rows.append({
+                    "id":         item["id"],
+                    "type":       item["type"],
+                    "content":    item["content"],
+                    "created_at": item["created_at"],
+                    "tags":       get_tags(item["id"]),
+                })
+        return _json.dumps(rows, indent=2, ensure_ascii=False)
+
+    else:  # txt
+        lines = []
+        for iid in item_ids:
+            item = get_item_by_id(iid)
+            if not item:
+                continue
+            ts = item.get("created_at", "")
+            try:
+                ts = _dt.fromisoformat(ts).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+            lines.append(f"[{ts}] ({item['type'].upper()})")
+            lines.append(item["content"])
+            tags = get_tags(item["id"])
+            if tags:
+                lines.append("Tags: " + ", ".join(tags))
+            lines.append("─" * 48)
+        return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────

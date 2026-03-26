@@ -82,6 +82,22 @@ QFrame#ItemCard[pinned="true"][focused="true"] {
     border: 1px solid #ffcc00;
     background-color: #1f1e00;
 }
+QFrame#ItemCard[selected="true"] {
+    border: 2px solid #00ff41;
+    background-color: #0a1a0f;
+}
+QFrame#ItemCard[pinned="true"][selected="true"] {
+    border: 2px solid #00ff41;
+    background-color: #1f2e1f;
+}
+QFrame#ItemCard[selected="true"]:hover {
+    border: 2px solid #00ff41;
+    background-color: #0d260d;
+}
+
+QFrame#ItemCard[selected="true"] #DragHandle {
+    color: #00ff41;
+}
 
 /* ── Settings Button ── */
 QPushButton#SettingsBtn {
@@ -278,4 +294,207 @@ QFrame#HintFrame {
     border: 1px solid #222;
     border-radius: 6px;
     padding: 8px;
+}
+
+/* ════════════════════════════════════════════
+   W002 — Tags
+   ════════════════════════════════════════════ */
+
+/* Tag input row container */
+QWidget#TagInputRow {
+    background: transparent;
+}
+
+/* Chip wrap row */
+QWidget#ChipWrap {
+    background: transparent;
+}
+
+/* Individual chip frame — colors are set inline per-tag in TagChip.__init__ */
+QFrame#TagChip {
+    border-radius: 10px;
+    padding: 0 4px;
+}
+
+/* Chip label — color set inline */
+QLabel#TagChipLabel {
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Tag text input */
+QLineEdit#TagInput {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #ffffff22;
+    color: #aaa;
+    font-size: 11px;
+    padding: 0 2px;
+    border-radius: 0;
+}
+QLineEdit#TagInput:focus {
+    border-bottom: 1px solid #4a9eff88;
+    color: #ddd;
+}
+
+/* Autocomplete dropdown */
+QAbstractItemView {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    color: #ccc;
+    selection-background-color: #00ff4122;
+    selection-color: #00ff41;
+    padding: 2px;
+}
+
+/* ════════════════════════════════════════════
+   W005 — Collections Sidebar
+   ════════════════════════════════════════════ */
+
+QFrame#Sidebar {
+    background-color: #0a0a0a;
+    border-right: 1px solid #1e1e1e;
+}
+
+QListWidget#CollectionsList {
+    background: transparent;
+    border: none;
+    outline: none;
+}
+QListWidget#CollectionsList::item {
+    padding: 8px;
+    color: #ccc;
+    border-radius: 4px;
+    margin-bottom: 2px;
+}
+QListWidget#CollectionsList::item:selected {
+    background: #00ff4122;
+    color: #00ff41;
+    border-left: 2px solid #00ff41;
+}
+QListWidget#CollectionsList::item:hover:!selected {
+    background: #1a1a1a;
+}
+
+/* Add Collection button */
+QPushButton#AddCollBtn {
+    color: #00ff41;
+    background-color: #00ff4111;
+    border: 1px solid #00ff4166;
+    border-radius: 12px; 
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0px; 
+    text-align: center;
+}
+QPushButton#AddCollBtn:hover {
+    background-color: #00ff4144;
+    border: 1px solid #00ff41;
+    color: #ffffff;
+}
+
+/* ════════════════════════════════════════════
+   Drag & Drop Visual Feedback
+   ════════════════════════════════════════════ */
+
+/* Card being hovered as a drop target */
+QFrame#ItemCard[droptarget="true"] {
+    border: 2px dashed #00ff41;
+    background-color: #0a2a15;
+}
+
+QFrame#ItemCard[droptarget="true"]:hover {
+    border: 2px dashed #00ff41;
+    background-color: #0d3318;
+}
+
+/* ════════════════════════════════════════════
+   W006 — Multi-select Hint Strip
+   ════════════════════════════════════════════ */
+
+QFrame#HintStrip {
+    background-color: #0d1f0d;
+    border-bottom: 1px solid #00ff4133;
+    border-top: 1px solid #00ff4122;
+}
+
+QLabel#HintText {
+    color: #888;
+    font-size: 11px;
+    background: transparent;
+}
+
+QPushButton#HintDismissBtn {
+    background: transparent;
+    color: #444;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+QPushButton#HintDismissBtn:hover {
+    color: #00ff41;
+    border-color: #00ff4166;
+    background: #00ff4111;
+}
+
+/* ════════════════════════════════════════════
+   W007 — Bulk Actions Toolbar
+   ════════════════════════════════════════════ */
+
+QFrame#BulkBar {
+    background-color: #0a1a0f;
+    border-top: 1px solid #00ff4155;
+    border-bottom: 1px solid #00ff4122;
+}
+
+QLabel#BulkCountLabel {
+    color: #00ff41;
+    font-weight: bold;
+    font-size: 12px;
+    background: transparent;
+}
+
+QPushButton#BulkBtn {
+    background-color: #1a2a1a;
+    color: #ccc;
+    border: 1px solid #2a3a2a;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+QPushButton#BulkBtn:hover {
+    background-color: #00ff4122;
+    color: #00ff41;
+    border-color: #00ff4166;
+}
+
+QPushButton#BulkBtnDanger {
+    background-color: #2a1a1a;
+    color: #ff6666;
+    border: 1px solid #3a2a2a;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+QPushButton#BulkBtnDanger:hover {
+    background-color: #ff444422;
+    color: #ff4444;
+    border-color: #ff444466;
+}
+
+QPushButton#BulkBtnCancel {
+    background: transparent;
+    color: #555;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+QPushButton#BulkBtnCancel:hover {
+    color: #aaa;
+    border-color: #444;
 }

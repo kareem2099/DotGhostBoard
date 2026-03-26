@@ -9,13 +9,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned for v1.3.0 — *Wraith*
-- Tag system: assign custom tags to items (#code, #link, #pass)
-- Filter by tag in search bar
-- Collections: group pinned items into named folders
-- Multi-select: Ctrl+Click to select multiple cards
-- Bulk delete / bulk pin selected items
-- Export selected items to .txt or .json
+### Planned for v1.4.0 — *Eclipse*
+- Encrypted items (AES-256 encryption, master lock, stealth mode)
+- Cloud sync via local-network peer
+- Plugin API for custom item types
+- Light theme
+
+---
+
+## [1.3.0] — 2026-03-26 — *Wraith*
+
+Tags, Collections, Multi-Select & Export release — a complete tagging system with autocomplete and global tag manager, named collections with sidebar panel and drag-to-organize, multi-select with Ctrl+Click and Shift+Click, bulk actions toolbar, and export to .txt/.json.
+
+### Added
+- **Tag system** — `tags TEXT DEFAULT ''` column added to `clipboard_items` via migration; tags stored as comma-separated `#tag1,#tag2` string; `add_tag()`, `remove_tag()`, `get_tags()`, `get_items_by_tag()` in `core/storage.py`; four-pattern `LIKE` query prevents false positives (e.g. `#py` won't match `#python`); `get_all_tags()` returns deduplicated sorted list; `rename_tag()` and `delete_tag()` for global tag operations
+- **Tag input widget on cards** — `TagInputRow` (`ui/widgets.py`) shows existing tags as colored `TagChip` pills (rotating 6-palette color scheme); inline `QLineEdit` with `QCompleter` autocomplete from existing DB tags; `returnPressed` emits signal; signal chain: `TagInputRow.sig_tag_added` → `ItemCard.sig_tag_added` → `Dashboard._on_tag_added()` → `storage.add_tag()` → `card.on_tag_added()` (UI confirm)
+- **Combined text + tag search** — `_on_search()` in `ui/dashboard.py` parses mixed queries like `"python #code"`; tag-only filter works on all item types (images, video, text); `storage.search_items(query, tag_filter)` extended with four-pattern LIKE join
+- **Collections system** — `collections` table with `id`, `name`, `created_at`, `updated_at`; `clipboard_items.collection_id` nullable FK (NULL = Uncategorized); `create_collection()`, `delete_collection()`, `get_collections()`, `move_to_collection()`, `get_items_by_collection()` in `core/storage.py`; `get_collections()` uses `LEFT JOIN` to include item counts
+- **Collections sidebar panel** — `QListWidget` on left side (`ui/dashboard.py`); "❖ All Items" default entry; click to filter, right-click to rename/delete, `+` button to create; drag card onto collection name to move via `application/x-dotghost-card-id` MIME data
+- **Multi-select cards** — `_selected_ids: set[int]` tracks selection; `_last_clicked_id` enables Shift+Click range selection; `ItemCard.sig_clicked(item_id, modifiers)` emits keyboard modifiers; Ctrl+Click toggles single, Shift+Click selects range, plain click clears; `set_selected()` toggles Qt property + shows/hides neon green `✓` overlay badge
+- **One-time hint strip** — `QFrame#HintStrip` below search bar shows multi-select keyboard shortcuts; "✕ got it" dismisses and persists `multiselect_hint_dismissed` in settings; re-shows on first Ctrl+Click if not yet dismissed
+- **Drag & drop visual feedback** — `QGraphicsOpacityEffect` dims source card to 35% opacity during drag; ghost pixmap is 72% opaque with neon green rounded-rect border; `set_drop_target()` highlights valid drop targets with dashed green border + green background
+- **Bulk actions toolbar** — `_bulk_bar` `QFrame` shows when 2+ cards selected; buttons: Pin All, Unpin All, Add Tag, Export, Delete All, Cancel; `_update_bulk_bar()` toggles visibility based on selection count; bulk delete shows confirmation dialog and skips pinned items
+- **Export to .txt / .json** — `storage.export_items(item_ids, fmt)` in `core/storage.py`; `.json` format includes `id`, `type`, `content`, `created_at`, `tags` (as list); `.txt` format has timestamped blocks with separator lines; `_bulk_export()` shows format picker dialog then save file dialog via `QFileDialog`
+- **Global tag manager** — `TagManagerDialog` in `ui/settings.py`; accessible from ⚙ Settings → "🏷 Manage Tags…"; lists all tags with item counts; rename (global via `storage.rename_tag()`) and delete (global via `storage.delete_tag()`); empty state message when no tags exist
+- **Unit tests** — `tests/test_storage_v130.py` with 20+ tests covering tag CRUD, collection CRUD, four-pattern LIKE queries, tag rename/delete, export, and edge cases (partial tag name false positives, tag position in list, uncategorized items after collection deletion)
+
+### Changed
+- **`core/storage.py`** — `init_db()` migration adds `tags` column and `collections` table + `collection_id` FK; new functions: `get_all_tags()`, `rename_tag()`, `delete_tag()`, `export_items()`, `export_items_txt()`, `export_items_json()`, `create_collection()`, `delete_collection()`, `get_collections()`, `get_collection_by_id()`, `rename_collection()`, `move_to_collection()`, `get_items_by_collection()`; `search_items()` extended with optional `tag_filter` parameter
+- **`ui/dashboard.py`** — `_build_ui()` adds collections sidebar, hint strip, and bulk actions toolbar; `_on_card_clicked()` handles Ctrl+Click, Shift+Click, plain click with `_update_bulk_bar()`; `_clear_selection()` resets `_last_clicked_id` and hides bulk bar; new methods: `_bulk_pin()`, `_bulk_delete()`, `_bulk_export()`, `_bulk_add_tag()`, `_update_bulk_bar()`, `_dismiss_hint()`, `_refresh_sidebar()`, `_create_collection()`, `_on_collection_selected()`, `_sidebar_drop_event()`; `QFileDialog` added to imports
+- **`ui/widgets.py`** — `ItemCard._build_ui()` adds `TagInputRow` and `✓` check overlay; `set_selected()` shows/hides overlay; `set_drop_target()` for drag visual feedback; `_do_drag()` uses ghost pixmap with `QPainter` (72% opacity + neon border) and `QGraphicsOpacityEffect` (35% dim on source); imports updated with `QGraphicsOpacityEffect`, `QPainter`, `QPen`, `QColor`
+- **`ui/ghost.qss`** — added styles for: `ItemCard[selected="true"]` (neon green border), `ItemCard[droptarget="true"]` (dashed green), `QFrame#BulkBar` (green-tinted toolbar), `QLabel#BulkCountLabel`, `QPushButton#BulkBtn` / `#BulkBtnDanger` / `#BulkBtnCancel`, `QFrame#HintStrip`, `QLabel#HintText`, `QPushButton#HintDismissBtn`, `ItemCard[selected="true"] #DragHandle` (green)
+- **`ui/settings.py`** — "🏷 Manage Tags…" button added to settings form; `_open_tag_manager()` opens `TagManagerDialog`
 
 ---
 

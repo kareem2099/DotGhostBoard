@@ -48,8 +48,8 @@
     {
       "version": "v1.2.0",
       "codename": "Specter",
-      "status": "planned",
-      "target_date": "2026-06-01",
+      "status": "released",
+      "released_date": "2026-03-25",
       "goal": "Media — image thumbnails, video preview, capture cleanup",
       "features": [
         "Image thumbnail previews with lazy loading",
@@ -63,7 +63,7 @@
     {
       "version": "v1.3.0",
       "codename": "Wraith",
-      "status": "planned",
+      "status": "in_development",
       "target_date": "2026-07-01",
       "goal": "Power features — tags, collections, multi-select",
       "features": [

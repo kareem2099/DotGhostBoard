@@ -1,0 +1,107 @@
+{
+  "project": "DotGhostBoard",
+  "version": "v1.3.0",
+  "codename": "Wraith",
+  "status": "in_development",
+  "started": "2026-03-25",
+  "last_updated": "2026-03-25",
+  "todo": [
+    {
+      "id": "W001",
+      "category": "core",
+      "title": "Tag System — Database Schema & CRUD",
+      "description": "Add 'tags' TEXT column (comma-separated) to clipboard_items table via migration. Add get_tags(), add_tag(), remove_tag(), get_items_by_tag() functions in storage.py. Tags are stored as '#tag1,#tag2' format in the DB.",
+      "status": "done",
+      "priority": "critical",
+      "files": ["core/storage.py"]
+    },
+    {
+      "id": "W002",
+      "category": "ui",
+      "title": "Tag Input Widget on Item Cards",
+      "description": "Add a tag input field below the content preview on each ItemCard. User types a tag like '#code' and presses Enter to add it. Display tags as clickable colored chips. Click a chip to remove the tag. Tags sync to DB via storage.add_tag() / remove_tag().",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/widgets.py", "ui/dashboard.py"]
+    },
+    {
+      "id": "W003",
+      "category": "ui",
+      "title": "Filter by Tag in Search Bar",
+      "description": "Extend the search bar to support tag filtering. Typing '#code' in search filters cards to only those tagged with #code. Combine text search + tag filter: 'python #code' shows text items containing 'python' AND tagged #code. Update storage.search_items() to accept optional tag filter.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/dashboard.py", "core/storage.py"]
+    },
+    {
+      "id": "W004",
+      "category": "core",
+      "title": "Collections — Database Schema & CRUD",
+      "description": "Create 'collections' table: id, name, created_at. Add 'collection_id' INTEGER FK column to clipboard_items table via migration. Add create_collection(), delete_collection(), get_collections(), move_to_collection() in storage.py. Default collection is NULL (uncategorized).",
+      "status": "done",
+      "priority": "critical",
+      "files": ["core/storage.py"]
+    },
+    {
+      "id": "W005",
+      "category": "ui",
+      "title": "Collections Sidebar Panel",
+      "description": "Add a collapsible sidebar on the left of Dashboard showing collection names. Click a collection to filter cards. 'All' shows everything. Right-click a collection to rename or delete. '+' button to create new collection. Drag a card onto a collection name to move it.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/dashboard.py", "ui/widgets.py"]
+    },
+    {
+      "id": "W006",
+      "category": "ui",
+      "title": "Multi-Select Cards (Ctrl+Click)",
+      "description": "Hold Ctrl and click a card to toggle its selection. Selected cards get a neon green border + checkbox overlay. Shift+Click to select a range. Escape clears selection. Add 'selected' property to ItemCard. Dashboard tracks _selected_ids set.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/widgets.py", "ui/dashboard.py"]
+    },
+    {
+      "id": "W007",
+      "category": "ui",
+      "title": "Bulk Actions Toolbar",
+      "description": "When 2+ cards are selected, show a floating action bar at the bottom: 'Pin All', 'Unpin All', 'Delete All', 'Export', 'Add Tag'. Each button operates on all selected item IDs. Confirmation dialog before bulk delete.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/dashboard.py"]
+    },
+    {
+      "id": "W008",
+      "category": "core",
+      "title": "Export Selected Items to .txt / .json",
+      "description": "Add export_items(item_ids, format) to storage.py. 'txt' format: one item per line with timestamp and content. 'json' format: array of item objects. Show file save dialog (QFileDialog) when user clicks Export. Export all selected items or all visible if none selected.",
+      "status": "done",
+      "priority": "medium",
+      "files": ["core/storage.py", "ui/dashboard.py"]
+    },
+    {
+      "id": "W009",
+      "category": "ui",
+      "title": "Tag Autocomplete & Tag Manager",
+      "description": "Show autocomplete dropdown when typing '#' in tag input — lists existing tags from DB. Add a 'Manage Tags' button in settings that opens a dialog to rename/delete/merge tags globally. Update all affected items when a tag is renamed.",
+      "status": "done",
+      "priority": "medium",
+      "files": ["ui/widgets.py", "ui/settings.py", "core/storage.py"]
+    },
+    {
+      "id": "W010",
+      "category": "tests",
+      "title": "Unit Tests for v1.3.0 Features",
+      "description": "Add tests/test_storage_v130.py covering: tag CRUD, collection CRUD, search with tag filter, export to txt/json. Add tests for multi-select logic if extractable. Target: 20+ new tests.",
+      "status": "done",
+      "priority": "high",
+      "files": ["tests/test_storage_v130.py"]
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "done": 10,
+    "in_progress": 0,
+    "pending": 0,
+    "completion_percent": 100
+  }
+}

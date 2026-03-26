@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.2.0-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Specter-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.3.0-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Wraith-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-94%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-114%2B%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-MIT-ffcc00?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -47,6 +47,23 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Image viewer popup** — Full-size image preview with smooth scaling; `Ctrl+C` to copy image; `Escape` to close
 - **Copy image to clipboard** — Image items now copy actual image data (not file path) back to clipboard
 - **Drag & drop reorder** — Pinned cards show drag handle; reorder persists via `sort_order` in database
+- **Tag system** — Assign custom `#tags` to any item; colored chip display with rotating 6-palette colors; inline autocomplete from existing tags
+
+<img src="data/assets/1.3.0-tag.gif" width="100%" alt="Tag System Demo" />
+
+- **Combined search** — Search by text and tag simultaneously (e.g. `"python #code"`); tag-only filter works on all item types
+- **Collections** — Group items into named folders; sidebar panel with click-to-filter, right-click to rename/delete, drag card to organize
+
+<img src="data/assets/1.3.0-Collections.gif" width="100%" alt="Collections Demo" />
+
+- **Multi-select** — `Ctrl+Click` to toggle, `Shift+Click` for range selection; neon green `✓` overlay on selected cards
+
+<img src="data/assets/1.3.0-Multi-Select.gif" width="100%" alt="Multi-Select Demo" />
+
+- **Bulk actions toolbar** — Appears when 2+ selected: Pin All, Unpin All, Add Tag, Export, Delete All, Cancel
+- **Export** — Export selected items to `.txt` (timestamped blocks) or `.json` (structured data with tags)
+- **Global tag manager** — ⚙ Settings → "Manage Tags…"; rename or delete tags across all items in one click
+- **Drag & drop visual feedback** — Ghost pixmap with neon border while dragging; source card dims to 35%; drop targets highlight with dashed green border
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with your desktop environment dock and app launcher.
@@ -194,7 +211,7 @@ tests/test_thumbnailer.py .........                                     [100%]
 | v1.0.0 | Ghost | ✅ Released | Stable base — clipboard, pin system, dark UI, SQLite |
 | v1.1.0 | Phantom | ✅ Released | Settings panel, keyboard nav, double-click paste, SVG icon |
 | v1.2.0 | Specter | ✅ Released | Image thumbnails, video preview via ffmpeg, auto-cleanup, image viewer |
-| v1.3.0 | Wraith | 📋 Planned | Tags, collections, multi-select, export |
+| v1.3.0 | Wraith | ✅ Released | Tags, collections, multi-select, bulk actions, export |
 | v1.4.0 | Eclipse | 📋 Planned | AES-256 encryption, master lock, stealth mode |
 | v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |
 
