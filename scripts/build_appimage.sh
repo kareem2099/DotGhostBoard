@@ -6,8 +6,8 @@
 set -e
 
 APP_NAME="DotGhostBoard"
-# Get version from README or default to 1.3.0
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.3.0")
+# Get version from README or default to 1.4.0
+VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.4.0")
 ARCH="x86_64"
 APPDIR="${APP_NAME}.AppDir"
 

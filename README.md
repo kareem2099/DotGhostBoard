@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.3.1-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Wraith-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.4.0-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Eclipse-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-114%2B%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-162%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-MIT-ffcc00?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -20,7 +20,7 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 
 <img src="data/assets/demo-ui.gif" width="100%" alt="DotGhostBoard UI Demo" />
 
-<img src="data/assets/demo-capture.gif" width="100%" alt="DotGhostBoard UI Demo" />
+<img src="data/assets/demo-capture.gif" width="100%" alt="DotGhostBoard Capture Demo" />
 
 ---
 
@@ -52,13 +52,25 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 <img src="data/assets/1.3.0-tag.gif" width="100%" alt="Tag System Demo" />
 
 - **Combined search** — Search by text and tag simultaneously (e.g. `"python #code"`); tag-only filter works on all item types
-- **Collections** — Group items into named folders; sidebar panel with click-to-filter, right-click to rename/delete, drag card to organize
+- **Collections & Drag-and-Drop** — Group items into named folders; sidebar panel with click-to-filter, right-click to rename/delete. Features intuitive drag-and-drop interface for organizing items.
 
-<img src="data/assets/1.3.0-Collections.gif" width="100%" alt="Collections Demo" />
+<img src="data/assets/demo-drag-and-drop.gif" width="100%" alt="Drag and Drop Collections Demo" />
 
 - **Multi-select** — `Ctrl+Click` to toggle, `Shift+Click` for range selection; neon green `✓` overlay on selected cards
 
 <img src="data/assets/1.3.0-Multi-Select.gif" width="100%" alt="Multi-Select Demo" />
+
+- **Local Encryption (Eclipse Mode)** — Secure sensitive clipboard items using AES-256 encryption. Items are hidden and locked behind a Secret Overlay until explicitly revealed.
+
+<img src="data/assets/demo-eclipse-encryption.gif" width="100%" alt="Local Encryption Demo" />
+
+- **Session Lock & Master Password** — Protect your entire dashboard with a Master Password. Features automatic timeout locking and a stylish blurred lock screen.
+
+<img src="data/assets/demo-session-lock.gif" width="100%" alt="Session Lock Demo" />
+
+- **Advanced Settings & Pro UI** — Comprehensive control over Stealth Mode, App Filters, Auto-lock timeouts, and a beautiful DotSuite licensing/about page.
+
+<img src="data/assets/demo-settings-and-about.gif" width="100%" alt="Settings and About Demo" />
 
 - **Bulk actions toolbar** — Appears when 2+ selected: Pin All, Unpin All, Add Tag, Export, Delete All, Cancel
 - **Export** — Export selected items to `.txt` (timestamped blocks) or `.json` (structured data with tags)
@@ -66,7 +78,7 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Drag & drop visual feedback** — Ghost pixmap with neon border while dragging; source card dims to 35%; drop targets highlight with dashed green border
 
 **Native Desktop Integration:**
-DotGhostBoard integrates seamlessly with  desktop environment dock and app launcher.
+DotGhostBoard integrates seamlessly with desktop environment dock and app launcher.
 
 <img src="data/assets/dock-icon.png" width="100%" alt="Kali Dock Integration" />
 
@@ -81,27 +93,31 @@ DotGhostBoard/
 ├── core/
 │   ├── watcher.py               # Clipboard monitor (QTimer-based)
 │   ├── storage.py               # Database CRUD layer
+│   ├── crypto.py                # AES-256 encryption engine (Eclipse)
+│   ├── secure_delete.py         # Secure file deletion (Eclipse)
+│   ├── app_filter.py            # App whitelist/blacklist (Eclipse)
 │   └── media.py                 # Image/video handler
 ├── ui/
 │   ├── dashboard.py             # Main window + keyboard nav + settings wiring
 │   ├── widgets.py               # Item card widget (double-click, focus)
-│   ├── settings.py              # Settings dialog (v1.1.0)
+│   ├── settings.py              # Settings dialog with About tab
+│   ├── lock_screen.py           # Master password lock screen (Eclipse)
 │   └── ghost.qss                # Dark neon stylesheet
 ├── data/
 │   ├── icons/                   # Generated app icons + ghost.svg source
 │   ├── captures/                # Saved images (.png)
-│   ├── pins/                    # Backup copies of pinned images
-│   ├── v_logs/                  # Video path log file
-│   └── settings.json            # User settings (v1.1.0)
+│   ├── assets/                  # GIFs, screenshots, demo media
+│   └── settings.json            # User settings
 ├── scripts/
 │   ├── generate_icon.py         # Draws ghost icon at 16/32/48/64/128/256px
 │   ├── install.sh               # Autostart + shortcut + .desktop installer
-│   └── setup_autostart.py       # Standalone Python autostart installer (v1.1.0)
+│   ├── build_appimage.sh        # AppImage builder
+│   └── setup_autostart.py       # Standalone Python autostart installer
 ├── tests/
-│   ├── test_storage.py          # 32 tests — full CRUD coverage
-│   └── test_media.py            # 27 tests — media detection & file ops
-├── todo_list(v1.0.0).json
-├── todo_list(v1.1.0).json
+│   ├── test_eclipse.py          # Eclipse feature tests (27+)
+│   ├── test_storage.py          # Storage CRUD tests
+│   └── test_media.py            # Media detection tests
+├── todo_list(v1.4.0).json
 ├── roadmap(v1.x).json
 ├── pytest.ini
 ├── requirements.txt
@@ -117,6 +133,7 @@ DotGhostBoard/
 | Python     | 3.11+    |
 | PyQt6      | 6.6.0+   |
 | Pillow     | 10.0.0+  |
+| cryptography | 41.0.0+ |
 | pytest     | 7.0.0+   |
 
 ---
@@ -228,16 +245,15 @@ python3 -m pytest
 
 Expected output:
 ```
-tests/test_media.py ...........................                         [ 28%]
-tests/test_settings.py ............                                     [ 41%]
-tests/test_storage.py ................................                  [ 75%]
-tests/test_storage_v120.py ..............                               [ 90%]
-tests/test_thumbnailer.py .........                                     [100%]
+tests/test_eclipse.py .................................    [ 20%]
+tests/test_media.py ...........................            [ 37%]
+tests/test_settings.py ............                       [ 44%]
+tests/test_storage.py ................................    [ 64%]
+tests/test_storage_v130.py ................................................. [ 94%]
+tests/test_thumbnailer.py .........                       [100%]
 
-94 passed in 0.40s
+162 passed in 6.16s
 ```
-
-<img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
 
 ---
 
@@ -249,7 +265,7 @@ tests/test_thumbnailer.py .........                                     [100%]
 | v1.1.0 | Phantom | ✅ Released | Settings panel, keyboard nav, double-click paste, SVG icon |
 | v1.2.0 | Specter | ✅ Released | Image thumbnails, video preview via ffmpeg, auto-cleanup, image viewer |
 | v1.3.0 | Wraith | ✅ Released | Tags, collections, multi-select, bulk actions, export |
-| v1.4.0 | Eclipse | 📋 Planned | AES-256 encryption, master lock, stealth mode |
+| v1.4.0 | Eclipse | ✅ Released | AES-256 encryption, master lock, stealth mode, pro UI |
 | v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |
 
 Full details in [`roadmap(v1.x).json`](roadmap(v1.x).json)

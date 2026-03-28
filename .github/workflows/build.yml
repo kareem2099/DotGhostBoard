@@ -138,7 +138,7 @@ jobs:
       - name: Create DEB
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.3.0"
+          [ -z "$VERSION" ] && VERSION="1.4.0"
 
           PKGDIR="dotghostboard_${VERSION}_amd64"
           mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,usr/share/applications,usr/share/icons/hicolor/256x256/apps}
@@ -262,7 +262,7 @@ jobs:
       - name: Create DMG
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.3.0"
+          [ -z "$VERSION" ] && VERSION="1.4.0"
 
           mkdir -p dist/dotghostboard.app/Contents/{MacOS,Resources}
           cp -r dist/dotghostboard/* dist/dotghostboard.app/Contents/MacOS/

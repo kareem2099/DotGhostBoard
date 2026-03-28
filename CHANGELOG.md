@@ -9,11 +9,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned for v1.4.0 — *Eclipse*
-- Encrypted items (AES-256 encryption, master lock, stealth mode)
+### Planned for v1.5.0 — *Nexus*
 - Cloud sync via local-network peer
 - Plugin API for custom item types
 - Light theme
+
+---
+
+## [1.4.0] — 2026-03-28 — *Eclipse*
+
+Security & encryption release — AES-256 encryption for sensitive items, master password lock, auto-lock, stealth mode, secure delete, app filter, right-click context menu for per-item encryption, and About tab with social links.
+
+### Added
+- **AES-256-GCM encryption engine** — `core/crypto.py` with `encrypt()`, `decrypt()`, `derive_key()` using PBKDF2-SHA256 (600K iterations) + per-install random salt stored in `~/.config/dotghostboard/eclipse.salt`; master password verifier via encrypted sentinel token in `eclipse.verify`; `save_master_password()`, `verify_password()`, `remove_master_password()` for full lifecycle
+- **Secret item schema** — `is_secret INTEGER DEFAULT 0` column added to `clipboard_items` via migration in `core/storage.py`; `mark_secret()`, `encrypt_item()`, `decrypt_item()`, `decrypt_item_permanent()`, `get_secret_items()`, `encrypt_all_text_items()`, `decrypt_all_secret_items()` for opt-in per-item encryption
+- **Right-click context menu** — `_on_card_context_menu()` in `ui/dashboard.py`; "🔐 Mark as Secret" for plain text items, "🔓 Remove Encryption" for secret items (with confirmation); only shown when master password is set; card rebuilds in-place at same position after encrypt/decrypt
+- **Lock Screen UI** — `ui/lock_screen.py` `LockScreen` QDialog; frameless, modal, always-on-top; dark neon theme; setup mode (first-time) and unlock mode; error shake on wrong password; `get_key()` returns derived AES key after success; Escape key blocked; close prevented until unlocked
+- **Master password in Settings** — Eclipse tab in `ui/settings.py` with Set/Change/Remove password buttons; verifies current password before changes; info message guides user to right-click cards for per-item encryption
+- **Auto-lock timer** — `auto_lock_minutes` setting (0–480, default 0 = disabled); `QTimer` resets on any user interaction (mouse, key); fires `_lock()` when idle exceeds threshold; requires master password
+- **Stealth mode** — `stealth_mode` boolean setting; uses `xprop` to set `_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER` X11 hints; window accessible only via tray icon or global hotkey; responsive resize (400px compact)
+- **Secure delete** — `core/secure_delete.py` with `secure_delete(path, passes=3)`; overwrites file bytes with random→zeros→random in 3 passes with `fsync`; integrated in `storage.delete_item(secure=True)` for image/video items
+- **App filter** — `core/app_filter.py` `AppFilter` class; blacklist/whitelist modes; detects active window via `xdotool` + `/proc/<pid>/comm` + `xprop WM_CLASS`; substring matching; fail-open when detection unavailable; Settings UI with mode selector and app list editor
+- **About tab** — `ui/settings.py` `_build_about_tab()` with logo, version v1.4.0 Eclipse, author FreeRave, MIT license, system info (Python/PyQt6/Qt/Platform/Arch), and social links organized in sections (Project, Articles, Social, Videos, Facebook)
+- **Unit tests** — `tests/test_eclipse.py` with 27+ tests across 4 classes: `TestCrypto` (encrypt/decrypt roundtrip, wrong key, tampered ciphertext, unicode, master password flow, PBKDF2 determinism, salt persistence), `TestSecureDelete` (file gone, nonexistent, overwrite, batch, empty), `TestAppFilter` (blacklist/whitelist, match/unmatch, fail-open, hot-reload, substring), `TestStorageEclipse` (mark_secret, encrypt_item, decrypt_item, wrong key, get_secret_items, already encrypted, image rejection, permanent decrypt)
+
+### Changed
+- **`ui/dashboard.py`** — `_add_card()` connects `sig_reveal_requested` and `customContextMenuRequested`; `_on_card_context_menu()` builds menu with Copy/Pin/Encrypt/Decrypt/Delete; `_encrypt_card()` and `_decrypt_card()` use `_rebuild_card_in_place()` to keep card position; `_lock()`, `_show_lock_screen()`, `_reset_auto_lock()`, `_set_stealth()`, `_on_reveal_requested()` for Eclipse state management; `_active_key` tracks session key; `setContextMenuPolicy(CustomContextMenu)` on every card
+- **`ui/widgets.py`** — `ItemCard` detects `is_secret` property; shows 🔐 badge and 👁 Reveal button; `_overlay_widget` + `_revealed_label` visibility toggle (no QStackedWidget); `reveal_content()` shows decrypted text, `_lock_content()` hides it; `on_session_locked()` re-hides revealed secrets; `setMaximumHeight` removed — QVBoxLayout handles sizing naturally
+- **`core/storage.py`** — `init_db()` migration adds `is_secret` column; `delete_item(secure=True)` integrates secure delete for image/video items; `mark_secret()`, `encrypt_item()`, `decrypt_item()`, `decrypt_item_permanent()`, `get_secret_items()`, `encrypt_all_text_items()`, `decrypt_all_secret_items()` added
+- **`ui/settings.py`** — Eclipse tab with master password (set/change/remove), auto-lock spinner, stealth checkbox, app filter editor; About tab with version/license/system/social; `_setup_master_password()` shows opt-in info message instead of auto-encrypting all items
+
+### Security
+- All encryption done locally — AES-256-GCM with PBKDF2 key derivation (600K iterations)
+- Master password never stored — only encrypted verifier token on disk
+- Session key cleared from memory on lock
+- Secure delete overwrites file bytes 3 times before unlinking
+- App filter prevents clipboard capture from password managers (keepassxc, bitwarden, etc.)
 
 ---
 
