@@ -255,6 +255,8 @@ tests/test_thumbnailer.py .........                       [100%]
 162 passed in 6.16s
 ```
 
+<img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
+
 ---
 
 ## Roadmap
