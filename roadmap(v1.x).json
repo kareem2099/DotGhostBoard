@@ -63,8 +63,8 @@
     {
       "version": "v1.3.0",
       "codename": "Wraith",
-      "status": "in_development",
-      "target_date": "2026-07-01",
+      "status": "released",
+      "released_date": "2026-03-26",
       "goal": "Power features — tags, collections, multi-select",
       "features": [
         "Tag system: assign custom tags to items (#code, #link, #pass)",
@@ -78,8 +78,8 @@
     {
       "version": "v1.4.0",
       "codename": "Eclipse",
-      "status": "planned",
-      "target_date": "2026-08-01",
+      "status": "released",
+      "released_date": "2026-03-28",
       "goal": "Security — encryption, master lock, stealth mode",
       "features": [
         "AES-256 encryption for sensitive items (marked as secret)",

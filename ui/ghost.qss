@@ -498,3 +498,36 @@ QPushButton#BulkBtnCancel:hover {
     color: #aaa;
     border-color: #444;
 }
+
+/* ── Eclipse buttons ───────────────────────────── */
+#LockBtn {
+    background: transparent;
+    color: #ff9900;
+    border: 1px solid #ff9900;
+    border-radius: 4px;
+    font-size: 14px;
+}
+#LockBtn:hover {
+    background: rgba(255, 153, 0, 0.15);
+}
+
+/* ── Secret card badge ─────────────────────────── */
+#SecretBadge {
+    color: #ff9900;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border: 1px solid #ff9900;
+    border-radius: 10px;
+    background: rgba(255, 153, 0, 0.1);
+}
+
+/* ── Reveal button on secret cards ─────────────── */
+#RevealBtn {
+    background: transparent;
+    color: #ff9900;
+    border: none;
+    font-size: 11px;
+    text-decoration: underline;
+}
+#RevealBtn:hover { color: #ffbb33; }

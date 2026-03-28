@@ -2,5 +2,12 @@
   "max_history": 200,
   "max_captures": 100,
   "theme": "dark",
-  "clear_on_exit": false
+  "clear_on_exit": false,
+  "multiselect_hint_dismissed": false,
+
+  "master_lock_enabled": false,
+  "auto_lock_minutes": 0,
+  "stealth_mode": false,
+  "app_filter_mode": "blacklist",
+  "app_filter_list": []
 }

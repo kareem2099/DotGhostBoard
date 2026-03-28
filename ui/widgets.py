@@ -5,6 +5,7 @@ Item card widget for DotGhostBoard.
 v1.2.0: lazy image loading (S001), image viewer on click (S004),
         drag handle for pinned reorder (S006).
 v1.3.0: tag input + chip display (W002).
+v1.4.0: secret item overlay, lock/reveal toggle, on_session_locked (E003).
 """
 
 import os
@@ -12,7 +13,8 @@ import logging
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSizePolicy, QApplication,
-    QLineEdit, QWidget, QCompleter, QGraphicsOpacityEffect
+    QLineEdit, QWidget, QCompleter, QGraphicsOpacityEffect,
+    QGraphicsBlurEffect, QStackedWidget,
 )
 from PyQt6.QtGui import QPixmap, QDrag, QImage, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QByteArray, QStringListModel
@@ -65,7 +67,9 @@ class TagChip(QFrame):
         self.tag = tag
         bg, fg = self._color_for(tag)
         self.setObjectName("TagChip")
-        self.setStyleSheet(f"QFrame#TagChip {{ background: {bg}; border: 1px solid {fg}44; }}")
+        self.setStyleSheet(
+            f"QFrame#TagChip {{ background: {bg}; border: 1px solid {fg}44; }}"
+        )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
@@ -170,7 +174,7 @@ class TagInputRow(QWidget):
 
     def _refresh_completer(self):
         all_tags = storage.get_all_tags()
-        model = QStringListModel(all_tags)
+        model    = QStringListModel(all_tags)
         completer = QCompleter(model, self._input)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -186,12 +190,15 @@ class ItemCard(QFrame):
     Sends signals to the Dashboard when the user interacts.
     """
 
-    sig_copy   = pyqtSignal(int)   # copy request
-    sig_pin    = pyqtSignal(int)   # pin/unpin request
-    sig_delete = pyqtSignal(int)   # delete request
-    sig_tag_added   = pyqtSignal(int, str)   # W002: (item_id, tag)
-    sig_tag_removed = pyqtSignal(int, str)   # W002: (item_id, tag)
-    sig_clicked = pyqtSignal(int, object)  # W006: (item_id, modifiers)
+    sig_copy        = pyqtSignal(int)
+    sig_pin         = pyqtSignal(int)
+    sig_delete      = pyqtSignal(int)
+    sig_tag_added   = pyqtSignal(int, str)
+    sig_tag_removed = pyqtSignal(int, str)
+    sig_clicked     = pyqtSignal(int, object)
+
+    # E003: emitted when the card asks Dashboard for the active key
+    sig_reveal_requested = pyqtSignal(int)   # (item_id)
 
     PREVIEW_MAX_LEN = 120
     THUMB_MAX_W     = 300
@@ -202,10 +209,15 @@ class ItemCard(QFrame):
         self.item_id   = item["id"]
         self.item_type = item.get("type", "text")
         self.is_pinned = bool(item.get("is_pinned", 0))
-        self._file_path = item.get("content", "")
-        self._preview   = item.get("preview") or self._file_path
-        self._img_label: QLabel | None = None
-        self._tag_row:   TagInputRow | None = None
+        self.is_secret = bool(item.get("is_secret", 0))   # E003
+
+        self._file_path   = item.get("content", "")
+        self._preview     = item.get("preview") or self._file_path
+        self._img_label:  QLabel | None        = None
+        self._tag_row:    TagInputRow | None   = None
+
+        # E003: revealed state — True while decrypted content is visible
+        self._is_revealed: bool = False
 
         self.setObjectName("ItemCard")
         self.setProperty("pinned", str(self.is_pinned).lower())
@@ -214,17 +226,19 @@ class ItemCard(QFrame):
 
         self._build_ui(item)
 
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # Build UI
+    # ──────────────────────────────────────────────────────────
     def _build_ui(self, item: dict):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(4)
 
-        # ── Top row: drag handle (pinned only) + badge + meta + buttons ──
+        # ── Top row ──────────────────────────────────────────
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
-        # W006: selection checkbox overlay (hidden by default)
+        # W006: selection checkmark overlay
         self._check_overlay = QLabel("✓")
         self._check_overlay.setObjectName("SelectionCheck")
         self._check_overlay.setFixedSize(18, 18)
@@ -236,7 +250,7 @@ class ItemCard(QFrame):
         self._check_overlay.hide()
         top_row.addWidget(self._check_overlay)
 
-        # W005: drag handle for all cards (to drag to collections)
+        # Drag handle (all cards)
         self._drag_handle = QLabel("⠿")
         self._drag_handle.setObjectName("DragHandle")
         self._drag_handle.setFixedWidth(16)
@@ -244,6 +258,13 @@ class ItemCard(QFrame):
         self._drag_handle.setStyleSheet("color:#555; font-size:16px;")
         self._drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
         top_row.addWidget(self._drag_handle)
+
+        # E003: secret badge (🔐 pill, only for secret items)
+        if self.is_secret:
+            secret_badge = QLabel("🔐")
+            secret_badge.setObjectName("SecretBadge")
+            secret_badge.setToolTip("This item is encrypted")
+            top_row.addWidget(secret_badge)
 
         # Type badge
         badge = QLabel(item["type"].upper())
@@ -261,6 +282,18 @@ class ItemCard(QFrame):
         top_row.addWidget(badge)
         top_row.addWidget(meta)
         top_row.addStretch()
+
+        # E003: secret toggle button (lock/reveal) — only for secret items
+        if self.is_secret:
+            self._secret_btn = QPushButton("👁 Reveal")
+            self._secret_btn.setObjectName("RevealBtn")
+            self._secret_btn.setFixedHeight(24)
+            self._secret_btn.setToolTip("Reveal encrypted content")
+            self._secret_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._secret_btn.clicked.connect(self._on_secret_btn_clicked)
+            top_row.addWidget(self._secret_btn)
+        else:
+            self._secret_btn = None
 
         self.pin_btn = QPushButton("📍" if self.is_pinned else "📌")
         self.pin_btn.setObjectName("PinBtn")
@@ -286,12 +319,30 @@ class ItemCard(QFrame):
         top_row.addWidget(del_btn)
         main_layout.addLayout(top_row)
 
-        # ── Content preview ──
-        content_widget = self._build_content(item)
-        if content_widget:
-            main_layout.addWidget(content_widget)
+        # ── Content area ──────────────────────────────────────
+        if self.is_secret:
+            # E003: two widgets, toggle visibility — no QStackedWidget
+            # which causes unpredictable height expansion
+            self._overlay_widget = self._build_secret_overlay()
+            main_layout.addWidget(self._overlay_widget)
 
-        # ── W002: Tag input row ──
+            self._revealed_label = QLabel()
+            self._revealed_label.setObjectName("ItemText")
+            self._revealed_label.setWordWrap(True)
+            self._revealed_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            self._revealed_label.hide()
+            main_layout.addWidget(self._revealed_label)
+
+            # Keep _content_stack as None — not used in this approach
+            self._content_stack = None
+        else:
+            content_widget = self._build_content(item)
+            if content_widget:
+                main_layout.addWidget(content_widget)
+
+        # ── W002: Tag input row ───────────────────────────────
         current_tags = storage.get_tags(self.item_id)
         self._tag_row = TagInputRow(self.item_id, current_tags)
         self._tag_row.sig_tag_added.connect(
@@ -302,7 +353,90 @@ class ItemCard(QFrame):
         )
         main_layout.addWidget(self._tag_row)
 
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # E003 — Secret overlay (locked state)
+    # ──────────────────────────────────────────────────────────
+    def _build_secret_overlay(self) -> QWidget:
+        """
+        The 'locked' face of a secret card:
+        A blurred/greyed placeholder with 🔒 icon and hint text.
+        """
+        overlay = QFrame()
+        overlay.setObjectName("SecretOverlay")
+        overlay.setStyleSheet(
+            "QFrame#SecretOverlay {"
+            "  background: rgba(255, 153, 0, 0.05);"
+            "  border: 1px dashed #ff990055;"
+            "  border-radius: 6px;"
+            "}"
+        )
+        overlay.setFixedHeight(56)
+
+        layout = QHBoxLayout(overlay)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(10)
+
+        lock_icon = QLabel("🔒")
+        lock_icon.setStyleSheet("font-size: 20px;")
+
+        hint = QLabel("Encrypted — click  👁 Reveal  to view")
+        hint.setStyleSheet("color: #ff990088; font-size: 12px; font-style: italic;")
+
+        layout.addWidget(lock_icon)
+        layout.addWidget(hint)
+        layout.addStretch()
+        return overlay
+
+    # ──────────────────────────────────────────────────────────
+    # E003 — Secret button handler
+    # ──────────────────────────────────────────────────────────
+    def _on_secret_btn_clicked(self):
+        if self._is_revealed:
+            self._lock_content()
+        else:
+            # Ask Dashboard for the active key via signal
+            self.sig_reveal_requested.emit(self.item_id)
+
+    def reveal_content(self, plaintext: str):
+        """Called by Dashboard after decryption — show plaintext, hide overlay."""
+        text = plaintext
+        if len(text) > self.PREVIEW_MAX_LEN:
+            text = text[:self.PREVIEW_MAX_LEN] + "…"
+        self._revealed_label.setText(text)
+        self._overlay_widget.hide()
+        self._revealed_label.show()
+
+        self._is_revealed = True
+        if self._secret_btn:
+            self._secret_btn.setText("🔒 Lock")
+            self._secret_btn.setToolTip("Hide encrypted content")
+
+    def _lock_content(self):
+        """Hide plaintext, show overlay again."""
+        self._revealed_label.hide()
+        self._revealed_label.setText("")   # clear from memory
+        self._overlay_widget.show()
+
+        self._is_revealed = False
+        if self._secret_btn:
+            self._secret_btn.setText("👁 Reveal")
+            self._secret_btn.setToolTip("Reveal encrypted content")
+
+    # ──────────────────────────────────────────────────────────
+    # E003 — Called by Dashboard on session lock (fixes the crash)
+    # ──────────────────────────────────────────────────────────
+    def on_session_locked(self):
+        """
+        Called when the user locks the session (Dashboard._lock()).
+        Re-hides any currently revealed secret content so nothing
+        leaks in the UI after the key is cleared from memory.
+        """
+        if self.is_secret and self._is_revealed:
+            self._lock_content()
+
+    # ──────────────────────────────────────────────────────────
+    # Content builder  (non-secret items)
+    # ──────────────────────────────────────────────────────────
     def _build_content(self, item: dict) -> QLabel | None:
         label = QLabel()
         label.setObjectName("ItemText")
@@ -356,9 +490,9 @@ class ItemCard(QFrame):
 
         return label
 
-    # ──────────────────────────────────────────────
-    # W002: Called by Dashboard after DB confirm
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # W002: Tag update callbacks (called by Dashboard)
+    # ──────────────────────────────────────────────────────────
     def on_tag_added(self, tag: str):
         """Update chip UI after Dashboard confirms DB write."""
         if self._tag_row:
@@ -369,9 +503,9 @@ class ItemCard(QFrame):
         if self._tag_row:
             self._tag_row.remove_tag_chip(tag)
 
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
     # S001: Lazy thumbnail loader
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
     def _load_thumbnail(self):
         """Load thumbnail from disk after card is painted."""
         if not self._img_label:
@@ -399,56 +533,56 @@ class ItemCard(QFrame):
         except Exception as e:
             self._img_label.setText(f"⚠ {e}")
 
-    # ──────────────────────────────────────────────
-    # S004: Open image viewer on thumbnail click
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # S004: Image viewer on click
+    # ──────────────────────────────────────────────────────────
     def _on_image_click(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             from ui.image_viewer import ImageViewer
             viewer = ImageViewer(self._file_path, self)
             viewer.exec()
 
-    # ──────────────────────────────────────────────
-    # S006: Update thumbnail when video thumb is ready
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # S002: Video thumbnail when ffmpeg finishes
+    # ──────────────────────────────────────────────────────────
     def update_video_thumb(self, thumb_path: str):
         """Called by Dashboard when thumb_ready signal fires."""
         self._preview = thumb_path
         if self._img_label is None:
-            # Create the image label now
-            layout = self.layout()
             self._img_label = QLabel("🖼  Loading…")
             self._img_label.setObjectName("ItemText")
             self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self._img_label)
+            self.layout().addWidget(self._img_label)
         QTimer.singleShot(0, self._load_thumbnail)
 
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
     # P006: Double-click → copy
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
     def mouseDoubleClickEvent(self, event):
         self.sig_copy.emit(self.item_id)
 
-    # P005: Keyboard focus highlight
+    # ──────────────────────────────────────────────────────────
+    # P005: Keyboard focus
+    # ──────────────────────────────────────────────────────────
     def set_focused(self, focused: bool):
         self.setProperty("focused", str(focused).lower())
         self.style().unpolish(self)
         self.style().polish(self)
 
-    # ──────────────────────────────────────────────
-    # W005 & W006: Mouse Clicks, Select, & Drag (Fixed)
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # W005 & W006: Click, select, drag
+    # ──────────────────────────────────────────────────────────
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.position().toPoint()
+            pos   = event.position().toPoint()
             child = self.childAt(pos)
-            logger.debug(f"[ItemCard {self.item_id}] mousePressEvent at pos={pos}, child={child}")
+            logger.debug(
+                f"[ItemCard {self.item_id}] mousePressEvent pos={pos} child={child}"
+            )
 
-            # 1. If clicked on DragHandle (⠿)
             if child == self._drag_handle:
                 self._is_dragging_handle = True
-                self._drag_start_pos = pos
-                logger.debug(f"[ItemCard {self.item_id}] Drag handle CLICKED! Setting _is_dragging_handle=True")
+                self._drag_start_pos     = pos
                 event.accept()
                 # Key point: return here to prevent Dashboard from refreshing the card
                 # and breaking the Drag before it starts
@@ -462,39 +596,35 @@ class ItemCard(QFrame):
 
             # 3. Any other area (Multi-select)
             self._is_dragging_handle = False
-            logger.debug(f"[ItemCard {self.item_id}] Not on handle, emitting sig_clicked")
-            # Only emit signal if not on handle
             self.sig_clicked.emit(self.item_id, QApplication.keyboardModifiers())
 
         # Pass event to parent so Text Selection keeps working
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        # Drag only works if we really started from the Handle
-        if (event.buttons() == Qt.MouseButton.LeftButton
-                and getattr(self, "_is_dragging_handle", False)):
-
-            dist = (event.position().toPoint() - self._drag_start_pos).manhattanLength()
-            logger.debug(f"[ItemCard {self.item_id}] mouseMoveEvent: dist={dist}, threshold={QApplication.startDragDistance()}")
+        if (
+            event.buttons() == Qt.MouseButton.LeftButton
+            and getattr(self, "_is_dragging_handle", False)
+        ):
+            dist = (
+                event.position().toPoint() - self._drag_start_pos
+            ).manhattanLength()
             if dist > QApplication.startDragDistance():
-                logger.debug(f"[ItemCard {self.item_id}] Distance exceeded, calling _do_drag()")
-                # Here the magic starts
                 self._do_drag()
                 self._is_dragging_handle = False
-                return  # Exit so it doesn't do Selection while dragging
-
+                return
         super().mouseMoveEvent(event)
 
     def _do_drag(self):
-        logger.debug(f"[ItemCard {self.item_id}] _do_drag() called")
         drag = QDrag(self)
         mime = QMimeData()
-        mime.setData("application/x-dotghost-card-id",
-                     QByteArray(str(self.item_id).encode()))
+        mime.setData(
+            "application/x-dotghost-card-id",
+            QByteArray(str(self.item_id).encode()),
+        )
         drag.setMimeData(mime)
 
-        # ── Ghost pixmap: semi-transparent card + neon border ──
-        raw = self.grab()
+        raw    = self.grab()
         scaled = raw.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
 
         ghost = QPixmap(scaled.size())
@@ -507,7 +637,9 @@ class ItemCard(QFrame):
         pen = QPen(QColor("#00ff41"), 2)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(1, 1, ghost.width() - 2, ghost.height() - 2, 8, 8)
+        painter.drawRoundedRect(
+            1, 1, ghost.width() - 2, ghost.height() - 2, 8, 8
+        )
         painter.end()
 
         drag.setPixmap(ghost)
@@ -518,14 +650,14 @@ class ItemCard(QFrame):
         _fx.setOpacity(0.35)
         self.setGraphicsEffect(_fx)
 
-        logger.debug(f"[ItemCard {self.item_id}] Drag started")
-        result = drag.exec(Qt.DropAction.MoveAction)
-        logger.debug(f"[ItemCard {self.item_id}] Drag done: {result}")
+        drag.exec(Qt.DropAction.MoveAction)
 
-        # ── Restore card ──
         self.setGraphicsEffect(None)
         self._is_dragging_handle = False
 
+    # ──────────────────────────────────────────────────────────
+    # W006: Selection & drop-target states
+    # ──────────────────────────────────────────────────────────
     def set_selected(self, selected: bool):
         """W006: Toggle visual selected state"""
         self.setProperty("selected", str(selected).lower())
@@ -543,7 +675,7 @@ class ItemCard(QFrame):
         self.style().unpolish(self)
         self.style().polish(self)
 
-    # ──────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────
     def update_pin_state(self, is_pinned: bool):
         self.is_pinned = is_pinned
         self.setProperty("pinned", str(is_pinned).lower())

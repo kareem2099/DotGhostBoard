@@ -1,0 +1,107 @@
+{
+  "project": "DotGhostBoard",
+  "version": "v1.4.0",
+  "codename": "Eclipse",
+  "status": "complete",
+  "started": "2026-03-26",
+  "last_updated": "2026-03-28",
+  "todo": [
+    {
+      "id": "E001",
+      "category": "core",
+      "title": "Encryption Engine — AES-256 via cryptography",
+      "description": "Add 'cryptography' package to dependencies. Create core/encryption.py with encrypt_data(data, key) and decrypt_data(ciphertext, key) using Fernet (AES-128-CBC with HMAC) or AES-256-GCM. Generate per-user master key stored in ~/.config/dotghostboard/.key (mode 600). Key derived from master password via PBKDF2 if password is set.",
+      "status": "done",
+      "priority": "critical",
+      "files": ["core/crypto.py", "requirements.txt", "pyproject.toml"]
+    },
+    {
+      "id": "E002",
+      "category": "core",
+      "title": "Secret Item Schema — encrypted content column",
+      "description": "Add 'is_secret' BOOLEAN DEFAULT 0 and 'encrypted_content' BLOB columns to clipboard_items table via migration. When is_secret=1, content column is NULL and encrypted_content holds AES ciphertext. Add mark_as_secret(item_id), unmark_as_secret(item_id) in storage.py. Decrypt on-the-fly when displaying secret items.",
+      "status": "done",
+      "priority": "critical",
+      "files": ["core/storage.py"]
+    },
+    {
+      "id": "E003",
+      "category": "ui",
+      "title": "Toggle Secret — Lock/Unlock icon on ItemCard",
+      "description": "Add a lock icon button on each ItemCard. Click to toggle 'is_secret' status. Secret items show a blurred preview with '🔒 Encrypted' overlay. Clicking a locked secret item prompts for master password to decrypt and reveal. Show eye icon to re-lock after viewing.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/widgets.py", "ui/dashboard.py"]
+    },
+    {
+      "id": "E004",
+      "category": "core",
+      "title": "Master Password Lock — Startup Authentication",
+      "description": "Add optional master password setup in Settings. When enabled, app shows a password dialog on launch before revealing the dashboard. Password is verified against a stored PBKDF2 hash in ~/.config/dotghostboard/.master_hash. Option to disable/remove master password in Settings (requires current password).",
+      "status": "done",
+      "priority": "critical",
+      "files": ["core/crypto.py", "ui/settings.py", "main.py"]
+    },
+    {
+      "id": "E005",
+      "category": "ui",
+      "title": "Password Dialog — Lock Screen UI",
+      "description": "Create a sleek lock screen dialog matching the dark neon theme. Fields: password input (masked), 'Unlock' button. Show error shake animation on wrong password. 'Forgot password?' warning: encrypted items become permanently inaccessible if password is lost. Option to set new password on first run.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/lock_screen.py"]
+    },
+    {
+      "id": "E006",
+      "category": "core",
+      "title": "Auto-Lock — Inactivity Timer",
+      "description": "Add 'auto_lock_minutes' setting (default: 0 = disabled) in data/settings.json. Track last activity timestamp (mouse move, key press, clipboard change). When idle exceeds threshold, trigger lock: clear decrypted cache, show password dialog. Reset timer on any user interaction. Expose setting in Settings panel.",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/dashboard.py", "ui/settings.py"]
+    },
+    {
+      "id": "E007",
+      "category": "ui",
+      "title": "Stealth Mode — Hide from Taskbar & Alt-Tab",
+      "description": "Add 'stealth_mode' boolean setting. When enabled: set window flags to Qt.Tool (hides from taskbar + alt-tab). App is accessible only via system tray icon or global hotkey Ctrl+Shift+V. Toggle in Settings panel with preview explanation. Visual indicator in tray icon when stealth is active (e.g., ghost emoji overlay).",
+      "status": "done",
+      "priority": "high",
+      "files": ["ui/settings.py", "ui/dashboard.py"]
+    },
+    {
+      "id": "E008",
+      "category": "core",
+      "title": "Secure Delete — Overwrite Before Removal",
+      "description": "Add secure_delete(item_id) in storage.py. Before deleting DB row: if item has associated .png file, overwrite file bytes with random data 3 times, then unlink. For text items, overwrite the DB content field with random string before DELETE. Add 'secure_delete' setting (default: false) to enable by default. Confirmation dialog warns about irreversibility.",
+      "status": "done",
+      "priority": "medium",
+      "files": ["core/secure_delete.py", "core/storage.py"]
+    },
+    {
+      "id": "E009",
+      "category": "core",
+      "title": "App Whitelist/Blacklist — Monitor Exclusions",
+      "description": "Add 'excluded_apps' list in settings.json (e.g., ['keepassxc', 'bitwarden']). In watcher.py, detect active window process name via xprop or wmctrl. Skip clipboard capture if current app is in exclusion list. Add UI in Settings to manage the list: add/remove app names with autocomplete suggestions from running processes.",
+      "status": "done",
+      "priority": "medium",
+      "files": ["core/app_filter.py", "ui/settings.py"]
+    },
+    {
+      "id": "E010",
+      "category": "tests",
+      "title": "Unit Tests for v1.4.0 Features",
+      "description": "Add tests/test_encryption.py covering: key generation, encrypt/decrypt roundtrip, PBKDF2 hashing, secure delete overwrite. Add tests for auto-lock timer logic, whitelist/blacklist filtering. Test migration for new columns. Target: 15+ new tests.",
+      "status": "done",
+      "priority": "high",
+      "files": ["tests/test_eclipse.py"]
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "done": 10,
+    "in_progress": 0,
+    "pending": 0,
+    "completion_percent": 100
+  }
+}

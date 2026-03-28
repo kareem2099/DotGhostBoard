@@ -5,7 +5,7 @@ import logging
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QScrollArea, QLabel, QPushButton,
-    QFrame, QSizePolicy, QSystemTrayIcon, QMenu,
+    QFrame, QSystemTrayIcon, QMenu,
     QApplication, QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
     QFileDialog
 )
@@ -14,8 +14,11 @@ from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEv
 
 from core import storage
 from core.watcher import ClipboardWatcher
+from core.crypto     import has_master_password
+from core.app_filter import AppFilter
 from ui.widgets import ItemCard
 from ui.settings import SettingsDialog, load_settings, save_settings
+from ui.lock_screen  import LockScreen
 
 # Debug logger for drag & drop
 logger = logging.getLogger(__name__)
@@ -47,6 +50,23 @@ class Dashboard(QMainWindow):
         self._refresh_sidebar()
         # S003: clean old captures after loading history
         self._clean_captures()
+
+        # ── Eclipse state ──
+        self._active_key: bytes | None = None  # set after successful unlock
+        self._auto_lock_timer = QTimer(self)
+        self._auto_lock_timer.setSingleShot(True)
+        self._auto_lock_timer.timeout.connect(self._lock)
+        self._reset_auto_lock()  # start timer if configured
+
+        # App filter (updated from settings)
+        self._app_filter = AppFilter(
+            mode=self._settings.get("app_filter_mode", "blacklist"),
+            app_list=self._settings.get("app_filter_list", []),
+        )
+
+        # Apply stealth mode if it was saved
+        if self._settings.get("stealth_mode", False):
+            self._set_stealth(True)
 
     # ══════════════════════════════════════════
     # Build UI  (W005 — Collections Sidebar)
@@ -91,8 +111,8 @@ class Dashboard(QMainWindow):
         self.collections_list.setAcceptDrops(True)
         self.collections_list.setDropIndicatorShown(True)
         self.collections_list.dragEnterEvent = self._sidebar_drag_enter
-        self.collections_list.dragMoveEvent = self._sidebar_drag_move
-        self.collections_list.dropEvent = self._sidebar_drop_event
+        self.collections_list.dragMoveEvent  = self._sidebar_drag_move
+        self.collections_list.dropEvent      = self._sidebar_drop_event
 
         sidebar_layout.addLayout(sidebar_header)
         sidebar_layout.addWidget(self.collections_list)
@@ -124,18 +144,28 @@ class Dashboard(QMainWindow):
         settings_btn.setToolTip("Settings")
         settings_btn.clicked.connect(self._open_settings)
 
-        clear_btn = QPushButton("Clear History")
-        clear_btn.setFixedHeight(28)
-        clear_btn.setToolTip("Delete all un-pinned items")
-        clear_btn.clicked.connect(self._clear_history)
+        self.clear_btn = QPushButton("Clear History")
+        self.clear_btn.setFixedHeight(28)
+        self.clear_btn.setToolTip("Delete all un-pinned items")
+        self.clear_btn.clicked.connect(self._clear_history)
+
+        self.lock_btn = QPushButton("🔒")
+        self.lock_btn.setObjectName("LockBtn")
+        self.lock_btn.setFixedSize(28, 28)
+        self.lock_btn.setToolTip("Lock session  (Eclipse)")
+        self.lock_btn.clicked.connect(self._lock)
+        # Only visible if master password is configured
+        self.lock_btn.setVisible(has_master_password())
 
         top_layout.addWidget(logo)
         top_layout.addStretch()
         top_layout.addWidget(self.stats_label)
         top_layout.addSpacing(8)
+        top_layout.addWidget(self.lock_btn)
+        top_layout.addSpacing(4)
         top_layout.addWidget(settings_btn)
         top_layout.addSpacing(4)
-        top_layout.addWidget(clear_btn)
+        top_layout.addWidget(self.clear_btn)
         root.addWidget(top_bar)
 
         # ── Search ──
@@ -315,7 +345,11 @@ class Dashboard(QMainWindow):
         quit_action = QAction("Quit", self)
         show_action.triggered.connect(self.show_and_raise)
         quit_action.triggered.connect(QApplication.quit)
+        lock_action = QAction("🔒 Lock", self)
+        lock_action.triggered.connect(self._lock)
         menu.addAction(show_action)
+        menu.addSeparator()
+        menu.addAction(lock_action)
         menu.addSeparator()
         menu.addAction(quit_action)
 
@@ -345,28 +379,37 @@ class Dashboard(QMainWindow):
                 self._enforce_history_limit()
             # S003: re-run cleanup if max_captures changed
             self._clean_captures()
+            # Eclipse: update app filter
+            self._app_filter.update(
+                self._settings.get("app_filter_mode", "blacklist"),
+                self._settings.get("app_filter_list", []),
+            )
+            # Eclipse: update stealth mode
+            self._set_stealth(self._settings.get("stealth_mode", False))
+            # Eclipse: update lock button visibility
+            self.lock_btn.setVisible(has_master_password())
+            # Eclipse: restart auto-lock timer with new timeout
+            self._reset_auto_lock()
             self.statusBar().showMessage("Settings saved ✓")
 
     def _enforce_history_limit(self):
         """Trim unpinned cards if count exceeds max_history."""
         limit = self._settings.get("max_history", 200)
         unpinned = [iid for iid, c in self._cards.items() if not c.is_pinned]
-        excess = len(self._cards) - limit
+        excess   = len(self._cards) - limit
         if excess > 0:
-            to_remove = unpinned[-excess:]
-            for iid in to_remove:
+            for iid in unpinned[-excess:]:
                 storage.delete_item(iid)
                 self._remove_card(iid)
             self._refresh_stats()
 
     # S003: auto-cleanup of old capture files
     def _clean_captures(self):
-        keep = self._settings.get("max_captures", 100)
+        keep    = self._settings.get("max_captures", 100)
         removed = storage.clean_old_captures(keep)
         if removed:
             current_ids = {r["id"] for r in storage.get_all_items(limit=9999)}
-            gone = [iid for iid in list(self._cards) if iid not in current_ids]
-            for iid in gone:
+            for iid in [iid for iid in list(self._cards) if iid not in current_ids]:
                 self._remove_card(iid)
             self._refresh_stats()
             print(f"[Dashboard] Auto-cleanup removed {removed} old capture(s)")
@@ -381,6 +424,10 @@ class Dashboard(QMainWindow):
         self.watcher.new_video_captured.connect(self._on_new_video)
         # S002: when video thumbnail is ready, update the card
         self.watcher.thumb_ready.connect(self._on_thumb_ready)
+        # Eclipse: pass app filter to watcher
+        # (requires watcher.py to accept an optional app_filter argument)
+        # self.watcher.set_app_filter(self._app_filter)
+        # See watcher_eclipse_patch for ClipboardWatcher changes.
         self.watcher.start()
 
     # ══════════════════════════════════════════
@@ -406,9 +453,7 @@ class Dashboard(QMainWindow):
         all_item.setData(Qt.ItemDataRole.UserRole, None)
         self.collections_list.addItem(all_item)
 
-        # Load from DB
-        colls = storage.get_collections()
-        for c in colls:
+        for c in storage.get_collections():
             item = QListWidgetItem(f"📁 {c['name']} ({c['item_count']})")
             item.setData(Qt.ItemDataRole.UserRole, c['id'])
             self.collections_list.addItem(item)
@@ -439,19 +484,15 @@ class Dashboard(QMainWindow):
             return  # "All Items" — no rename/delete
 
         menu = QMenu(self)
-        rename_action = QAction("✏️ Rename", self)
-        delete_action = QAction("🗑️ Delete", self)
-
-        rename_action.triggered.connect(lambda: self._rename_collection(coll_id))
-        delete_action.triggered.connect(lambda: self._delete_collection(coll_id))
-
-        menu.addAction(rename_action)
-        menu.addAction(delete_action)
+        menu.addAction(QAction("✏️ Rename", self,
+                               triggered=lambda: self._rename_collection(coll_id)))
+        menu.addAction(QAction("🗑️ Delete", self,
+                               triggered=lambda: self._delete_collection(coll_id)))
         menu.exec(self.collections_list.mapToGlobal(pos))
 
     def _rename_collection(self, coll_id: int):
-        colls = storage.get_collections()
-        old_name = next((c["name"] for c in colls if c["id"] == coll_id), "")
+        old_name = next((c["name"] for c in storage.get_collections()
+                         if c["id"] == coll_id), "")
         new_name, ok = QInputDialog.getText(self, "Rename Collection", "New Name:",
                                             QLineEdit.EchoMode.Normal, old_name)
         if ok and new_name.strip() and new_name.strip() != old_name:
@@ -482,10 +523,7 @@ class Dashboard(QMainWindow):
         # Clear current UI cards
         for card in list(self._cards.values()):
             self._remove_card(card.item_id)
-
-        # Fetch items for this collection (or all if None)
-        items = storage.get_items_by_collection(self.active_collection_id)
-        for item in reversed(items):
+        for item in reversed(storage.get_items_by_collection(self.active_collection_id)):
             self._add_card(item)
 
         self._refresh_stats()
@@ -501,9 +539,16 @@ class Dashboard(QMainWindow):
         card.sig_copy.connect(self._on_copy)
         card.sig_pin.connect(self._on_pin)
         card.sig_delete.connect(self._on_delete)
-        card.sig_tag_added.connect(self._on_tag_added)      # W002
-        card.sig_tag_removed.connect(self._on_tag_removed)  # W002
-        card.sig_clicked.connect(self._on_card_clicked)     # W006
+        card.sig_tag_added.connect(self._on_tag_added)
+        card.sig_tag_removed.connect(self._on_tag_removed)
+        card.sig_clicked.connect(self._on_card_clicked)
+        card.sig_reveal_requested.connect(self._on_reveal_requested)  # E003
+
+        # E003: right-click → mark/unmark as secret
+        card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, c=card: self._on_card_context_menu(pos, c)
+        )
 
         self._cards[item["id"]] = card
         layout = self.cards_layout
@@ -523,6 +568,133 @@ class Dashboard(QMainWindow):
                 self._focused_idx = -1
             card.setParent(None)
             card.deleteLater()
+
+    # ══════════════════════════════════════════
+    # E003 — Card right-click context menu
+    # ══════════════════════════════════════════
+    def _on_card_context_menu(self, pos, card: ItemCard):
+        """
+        Right-click menu on a card.
+        Only shows encryption options if a master password is configured.
+        """
+        menu = QMenu(self)
+
+        # ── Always-available actions ──
+        copy_action = QAction("⎘  Copy", self)
+        copy_action.triggered.connect(lambda: self._on_copy(card.item_id))
+        menu.addAction(copy_action)
+
+        pin_label = "📌  Unpin" if card.is_pinned else "📍  Pin"
+        pin_action = QAction(pin_label, self)
+        pin_action.triggered.connect(lambda: self._on_pin(card.item_id))
+        menu.addAction(pin_action)
+
+        # ── Eclipse: encryption (only if master password is set) ──
+        if has_master_password() and card.item_type == "text":
+            menu.addSeparator()
+
+            if card.is_secret:
+                # Already encrypted → offer to decrypt
+                decrypt_action = QAction("🔓  Remove Encryption", self)
+                decrypt_action.triggered.connect(
+                    lambda: self._decrypt_card(card.item_id)
+                )
+                menu.addAction(decrypt_action)
+            else:
+                # Plain item → offer to encrypt
+                encrypt_action = QAction("🔐  Mark as Secret", self)
+                encrypt_action.triggered.connect(
+                    lambda: self._encrypt_card(card.item_id)
+                )
+                menu.addAction(encrypt_action)
+
+        menu.addSeparator()
+
+        del_action = QAction("✕  Delete", self)
+        del_action.triggered.connect(lambda: self._on_delete(card.item_id))
+        menu.addAction(del_action)
+
+        menu.exec(card.mapToGlobal(pos))
+
+    def _rebuild_card_in_place(self, item_id: int) -> None:
+        """
+        Remove a card and re-insert it at the exact same position.
+        Prevents the card from jumping to top or bottom after a rebuild.
+        """
+        # Remember current index in the layout before removing
+        layout = self.cards_layout
+        old_idx = -1
+        for i in range(layout.count()):
+            w = layout.itemAt(i)
+            if w and w.widget() and getattr(w.widget(), "item_id", None) == item_id:
+                old_idx = i
+                break
+
+        self._remove_card(item_id)
+
+        item = storage.get_item_by_id(item_id)
+        if not item:
+            return
+
+        card = ItemCard(item)
+        card.sig_copy.connect(self._on_copy)
+        card.sig_pin.connect(self._on_pin)
+        card.sig_delete.connect(self._on_delete)
+        card.sig_tag_added.connect(self._on_tag_added)
+        card.sig_tag_removed.connect(self._on_tag_removed)
+        card.sig_clicked.connect(self._on_card_clicked)
+        card.sig_reveal_requested.connect(self._on_reveal_requested)
+        card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, c=card: self._on_card_context_menu(pos, c)
+        )
+
+        self._cards[item_id] = card
+
+        # Re-insert at saved position (clamp to valid range)
+        insert_at = old_idx if old_idx >= 0 else 0
+        layout.insertWidget(insert_at, card)
+
+    def _encrypt_card(self, item_id: int):
+        """E003: Encrypt a single card's content on demand."""
+        if self._active_key is None:
+            # No active key → ask user to unlock first
+            QMessageBox.information(
+                self, "Unlock Required",
+                "Please unlock the session first.\n"
+                "Use the 🔒 button in the top bar."
+            )
+            return
+
+        if storage.encrypt_item(item_id, self._active_key):
+            self._rebuild_card_in_place(item_id)
+            self.statusBar().showMessage("🔐 Item encrypted ✓")
+        else:
+            self.statusBar().showMessage("⚠ Could not encrypt item.")
+
+    def _decrypt_card(self, item_id: int):
+        """E003: Permanently decrypt a card (remove encryption)."""
+        if self._active_key is None:
+            QMessageBox.information(
+                self, "Unlock Required",
+                "Please unlock the session first."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self, "Remove Encryption",
+            "Permanently decrypt this item?\n"
+            "It will be stored as plain text again.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        if storage.decrypt_item_permanent(item_id, self._active_key):
+            self._rebuild_card_in_place(item_id)
+            self.statusBar().showMessage("🔓 Item decrypted ✓")
+        else:
+            self.statusBar().showMessage("⚠ Decryption failed — wrong key?")
 
     # ══════════════════════════════════════════
     # Watcher slots
@@ -586,7 +758,7 @@ class Dashboard(QMainWindow):
     # W006 — Multi-Select
     # ══════════════════════════════════════════
     def _on_card_clicked(self, item_id: int, modifiers):
-        cards = self._visible_cards()
+        cards    = self._visible_cards()
         card_ids = [c.item_id for c in cards]
 
         # Show hint if still visible (first interaction teaches them)
@@ -595,11 +767,8 @@ class Dashboard(QMainWindow):
             self._hint_strip.show()
 
         if modifiers & Qt.KeyboardModifier.ShiftModifier and self._last_clicked_id in card_ids:
-            # ── Shift+Click: select range ──────────────────────────
-            a = card_ids.index(self._last_clicked_id)
-            b = card_ids.index(item_id)
-            lo, hi = min(a, b), max(a, b)
-            for iid in card_ids[lo : hi + 1]:
+            a, b = card_ids.index(self._last_clicked_id), card_ids.index(item_id)
+            for iid in card_ids[min(a, b): max(a, b) + 1]:
                 self._selected_ids.add(iid)
                 self._cards[iid].set_selected(True)
 
@@ -625,7 +794,9 @@ class Dashboard(QMainWindow):
 
         count = len(self._selected_ids)
         if count > 0:
-            self.statusBar().showMessage(f"{count} item(s) selected  •  Ctrl+click to add, Shift+click to range")
+            self.statusBar().showMessage(
+                f"{count} item(s) selected  •  Ctrl+click to add, Shift+click to range"
+            )
         else:
             self.statusBar().showMessage("Watching clipboard…")
 
@@ -658,14 +829,14 @@ class Dashboard(QMainWindow):
     def _bulk_pin(self, pin: bool):
         for iid in list(self._selected_ids):
             item = storage.get_item_by_id(iid)
-            if item:
-                if bool(item.get("is_pinned", 0)) != pin:
-                    new_state = storage.toggle_pin(iid)
-                    card = self._cards.get(iid)
-                    if card:
-                        card.update_pin_state(new_state)
-        action = "Pinned" if pin else "Unpinned"
-        self.statusBar().showMessage(f"{action} {len(self._selected_ids)} items ✓")
+            if item and bool(item.get("is_pinned", 0)) != pin:
+                new_state = storage.toggle_pin(iid)
+                card = self._cards.get(iid)
+                if card:
+                    card.update_pin_state(new_state)
+        self.statusBar().showMessage(
+            f"{'Pinned' if pin else 'Unpinned'} {len(self._selected_ids)} items ✓"
+        )
         self._refresh_stats()
 
     def _bulk_delete(self):
@@ -703,10 +874,11 @@ class Dashboard(QMainWindow):
         )
         if not path:
             return
-        content = storage.export_items(list(self._selected_ids), fmt)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-        self.statusBar().showMessage(f"Exported {len(self._selected_ids)} items → {path} ✓")
+            f.write(storage.export_items(list(self._selected_ids), fmt))
+        self.statusBar().showMessage(
+            f"Exported {len(self._selected_ids)} items → {path} ✓"
+        )
 
     def _bulk_add_tag(self):
         tag, ok = QInputDialog.getText(
@@ -722,7 +894,9 @@ class Dashboard(QMainWindow):
             card = self._cards.get(iid)
             if card and tag in updated:
                 card.on_tag_added(tag)
-        self.statusBar().showMessage(f"Tag {tag} added to {len(self._selected_ids)} items ✓")
+        self.statusBar().showMessage(
+            f"Tag {tag} added to {len(self._selected_ids)} items ✓"
+        )
 
     # ══════════════════════════════════════════
     # W002 — Tag slots
@@ -789,8 +963,7 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     def _clear_history(self):
         storage.delete_unpinned_items()
-        to_remove = [iid for iid, card in self._cards.items() if not card.is_pinned]
-        for iid in to_remove:
+        for iid in [iid for iid, c in self._cards.items() if not c.is_pinned]:
             self._remove_card(iid)
         self._focused_idx = -1
         self._refresh_stats()
@@ -833,7 +1006,8 @@ class Dashboard(QMainWindow):
             self.scroll.ensureWidgetVisible(card)
 
     def keyPressEvent(self, event: QKeyEvent):
-        key = event.key()
+        self._reset_auto_lock()
+        key   = event.key()
         cards = self._visible_cards()
 
         if not cards:
@@ -841,13 +1015,16 @@ class Dashboard(QMainWindow):
             return
 
         if key == Qt.Key.Key_Down:
-            new_idx = 0 if self._focused_idx == -1 else min(self._focused_idx + 1, len(cards) - 1)
-            self._set_card_focus(cards, new_idx)
-
+            self._set_card_focus(
+                cards,
+                0 if self._focused_idx == -1
+                else min(self._focused_idx + 1, len(cards) - 1)
+            )
         elif key == Qt.Key.Key_Up:
-            new_idx = 0 if self._focused_idx <= 0 else self._focused_idx - 1
-            self._set_card_focus(cards, new_idx)
-
+            self._set_card_focus(
+                cards,
+                0 if self._focused_idx <= 0 else self._focused_idx - 1
+            )
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
             if 0 <= self._focused_idx < len(cards):
                 self._on_copy(cards[self._focused_idx].item_id)
@@ -863,6 +1040,125 @@ class Dashboard(QMainWindow):
 
         else:
             super().keyPressEvent(event)
+
+    # ══════════════════════════════════════════
+    # Eclipse — Lock / Unlock / Stealth / Auto-lock
+    # ══════════════════════════════════════════
+
+    def set_active_key(self, key: bytes | None) -> None:
+        """Called from main.py after startup unlock, or cleared on lock."""
+        self._active_key = key
+
+    def _lock(self) -> None:
+        """Lock the session: clear key, hide window, show lock screen."""
+        self._active_key = None
+        self._auto_lock_timer.stop()
+
+        # Blank out any revealed secret content in cards
+        for card in self._cards.values():
+            card.on_session_locked()
+
+        self.hide()
+        self._show_lock_screen()
+
+    def _show_lock_screen(self) -> None:
+        """Show LockScreen dialog; restore window on success."""
+        dlg = LockScreen(setup=False)
+        if dlg.exec() == LockScreen.DialogCode.Accepted:
+            self._active_key = dlg.get_key()
+            self._reset_auto_lock()
+            self.show_and_raise()
+            self.statusBar().showMessage("🔓 Unlocked")
+
+    def _reset_auto_lock(self) -> None:
+        """Restart the inactivity timer.  Called on any user interaction."""
+        minutes = self._settings.get("auto_lock_minutes", 0)
+        if minutes > 0 and has_master_password():
+            self._auto_lock_timer.start(minutes * 60 * 1000)
+        else:
+            self._auto_lock_timer.stop()
+
+    def _set_stealth(self, enable: bool) -> None:
+        """
+        Hide / show the window in taskbar and alt-tab switcher.
+        Uses X11 xprop hints only — no Qt window flags that break buttons.
+        """
+        import subprocess
+
+        # Responsive UX: resize window for stealth (compact side panel)
+        if enable:
+            self.resize(400, self.height())
+        else:
+            self.resize(750, self.height())
+
+        # X11: set/clear skip-taskbar + skip-pager hints
+        try:
+            wid = hex(int(self.winId()))
+            if enable:
+                subprocess.run(
+                    [
+                        "xprop", "-id", wid,
+                        "-f", "_NET_WM_STATE", "32a",
+                        "-set", "_NET_WM_STATE",
+                        "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER",
+                    ],
+                    check=False, timeout=2, capture_output=True
+                )
+            else:
+                subprocess.run(
+                    ["xprop", "-id", wid, "-remove", "_NET_WM_STATE"],
+                    check=False, timeout=2, capture_output=True
+                )
+        except Exception as e:
+            logger.debug(f"Stealth mode xprop failed: {e}")
+
+    # ── Reset timer on user activity ──────────────────────────────────────────
+
+    def _on_reveal_requested(self, item_id: int) -> None:
+        """
+        E003: Called when a secret card's 👁 Reveal button is clicked.
+        Decrypt with the active session key and push plaintext to the card.
+        """
+        if self._active_key is None:
+            self.statusBar().showMessage(
+                "⚠ Session is locked — unlock first to reveal secrets."
+            )
+            return
+
+        plaintext = storage.decrypt_item(item_id, self._active_key)
+        if plaintext is None:
+            self.statusBar().showMessage(
+                "⚠ Decryption failed — wrong key or corrupted data."
+            )
+            return
+
+        card = self._cards.get(item_id)
+        if card:
+            card.reveal_content(plaintext)
+            self.statusBar().showMessage("🔓 Secret revealed  (visible until locked)")
+
+    def mousePressEvent(self, event):
+        self._reset_auto_lock()
+        super().mousePressEvent(event)
+
+    # ══════════════════════════════════════════
+    # Responsive UI (Media Queries style)
+    # ══════════════════════════════════════════
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        # Compact mode: hide sidebar, shrink top bar buttons
+        if self.width() < 650:
+            self.sidebar.hide()
+            self.clear_btn.setText("🗑️")
+            self.clear_btn.setFixedSize(28, 28)
+            self.stats_label.hide()
+        else:
+            self.sidebar.show()
+            self.clear_btn.setText("Clear History")
+            self.clear_btn.setMinimumWidth(90)
+            self.clear_btn.setMaximumWidth(150)
+            self.stats_label.show()
 
     # ══════════════════════════════════════════
     # Close → minimize to tray / real quit
@@ -903,9 +1199,6 @@ class Dashboard(QMainWindow):
 
     def _sidebar_drag_move(self, event):
         if event.mimeData().hasFormat("application/x-dotghost-card-id"):
-            item = self.collections_list.itemAt(event.position().toPoint())
-            if item:
-                self.collections_list.setCurrentItem(item)
             event.acceptProposedAction()
 
     def _sidebar_drop_event(self, event):
@@ -951,8 +1244,8 @@ class Dashboard(QMainWindow):
         if not event.mimeData().hasFormat("application/x-dotghost-card-id"):
             return
 
-        drop_pos = event.position().toPoint()
-        layout   = self.cards_layout
+        drop_pos   = event.position().toPoint()
+        layout     = self.cards_layout
         new_target = None
 
         for i in range(layout.count() - 1):
@@ -961,13 +1254,20 @@ class Dashboard(QMainWindow):
                 new_target = w_item.widget()
                 break
 
-        # Clear old highlight
+        # Clear old highlight (safely — card may have been deleted)
         if self._drop_target_card and self._drop_target_card is not new_target:
-            self._drop_target_card.set_drop_target(False)
+            try:
+                self._drop_target_card.set_drop_target(False)
+            except RuntimeError:
+                pass
+            self._drop_target_card = None
 
         # Apply new highlight
         if new_target:
-            new_target.set_drop_target(True)
+            try:
+                new_target.set_drop_target(True)
+            except RuntimeError:
+                new_target = None
 
         self._drop_target_card = new_target
         event.acceptProposedAction()
@@ -996,7 +1296,8 @@ class Dashboard(QMainWindow):
         drop_pos = event.position().toPoint()
         logger.debug(f"[Dashboard] Drop position: {drop_pos}")
         target_card = None
-        layout = self.cards_layout
+        layout      = self.cards_layout
+
         for i in range(layout.count() - 1):
             item = layout.itemAt(i)
             if item and item.widget():

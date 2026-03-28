@@ -2,15 +2,16 @@ import sys
 import os
 import signal
 
-#suppress D-Bus warnings before any Qt import
+# Suppress D-Bus warnings before any Qt import
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.dbus.*=false"
 os.environ["QT_QPA_PLATFORM"]  = "xcb"
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore    import Qt
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 SERVER_NAME = "DotGhostBoard_IPC_Server"
+
 
 def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -21,15 +22,21 @@ def main():
     app.setApplicationName("DotGhostBoard")
     app.setQuitOnLastWindowClosed(False)
 
+    # ── IPC: single-instance check ─────────────────────────────────────────
     socket = QLocalSocket()
     socket.connectToServer(SERVER_NAME)
     if socket.waitForConnected(500):
         # Another instance is running, send it a message to show the window and exit
-        socket.write(b"show")
+        written = socket.write(b"show")
         socket.waitForBytesWritten(500)
         socket.disconnectFromServer()
-        print("[Main] Another instance is running, sent show command and exiting.")
-        sys.exit(0)
+        if written > 0:
+            print("[Main] Another instance is running, sent show command and exiting.")
+            sys.exit(0)
+        else:
+            # Stale socket — no real server behind it, clean up and continue
+            print("[Main] Stale IPC socket detected, removing and continuing.")
+            QLocalServer.removeServer(SERVER_NAME)
 
     QLocalServer.removeServer(SERVER_NAME)  # Clean up any stale server
     server = QLocalServer()
@@ -40,15 +47,31 @@ def main():
     # Ctrl+C cleanly exits the application without core dump
     signal.signal(signal.SIGINT, lambda *_: app.quit())
 
+    # ── Eclipse: startup lock ──────────────────────────────────────────────
+    from core.crypto    import has_master_password
+    from ui.lock_screen import LockScreen
+
+    active_key = None
+    if has_master_password():
+        lock   = LockScreen(setup=False)
+        result = lock.exec()
+        if result != LockScreen.DialogCode.Accepted:
+            sys.exit(0)   # Locked out → quit gracefully
+        active_key = lock.get_key()
+
+    # ── Dashboard ──────────────────────────────────────────────────────────
     from ui.dashboard import Dashboard
+
     window = Dashboard()
+    if active_key is not None:
+        window.set_active_key(active_key)
     window.show()
 
+    # ── IPC: bring existing window to front on second launch ───────────────
     def handle_new_connection():
         client = server.nextPendingConnection()
         if client and client.waitForReadyRead(500):
-            message = client.readAll().data().decode()
-            if message == "show":
+            if client.readAll().data().decode() == "show":
                 window.show_and_raise()
         client.disconnectFromServer()
         client.deleteLater()

@@ -69,6 +69,14 @@ def init_db():
         except Exception:
             pass  # column already exists
 
+        # Migration: add is_secret for Eclipse v1.4.0
+        try:
+            conn.execute(
+                "ALTER TABLE clipboard_items ADD COLUMN is_secret INTEGER DEFAULT 0"
+            )
+        except Exception:
+            pass  # column already exists
+
 
 # ─────────────────────────────────────────────
 # CREATE
@@ -577,13 +585,43 @@ def export_items(item_ids: list[int], fmt: str) -> str:
 # ─────────────────────────────────────────────
 # DELETE
 # ─────────────────────────────────────────────
-def delete_item(item_id: int) -> bool:
-    """Delete item — Pinned items are protected and won't be deleted"""
+def delete_item(item_id: int, secure: bool = False) -> bool:
+    """
+    Delete item — pinned items are protected and won't be deleted.
+
+    Args:
+        item_id: ID of the item to delete.
+        secure:  If True, overwrite file bytes before deletion (Eclipse).
+                 Only applies to image/video items with a file on disk.
+    """
     item = get_item_by_id(item_id)
     if not item:
         return False
     if item["is_pinned"]:
         return False  # ← basic protection for pinned items
+
+    # Secure-delete file-based items if requested
+    if secure and item["type"] in ("image", "video"):
+        from core.secure_delete import secure_delete
+        for path in (item["content"], item.get("preview")):
+            if path and os.path.isfile(path):
+                secure_delete(path)
+        # Also secure-delete thumbnail
+        thumb = os.path.join(THUMB_DIR, f"{item_id}.png")
+        if os.path.isfile(thumb):
+            secure_delete(thumb)
+    else:
+        # Original cleanup: plain os.remove
+        for path in (item["content"], item.get("preview")):
+            if (
+                path
+                and item["type"] in ("image", "video")
+                and os.path.isfile(path)
+            ):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
     with _db() as conn:
         conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
@@ -604,6 +642,146 @@ def get_stats() -> dict:
         texts  = conn.execute("SELECT COUNT(*) FROM clipboard_items WHERE type = 'text'").fetchone()[0]
         images = conn.execute("SELECT COUNT(*) FROM clipboard_items WHERE type = 'image'").fetchone()[0]
     return {"total": total, "pinned": pinned, "texts": texts, "images": images}
+
+
+# ─────────────────────────────────────────────
+# ECLIPSE  (E006) — Encryption helpers
+# ─────────────────────────────────────────────
+
+def mark_secret(item_id: int, secret: bool) -> None:
+    """
+    Toggle the is_secret flag on an item.
+
+    NOTE: This only sets the flag — it does NOT encrypt/decrypt the content.
+    Use encrypt_item() / decrypt_item() for that.
+    """
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET is_secret = ?, updated_at = ? WHERE id = ?",
+            (1 if secret else 0, now, item_id),
+        )
+
+
+def encrypt_item(item_id: int, key: bytes) -> bool:
+    """
+    Encrypt an item's content in-place using AES-256-GCM.
+    Sets is_secret = 1 after encryption.
+
+    Returns False if:
+      - Item not found
+      - Item is already encrypted (is_secret = 1)
+      - Item type is not 'text' (binary items are referenced by path, not stored inline)
+    """
+    from core.crypto import encrypt as _encrypt
+    item = get_item_by_id(item_id)
+    if not item:
+        return False
+    if item.get("is_secret"):
+        return False   # Already encrypted
+    if item["type"] != "text":
+        return False   # File paths are not encrypted — only text content
+
+    ciphertext = _encrypt(item["content"], key)
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET content = ?, is_secret = 1, updated_at = ? WHERE id = ?",
+            (ciphertext, now, item_id),
+        )
+    return True
+
+
+def decrypt_item(item_id: int, key: bytes) -> str | None:
+    """
+    Decrypt and return the plaintext content of a secret item.
+    Does NOT modify the database — returns plaintext for in-memory use only.
+
+    Returns:
+        Plaintext string  — if decryption succeeded.
+        Plain content     — if item is not secret (pass-through).
+        None              — if item not found or decryption fails.
+    """
+    from core.crypto import decrypt as _decrypt
+    item = get_item_by_id(item_id)
+    if not item:
+        return None
+    if not item.get("is_secret"):
+        return item["content"]   # Not encrypted — return as-is
+    try:
+        return _decrypt(item["content"], key)
+    except ValueError:
+        return None   # Wrong key or corrupted data
+
+
+def decrypt_item_permanent(item_id: int, key: bytes) -> bool:
+    """
+    Decrypt an item and store the plaintext back in the DB (un-secret it).
+    Sets is_secret = 0 after decryption.
+
+    Returns True on success, False if item not found / wrong key.
+    """
+    plaintext = decrypt_item(item_id, key)
+    if plaintext is None:
+        return False
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET content = ?, is_secret = 0, updated_at = ? WHERE id = ?",
+            (plaintext, now, item_id),
+        )
+    return True
+
+
+def get_secret_items() -> list[dict]:
+    """Return all items marked as secret (is_secret = 1)."""
+    with _db() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM clipboard_items
+            WHERE is_secret = 1
+            ORDER BY is_pinned DESC, created_at DESC
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def encrypt_all_text_items(key: bytes) -> int:
+    """
+    Encrypt ALL unencrypted text items in one call.
+    Useful when the user enables master password on an existing database.
+    Returns the number of items encrypted.
+    """
+    with _db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM clipboard_items
+            WHERE type = 'text' AND is_secret = 0
+            """
+        ).fetchall()
+    count = 0
+    for row in rows:
+        if encrypt_item(row["id"], key):
+            count += 1
+    return count
+
+
+def decrypt_all_secret_items(key: bytes) -> int:
+    """
+    Permanently decrypt ALL secret items.
+    Used when the user removes their master password.
+    Returns the number of items decrypted, or -1 if key is wrong.
+    """
+    secrets = get_secret_items()
+    if not secrets:
+        return 0
+    count = 0
+    for item in secrets:
+        if decrypt_item_permanent(item["id"], key):
+            count += 1
+        else:
+            return -1  # Wrong key — abort
+    return count
 
 
 # ─────────────────────────────────────────────
