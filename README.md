@@ -216,6 +216,54 @@ chmod +x scripts/build_appimage.sh
 ./scripts/build_appimage.sh
 ```
 
+### Option G — DEB Package (Debian/Ubuntu/Kali)
+
+**Quick install from Releases:**
+
+```bash
+# Download the latest .deb from GitHub Releases
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.4.0_amd64.deb
+
+# Install with dpkg
+sudo dpkg -i dotghostboard_*.deb
+
+# Fix any missing dependencies (if needed)
+sudo apt-get install -f
+
+# Run
+dotghostboard
+```
+
+**Or build locally:**
+
+```bash
+# Clone and build
+git clone https://github.com/kareem2099/DotGhostBoard.git
+cd DotGhostBoard
+
+# Build the .deb package
+chmod +x scripts/build_deb.sh
+./scripts/build_deb.sh
+
+# Install
+sudo dpkg -i dotghostboard_*.deb
+
+# Run
+dotghostboard
+```
+
+**Uninstall:**
+
+```bash
+sudo apt remove dotghostboard
+```
+
+**Installed locations:**
+- Binary: `/opt/dotghostboard/`
+- Launcher: `/usr/bin/dotghostboard`
+- Desktop entry: `/usr/share/applications/dotghostboard.desktop`
+- Icon: `/usr/share/icons/hicolor/256x256/apps/dotghostboard.png`
+
 ---
 
 ## Usage

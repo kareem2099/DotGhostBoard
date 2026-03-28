@@ -47,7 +47,7 @@ jobs:
 
       - name: Build
         run: |
-          pip install PyQt6 Pillow pyinstaller
+          pip install PyQt6 Pillow cryptography pyinstaller
           python scripts/generate_icon.py
           pyinstaller --noconsole --onedir --add-data "data:data" \
             --hidden-import "PyQt6.sip" --name dotghostboard main.py
@@ -130,31 +130,41 @@ jobs:
 
       - name: Build
         run: |
-          pip install PyQt6 Pillow pyinstaller
+          pip install PyQt6 Pillow cryptography pyinstaller
           python scripts/generate_icon.py
           pyinstaller --noconsole --onedir --add-data "data:data" \
-            --hidden-import "PyQt6.sip" --name dotghostboard main.py
+            --hidden-import "PyQt6.sip" --hidden-import "cryptography" \
+            --name dotghostboard main.py
 
       - name: Create DEB
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           [ -z "$VERSION" ] && VERSION="1.4.0"
-
           PKGDIR="dotghostboard_${VERSION}_amd64"
-          mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,usr/share/applications,usr/share/icons/hicolor/256x256/apps}
-
-          cp -r dist/dotghostboard "$PKGDIR/usr/bin/dotghostboard"
-          cp data/icons/icon_256.png "$PKGDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
+          
+          mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,opt/dotghostboard,usr/share/applications,usr/share/icons/hicolor/256x256/apps}
+          
+          # Move files to /opt (correct location for bundles)
+          cp -r dist/dotghostboard/* "$PKGDIR/opt/dotghostboard/"
+          
+          # Create launcher in /usr/bin so 'which dotghostboard' works
+          cat > "$PKGDIR/usr/bin/dotghostboard" << 'EOF'
+          #!/bin/bash
+          /opt/dotghostboard/dotghostboard "$@"
+          EOF
+          chmod +x "$PKGDIR/usr/bin/dotghostboard"
 
           cat > "$PKGDIR/usr/share/applications/dotghostboard.desktop" << 'EOF'
           [Desktop Entry]
           Type=Application
           Name=DotGhostBoard
-          Exec=/usr/bin/dotghostboard/dotghostboard
+          Exec=/usr/bin/dotghostboard
           Icon=dotghostboard
           Categories=Utility;
           Terminal=false
           EOF
+          
+          cp data/icons/icon_256.png "$PKGDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
 
           cat > "$PKGDIR/DEBIAN/control" << EOF
           Package: dotghostboard
@@ -162,11 +172,9 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0
+          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0, python3-cryptography
           Maintainer: FreeRave <kareem209907@gmail.com>
-          Description: Advanced clipboard manager for Linux
-           DotGhostBoard is a feature-rich clipboard manager
-           built with PyQt6 for Linux desktops.
+          Description: Advanced clipboard manager for Linux (Eclipse v${VERSION})
           EOF
 
           fakeroot dpkg-deb --build "$PKGDIR"
@@ -202,7 +210,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install PyQt6 Pillow pyinstaller
+        run: pip install PyQt6 Pillow cryptography pyinstaller
 
       - name: Build
         run: |
@@ -246,7 +254,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install PyQt6 Pillow pyinstaller
+        run: pip install PyQt6 Pillow cryptography pyinstaller
 
       - name: Build
         run: |

@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- alias: "FreeRave"
+  family-names: "Kareem"
+  given-names: ""
+title: "DotGhostBoard: Advanced encrypted clipboard manager for Linux"
+version: 1.4.0
+date-released: 2026-03-28
+url: "https://github.com/kareem2099/DotGhostBoard"
+repository-code: "https://github.com/kareem2099/DotGhostBoard"
+license: MIT
+keywords:
+  - clipboard-manager
+  - linux-security
+  - encryption
+  - dotsuite
+  - kali-linux
