@@ -522,6 +522,28 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Privacy:", self._clear_on_exit)
 
+        # Auto Update
+        self._auto_update = QCheckBox("Check for updates on startup")
+        self._auto_update.setChecked(bool(self._settings.get("auto_update_check", True)))
+        self._auto_update.setToolTip(
+            "Automatically checks GitHub for new releases.\n"
+            "If found, a gift icon 🎁 appears in the dashboard."
+        )
+        
+        # Manual Check for Updates
+        self._check_update_btn = QPushButton("🔃 Check Now")
+        self._check_update_btn.setObjectName("CheckUpdateBtn")
+        self._check_update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_update_btn.clicked.connect(self._manual_check_update)
+        
+        upd_row = QHBoxLayout()
+        upd_row.setContentsMargins(0, 0, 0, 0)
+        upd_row.addWidget(self._auto_update)
+        upd_row.addWidget(self._check_update_btn)
+        upd_row.addStretch()
+        
+        form.addRow("Updates:", upd_row)
+
         # Theme
         self._theme = QComboBox()
         self._theme.addItems(["Dark Neon", "Light  (coming soon)"])
@@ -873,7 +895,9 @@ class SettingsDialog(QDialog):
         )
         layout.addWidget(app_name)
 
-        version_lbl = QLabel("v1.4.0  ·  Eclipse")
+        from core.config import APP_VERSION, APP_CODENAME
+
+        version_lbl = QLabel(f"{APP_VERSION}  ·  {APP_CODENAME}")
         version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_lbl.setStyleSheet(
             "color: #ff9900; font-size: 13px; "
@@ -1077,14 +1101,22 @@ class SettingsDialog(QDialog):
         scroll.setWidget(inner)
         return scroll
 
+    def _manual_check_update(self):
+        from PyQt6.QtWidgets import QApplication
+        main_dashboard = QApplication.instance().property("main_dashboard")
+        if main_dashboard:
+            main_dashboard.check_for_updates()
+            QMessageBox.information(self, "Update Check", "Checking for updates in the background...\nIf an update is found, a gift icon 🎁 will appear in the dashboard top bar.")
+
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save_and_close(self):
         # General
-        self._settings["max_history"]   = self._max_history.value()
-        self._settings["max_captures"]  = self._max_captures.value()
-        self._settings["clear_on_exit"] = self._clear_on_exit.isChecked()
-        self._settings["theme"]         = "dark"
+        self._settings["max_history"]       = self._max_history.value()
+        self._settings["max_captures"]      = self._max_captures.value()
+        self._settings["clear_on_exit"]     = self._clear_on_exit.isChecked()
+        self._settings["theme"]             = "dark"
+        self._settings["auto_update_check"] = self._auto_update.isChecked()
 
         # Eclipse
         self._settings["auto_lock_minutes"] = self._auto_lock_spin.value()

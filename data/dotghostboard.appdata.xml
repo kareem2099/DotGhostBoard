@@ -12,8 +12,8 @@
       and stores them locally in a SQLite database. No cloud. No telemetry. No Electron.
     </p>
     <p>
-      Features include: tag system with autocomplete, collections for organizing items,
-      multi-select with bulk actions, export to .txt/.json, and a dark neon UI theme.
+      Features include: AES-256 local encryption, master password session lock, tag system with autocomplete, collections for organizing items,
+      multi-select with bulk actions, AppImage auto-updater, export to .txt/.json, and a dark neon UI theme.
     </p>
   </description>
   
@@ -62,14 +62,32 @@
       <image>https://raw.githubusercontent.com/kareem2099/DotGhostBoard/refs/heads/main/data/assets/1.3.0-Multi-Select.gif</image>
       <caption>Multi-select with bulk actions toolbar</caption>
     </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/kareem2099/DotGhostBoard/refs/heads/main/data/assets/demo-eclipse-encryption.gif</image>
+      <caption>Local Encryption (Eclipse Mode) for sensitive items</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/kareem2099/DotGhostBoard/refs/heads/main/data/assets/demo-session-lock.gif</image>
+      <caption>Session Lock &amp; Master Password protection</caption>
+    </screenshot>
   </screenshots>
   
   <url type="donation">https://github.com/sponsors/kareem2099</url>
   
   <releases>
+    <release version="1.4.1" date="2026-04-13">
+      <description>
+        <p>Memory &amp; Performance Optimization — Lazy loading, memory cleanup, and built-in Auto-Updater</p>
+      </description>
+    </release>
+    <release version="1.4.0" date="2026-03-28">
+      <description>
+        <p>Eclipse release — AES-256 Encryption, Master Lock, and Stealth Mode</p>
+      </description>
+    </release>
     <release version="1.3.1" date="2026-03-26">
       <description>
-        <p>Wraith release — Tags, Collections, Multi-Select & Export</p>
+        <p>Wraith release — Tags, Collections, Multi-Select &amp; Export</p>
       </description>
     </release>
   </releases>

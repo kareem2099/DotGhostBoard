@@ -2,8 +2,8 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.4.0-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Eclipse-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.4.1-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Memory%20&%20Performance%20Optimization-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-ffcc00?style=flat-square&labelColor=0f0f0f)
@@ -117,8 +117,7 @@ DotGhostBoard/
 │   ├── test_eclipse.py          # Eclipse feature tests (27+)
 │   ├── test_storage.py          # Storage CRUD tests
 │   └── test_media.py            # Media detection tests
-├── todo_list(v1.4.0).json
-├── roadmap(v1.x).json
+├── roadmap(v1.x).md
 ├── pytest.ini
 ├── requirements.txt
 └── .gitignore
@@ -316,6 +315,7 @@ tests/test_thumbnailer.py .........                       [100%]
 | v1.2.0 | Specter | ✅ Released | Image thumbnails, video preview via ffmpeg, auto-cleanup, image viewer |
 | v1.3.0 | Wraith | ✅ Released | Tags, collections, multi-select, bulk actions, export |
 | v1.4.0 | Eclipse | ✅ Released | AES-256 encryption, master lock, stealth mode, pro UI |
+| v1.4.1 | Mem & Perf | ✅ Released | Memory optimizations, GitHub auto-updater, IPC/Wayland bug fixes |
 | v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |
 
 Full details in [`roadmap(v1.x).json`](roadmap(v1.x).json)

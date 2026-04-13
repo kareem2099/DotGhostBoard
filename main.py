@@ -1,6 +1,7 @@
 import sys
 import os
 import signal
+import tempfile
 
 # Suppress D-Bus warnings before any Qt import
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.dbus.*=false"
@@ -10,10 +11,27 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore    import Qt
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
-SERVER_NAME = "DotGhostBoard_IPC_Server"
+def _cleanup_old_appimage():
+    """If running as AppImage, check if there's a leftover .old file from an update and remove it."""
+    appimage_path = os.environ.get("APPIMAGE")
+    if appimage_path:
+        app_dir = os.path.dirname(os.path.abspath(appimage_path))
+        for fname in os.listdir(app_dir):
+            if fname.endswith(".AppImage.old"):
+                old_file = os.path.join(app_dir, fname)
+                try:
+                    os.remove(old_file)
+                    print(f"[Updater] Cleaned up old update file: {fname}")
+                except Exception as e:
+                    print(f"[Updater] Failed to remove {fname}: {e}")
+
+# Absolute path forces AppImage, .deb, and source to share the exact same socket
+SERVER_NAME = os.path.join(tempfile.gettempdir(), "dotghostboard_ipc.sock")
 
 
 def main():
+    _cleanup_old_appimage()
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
@@ -42,7 +60,7 @@ def main():
     server = QLocalServer()
     if not server.listen(SERVER_NAME):
         print("[IPC] Could not start local server — continuing without IPC.")
-        sys.exit(1)
+        server = None
 
     # Ctrl+C cleanly exits the application without core dump
     signal.signal(signal.SIGINT, lambda *_: app.quit())
@@ -76,7 +94,8 @@ def main():
         client.disconnectFromServer()
         client.deleteLater()
 
-    server.newConnection.connect(handle_new_connection)
+    if server is not None:
+        server.newConnection.connect(handle_new_connection)
 
     sys.exit(app.exec())
 

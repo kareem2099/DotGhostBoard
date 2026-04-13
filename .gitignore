@@ -83,3 +83,8 @@ data/thumbnails/   # S002: Video/Image thumbnails folder
 !data/thumbnails/.gitkeep  # Keep the folder structure
 
 *.snap
+
+todo_list(*).json
+roadmap(*).json
+
+bug_fixes_v1.4.1.md

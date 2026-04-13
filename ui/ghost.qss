@@ -531,3 +531,17 @@ QPushButton#BulkBtnCancel:hover {
     text-decoration: underline;
 }
 #RevealBtn:hover { color: #ffbb33; }
+
+/* ── Settings Check Update Button ─────────────── */
+QPushButton#CheckUpdateBtn {
+    background: transparent;
+    color: #a8e6cf;
+    border: 1px solid rgba(168, 230, 207, 0.33);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+}
+QPushButton#CheckUpdateBtn:hover {
+    background: rgba(168, 230, 207, 0.1);
+    border: 1px solid #a8e6cf;
+}

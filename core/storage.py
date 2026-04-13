@@ -103,7 +103,7 @@ def add_item(item_type: str, content: str, preview: str = None) -> int:
 # ─────────────────────────────────────────────
 # READ
 # ─────────────────────────────────────────────
-def get_all_items(limit: int = 200) -> list:
+def get_all_items(limit: int = 200, offset: int = 0) -> list:
     """
     Retrieve all items.
     Pinned items first + descending order by date.
@@ -112,8 +112,8 @@ def get_all_items(limit: int = 200) -> list:
         cursor = conn.execute("""
             SELECT * FROM clipboard_items
             ORDER BY is_pinned DESC, created_at DESC
-            LIMIT ?
-        """, (limit,))
+            LIMIT ? OFFSET ?
+        """, (limit, offset))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -137,7 +137,7 @@ def get_item_by_id(item_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def search_items(query: str, tag_filter: str | None = None) -> list[dict]:
+def search_items(query: str, tag_filter: str | None = None, limit: int = 200, offset: int = 0) -> list[dict]:
     """
     Search text items by content.
 
@@ -163,6 +163,7 @@ def search_items(query: str, tag_filter: str | None = None) -> list[dict]:
                   OR tags LIKE :tag_end
               )
             ORDER BY is_pinned DESC, created_at DESC
+            LIMIT :limit OFFSET :offset
         """
         params = {
             "query":     f"%{query}%",
@@ -170,6 +171,8 @@ def search_items(query: str, tag_filter: str | None = None) -> list[dict]:
             "tag_start": f"{tag},%",
             "tag_mid":   f"%,{tag},%",
             "tag_end":   f"%,{tag}",
+            "limit":     limit,
+            "offset":    offset,
         }
         with _db() as conn:
             cursor = conn.execute(sql, params)
@@ -181,7 +184,8 @@ def search_items(query: str, tag_filter: str | None = None) -> list[dict]:
             SELECT * FROM clipboard_items
             WHERE type = 'text' AND content LIKE ?
             ORDER BY is_pinned DESC, created_at DESC
-        """, (f"%{query}%",))
+            LIMIT ? OFFSET ?
+        """, (f"%{query}%", limit, offset))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -300,7 +304,7 @@ def remove_tag(item_id: int, tag: str) -> list[str]:
     return updated
 
 
-def get_items_by_tag(tag: str) -> list[dict]:
+def get_items_by_tag(tag: str, limit: int = 200, offset: int = 0) -> list[dict]:
     """
     Return all items that contain the given tag.
     Pinned items first, then descending by date.
@@ -320,8 +324,9 @@ def get_items_by_tag(tag: str) -> list[dict]:
                OR tags LIKE ?
                OR tags LIKE ?
             ORDER BY is_pinned DESC, created_at DESC
+            LIMIT ? OFFSET ?
             """,
-            (tag, f"{tag},%", f"%,{tag},%", f"%,{tag}"),
+            (tag, f"{tag},%", f"%,{tag},%", f"%,{tag}", limit, offset),
         )
         return [dict(row) for row in cursor.fetchall()]
 
@@ -409,7 +414,7 @@ def move_to_collection(item_id: int, collection_id: int | None) -> None:
         )
 
 
-def get_items_by_collection(collection_id: int | None) -> list[dict]:
+def get_items_by_collection(collection_id: int | None, limit: int = 200, offset: int = 0) -> list[dict]:
     """
     Return items in a specific collection.
     If collection_id is None, return uncategorized items.
@@ -420,13 +425,15 @@ def get_items_by_collection(collection_id: int | None) -> list[dict]:
                 SELECT * FROM clipboard_items
                 WHERE collection_id IS NULL
                 ORDER BY is_pinned DESC, created_at DESC
-            """)
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
         else:
             cursor = conn.execute("""
                 SELECT * FROM clipboard_items
                 WHERE collection_id = ?
                 ORDER BY is_pinned DESC, created_at DESC
-            """, (collection_id,))
+                LIMIT ? OFFSET ?
+            """, (collection_id, limit, offset))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -622,6 +629,13 @@ def delete_item(item_id: int, secure: bool = False) -> bool:
                     os.remove(path)
                 except OSError:
                     pass
+        # Also remove thumbnail if not secure
+        thumb = os.path.join(THUMB_DIR, f"{item_id}.png")
+        if os.path.isfile(thumb):
+            try:
+                os.remove(thumb)
+            except OSError:
+                pass
 
     with _db() as conn:
         conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
@@ -629,7 +643,30 @@ def delete_item(item_id: int, secure: bool = False) -> bool:
 
 
 def delete_unpinned_items():
-    """Delete all unpinned items (Clear History)"""
+    """Delete all unpinned items (Clear History) and their files"""
+    with _db() as conn:
+        rows = conn.execute("""
+            SELECT id, type, content, preview
+            FROM clipboard_items
+            WHERE is_pinned = 0 AND type IN ('image', 'video')
+        """).fetchall()
+
+    for row in rows:
+        # Remove original and preview files
+        for path in (row["content"], row["preview"]):
+            if path and os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        # Remove auto-generated thumbnail
+        thumb = os.path.join(THUMB_DIR, f"{row['id']}.png")
+        if os.path.isfile(thumb):
+            try:
+                os.remove(thumb)
+            except OSError:
+                pass
+
     with _db() as conn:
         conn.execute("DELETE FROM clipboard_items WHERE is_pinned = 0")
 

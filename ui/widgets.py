@@ -507,7 +507,7 @@ class ItemCard(QFrame):
     # S001: Lazy thumbnail loader
     # ──────────────────────────────────────────────────────────
     def _load_thumbnail(self):
-        """Load thumbnail from disk after card is painted."""
+        """S001: Load thumbnail — QImageReader decodes at display size directly."""
         if not self._img_label:
             return
         path = self._preview or self._file_path
@@ -515,20 +515,30 @@ class ItemCard(QFrame):
             self._img_label.setText("⚠ File not found")
             return
         try:
-            pixmap = QPixmap(path)
-            if pixmap.isNull():
+            from PyQt6.QtGui import QImageReader
+            from PyQt6.QtCore import QSize
+
+            reader = QImageReader(path)
+            reader.setAutoTransform(True)
+
+            orig = reader.size()
+            if orig.isValid() and orig.width() > 0 and orig.height() > 0:
+                scale = min(
+                    self.THUMB_MAX_W / orig.width(),
+                    self.THUMB_MAX_H / orig.height(),
+                )
+                if scale < 1.0:
+                    reader.setScaledSize(QSize(
+                        int(orig.width()  * scale),
+                        int(orig.height() * scale),
+                    ))
+
+            image = reader.read()
+            if image.isNull():
                 self._img_label.setText("⚠ Invalid image")
                 return
-            # Cap at THUMB_MAX_W × THUMB_MAX_H
-            if pixmap.width() > self.THUMB_MAX_W:
-                pixmap = pixmap.scaledToWidth(
-                    self.THUMB_MAX_W, Qt.TransformationMode.SmoothTransformation
-                )
-            if pixmap.height() > self.THUMB_MAX_H:
-                pixmap = pixmap.scaledToHeight(
-                    self.THUMB_MAX_H, Qt.TransformationMode.SmoothTransformation
-                )
-            self._img_label.setPixmap(pixmap)
+
+            self._img_label.setPixmap(QPixmap.fromImage(image))
             self._img_label.setStyleSheet("")
         except Exception as e:
             self._img_label.setText(f"⚠ {e}")

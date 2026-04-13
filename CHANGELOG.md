@@ -16,6 +16,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Planned for v1.5.0 — *Nexus*
+- Cloud sync via local-network peer
+- Plugin API for custom item types
+- Light theme
+
+---
+
+## [1.4.1] — 2026-04-13 — *Memory & Performance Optimization*
+
+Performance stability & Update architecture release — major memory optimizations, lazy loading for GUI rendering, fixed IPC crashes, and a complete built-in GitHub updater.
+
+### Added
+- **Built-in Auto-Updater** — `ui/updater_dialog.py` handles parsing GitHub releases natively, downloads the correct platform asset (AppImage/DEB) using a background `QThread` inside `core/updater.py`, displays progress sequentially, and uses `os.rename` logic to backup currently executing binaries in place.
+- **Image optimization via QImageReader** — Memory efficiency fix for large media loading bounds using `reader.setScaledSize()` before buffer injection preventing complete RAM exhaustion on high-res loads.
+- **Lazy history loading (Infinite scroll)** — Limit-offset pagination bound to a vertical scrollbar in the dashboard instead of locking the GUI thread rendering 200 elements instantly on boot.
+
+### Fixed
+- **AppImage IPC Crash** — Single-instance local sockets shifted from relative path bounds to a strict absolute `tempfile.gettempdir()` bypassing X11 duplicate window spawns.
+- **Memory Leaks and DB Overhead** — Removed dynamic array loading from `_clean_captures()` logic. Connected proper `worker.deleteLater()` tracking to active Python wrappers avoiding backend memory leaks after update checks.
+- **Unpinned files storage leaks** — Media attachments (`.png`/`.mkv` previews) are now physically purged from `.config/dotghostboard/` using native `os.remove` checks during mass "Clear History" deletion sweeps, not just unregistered from DB schema.
+- **Stealth Mode xprop failures** — Replaced direct subsystem calls targeting X11 `_NET_WM_STATE` with strict `Qt.WindowType.Tool` GUI flags making background running universal across Wayland and Windows.
+
+---
+
 ## [1.4.0] — 2026-03-28 — *Eclipse*
 
 Security & encryption release — AES-256 encryption for sensitive items, master password lock, auto-lock, stealth mode, secure delete, app filter, right-click context menu for per-item encryption, and About tab with social links.

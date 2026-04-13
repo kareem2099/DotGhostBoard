@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QApplication, QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
     QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEvent
 
 from core import storage
@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 
 QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
 
+_PAGE_SIZE = 20   # Cards loaded per page
+
+class UpdateCheckerThread(QThread):
+    update_found = pyqtSignal(dict, str) # update_info, asset_url
+    
+    def run(self):
+        from core.updater import check_for_updates, identify_platform_asset
+        from core.config import APP_VERSION
+        
+        update_info = check_for_updates(APP_VERSION)
+        if update_info:
+            asset_url = identify_platform_asset(update_info["assets"])
+            if asset_url:
+                self.update_found.emit(update_info, asset_url)
+
 class Dashboard(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -35,6 +50,15 @@ class Dashboard(QMainWindow):
 
         # ── map of item cards {item_id: ItemCard} ──
         self._cards: dict[int, ItemCard] = {}
+        self._history_offset: int  = 0
+        self._history_exhausted: bool = False
+        self._is_loading: bool = False
+        self._current_view_mode: str = "history"  # "history", "collection", "search", "tag"
+        self._current_search_query: str = ""
+        self._current_tag_filter: str | None = None
+        self._update_thread = None
+        self._pending_update_info: dict | None = None
+        self._pending_asset_url: str | None = None
 
         # ── keyboard nav state ──
         self._focused_idx: int = -1
@@ -56,6 +80,13 @@ class Dashboard(QMainWindow):
         self._auto_lock_timer = QTimer(self)
         self._auto_lock_timer.setSingleShot(True)
         self._auto_lock_timer.timeout.connect(self._lock)
+        
+        # Connect signal so SettingsDialog can trigger check
+        QApplication.instance().setProperty("main_dashboard", self)
+
+        if self._settings.get("auto_update_check", True):
+            self.check_for_updates()
+            
         self._reset_auto_lock()  # start timer if configured
 
         # App filter (updated from settings)
@@ -157,8 +188,18 @@ class Dashboard(QMainWindow):
         # Only visible if master password is configured
         self.lock_btn.setVisible(has_master_password())
 
+        self.update_btn = QPushButton("🎁 New Update!")
+        self.update_btn.setStyleSheet(
+            "background: #00ff4122; color: #00ff41; border: 1px solid #00ff41; padding: 0 10px; border-radius: 4px; font-weight: bold;"
+        )
+        self.update_btn.setFixedHeight(28)
+        self.update_btn.clicked.connect(self._show_updater_dialog)
+        self.update_btn.hide()
+
         top_layout.addWidget(logo)
         top_layout.addStretch()
+        top_layout.addWidget(self.update_btn)
+        top_layout.addSpacing(8)
         top_layout.addWidget(self.stats_label)
         top_layout.addSpacing(8)
         top_layout.addWidget(self.lock_btn)
@@ -292,6 +333,9 @@ class Dashboard(QMainWindow):
         self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.cards_container.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+        # Lazy loading: load more cards when user scrolls near bottom
+        self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
+
         # State tracker for collections
         self.active_collection_id = None
 
@@ -408,9 +452,9 @@ class Dashboard(QMainWindow):
         keep    = self._settings.get("max_captures", 100)
         removed = storage.clean_old_captures(keep)
         if removed:
-            current_ids = {r["id"] for r in storage.get_all_items(limit=9999)}
-            for iid in [iid for iid in list(self._cards) if iid not in current_ids]:
-                self._remove_card(iid)
+            for iid in list(self._cards):
+                if storage.get_item_by_id(iid) is None:
+                    self._remove_card(iid)
             self._refresh_stats()
             print(f"[Dashboard] Auto-cleanup removed {removed} old capture(s)")
 
@@ -434,11 +478,91 @@ class Dashboard(QMainWindow):
     # Load history
     # ══════════════════════════════════════════
     def _load_history(self):
-        limit = self._settings.get("max_history", 200)
-        items = storage.get_all_items(limit=limit)
-        for item in reversed(items):
-            self._add_card(item)
+        self._current_view_mode  = "history"
+        self._history_offset     = 0
+        self._history_exhausted  = False
+        self._load_more_history(initial=True)
         self._refresh_stats()
+
+    def _load_more_history(self, initial: bool = False):
+        """Load next PAGE_SIZE items from DB — called on init and on scroll."""
+        if self._history_exhausted or getattr(self, '_is_loading', False):
+            return
+
+        self._is_loading = True
+        try:
+            limit  = self._settings.get("max_history", 200)
+
+            # For history view, ensure we dont exceed max history.
+            if self._current_view_mode == "history":
+                remaining = limit - len(self._cards)
+                if remaining <= 0:
+                    self._history_exhausted = True
+                    return
+            else:
+                remaining = 999999
+
+            batch_size = min(_PAGE_SIZE, remaining)
+
+            if self._current_view_mode == "collection":
+                items = storage.get_items_by_collection(self.active_collection_id, limit=batch_size, offset=self._history_offset)
+            elif self._current_view_mode == "search":
+                items = storage.search_items(self._current_search_query, self._current_tag_filter, limit=batch_size, offset=self._history_offset)
+            elif self._current_view_mode == "tag":
+                items = storage.get_items_by_tag(self._current_tag_filter, limit=batch_size, offset=self._history_offset)
+            else:
+                items = storage.get_all_items(limit=batch_size, offset=self._history_offset)
+
+            if not items:
+                self._history_exhausted = True
+                return
+
+            if initial:
+                # First page: newest items — insert oldest-first at top so newest ends on top
+                for item in reversed(items):
+                    self._add_card(item, at_top=True)
+            else:
+                # Subsequent pages: older items — append at bottom in storage order
+                for item in items:
+                    self._add_card(item, at_top=False)
+
+            self._history_offset += len(items)
+
+            if len(items) < batch_size:
+                self._history_exhausted = True
+        finally:
+            self._is_loading = False
+
+    def _on_scroll(self, value: int):
+        """Load more history when user scrolls near the bottom."""
+        bar = self.scroll.verticalScrollBar()
+        if bar.maximum() > 0 and value >= bar.maximum() * 0.85:
+            self._load_more_history()
+
+    # ══════════════════════════════════════════
+    # Update Mechanisms
+    # ══════════════════════════════════════════
+    def check_for_updates(self):
+        if self._update_thread and self._update_thread.isRunning():
+            return  # Prevent spamming multiple threads
+        self._update_thread = UpdateCheckerThread(self)
+        self._update_thread.update_found.connect(self._on_update_found)
+        self._update_thread.finished.connect(self._update_thread.deleteLater)
+        self._update_thread.start()
+        
+    def _on_update_found(self, update_info: dict, asset_url: str):
+        self._pending_update_info = update_info
+        self._pending_asset_url = asset_url
+        self.update_btn.show()
+
+    def _show_updater_dialog(self):
+        if not self._pending_update_info or not self._pending_asset_url:
+            return
+        from ui.updater_dialog import UpdaterDialog
+        dialog = UpdaterDialog(self._pending_update_info, self._pending_asset_url, self)
+        if dialog.exec():
+            # Update was applied and sys.exit() or os.exec() was called.
+            pass
 
     # ══════════════════════════════════════════
     # W005 — Collections Logic
@@ -520,11 +644,18 @@ class Dashboard(QMainWindow):
 
         self.active_collection_id = current.data(Qt.ItemDataRole.UserRole)
 
+        if self.active_collection_id is None:
+            self._current_view_mode = "history"
+        else:
+            self._current_view_mode = "collection"
+
         # Clear current UI cards
         for card in list(self._cards.values()):
             self._remove_card(card.item_id)
-        for item in reversed(storage.get_items_by_collection(self.active_collection_id)):
-            self._add_card(item)
+
+        self._history_offset = 0
+        self._history_exhausted = False
+        self._load_more_history(initial=True)
 
         self._refresh_stats()
 
@@ -932,36 +1063,44 @@ class Dashboard(QMainWindow):
         self._focused_idx = -1
         raw = query.strip()
 
+        # Clear current cards first
+        for card in list(self._cards.values()):
+            self._remove_card(card.item_id)
+
         if not raw:
-            for card in self._cards.values():
-                card.setVisible(True)
-            return
-
-        # ── split out tag tokens (words starting with #) ──
-        tokens = raw.split()
-        tag_tokens = [t for t in tokens if t.startswith("#")]
-        text_tokens = [t for t in tokens if not t.startswith("#")]
-
-        text_query = " ".join(text_tokens)
-        # Support one active tag filter for now (first #tag wins)
-        tag_filter = tag_tokens[0] if tag_tokens else None
-
-        if tag_filter and not text_query:
-            # Tag-only: use get_items_by_tag for all item types (not just text)
-            result_ids = {r["id"] for r in storage.get_items_by_tag(tag_filter)}
+            if self.active_collection_id is not None:
+                self._current_view_mode = "collection"
+            else:
+                self._current_view_mode = "history"
         else:
-            # Text search (with optional tag filter via search_items)
-            result_ids = {
-                r["id"] for r in storage.search_items(text_query, tag_filter)
-            }
+            tokens = raw.split()
+            tag_tokens = [t for t in tokens if t.startswith("#")]
+            text_tokens = [t for t in tokens if not t.startswith("#")]
 
-        for item_id, card in self._cards.items():
-            card.setVisible(item_id in result_ids)
+            self._current_search_query = " ".join(text_tokens)
+            self._current_tag_filter = tag_tokens[0] if tag_tokens else None
+
+            if self._current_tag_filter and not self._current_search_query:
+                self._current_view_mode = "tag"
+            else:
+                self._current_view_mode = "search"
+
+        self._history_offset = 0
+        self._history_exhausted = False
+        self._load_more_history(initial=True)
 
     # ══════════════════════════════════════════
     # Clear History
     # ══════════════════════════════════════════
     def _clear_history(self):
+        reply = QMessageBox.question(
+            self, "Clear History",
+            "Are you sure you want to delete all unpinned history?\n(Pinned items and collections will be kept).",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         storage.delete_unpinned_items()
         for iid in [iid for iid, c in self._cards.items() if not c.is_pinned]:
             self._remove_card(iid)
@@ -1081,36 +1220,20 @@ class Dashboard(QMainWindow):
     def _set_stealth(self, enable: bool) -> None:
         """
         Hide / show the window in taskbar and alt-tab switcher.
-        Uses X11 xprop hints only — no Qt window flags that break buttons.
+        Cross-platform implementation natively using Qt Tool window hints.
         """
-        import subprocess
-
-        # Responsive UX: resize window for stealth (compact side panel)
+        geo = self.geometry()
+        
         if enable:
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.Tool)
             self.resize(400, self.height())
         else:
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.Tool)
             self.resize(750, self.height())
-
-        # X11: set/clear skip-taskbar + skip-pager hints
-        try:
-            wid = hex(int(self.winId()))
-            if enable:
-                subprocess.run(
-                    [
-                        "xprop", "-id", wid,
-                        "-f", "_NET_WM_STATE", "32a",
-                        "-set", "_NET_WM_STATE",
-                        "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER",
-                    ],
-                    check=False, timeout=2, capture_output=True
-                )
-            else:
-                subprocess.run(
-                    ["xprop", "-id", wid, "-remove", "_NET_WM_STATE"],
-                    check=False, timeout=2, capture_output=True
-                )
-        except Exception as e:
-            logger.debug(f"Stealth mode xprop failed: {e}")
+            
+        # Re-apply visibility and position after flag modification
+        self.show()
+        self.setGeometry(geo)
 
     # ── Reset timer on user activity ──────────────────────────────────────────
 
@@ -1179,6 +1302,7 @@ class Dashboard(QMainWindow):
             if self._settings.get("clear_on_exit", False):
                 storage.delete_unpinned_items()
             self.watcher.stop()
+            self.watcher.wait(2000)
             self.tray.hide()
             event.accept()
 
