@@ -152,7 +152,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev debhelper fakeroot dpkg-sig
+          sudo apt-get install -y dpkg-dev debhelper fakeroot
 
       - name: Build
         run: |
@@ -218,20 +218,20 @@ jobs:
       - name: Sign DEB Package (GPG)
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
-          dpkg-sig --sign builder \
-            -k "${{ secrets.GPG_KEY_ID }}" \
-            --gpg-options "--passphrase ${{ secrets.GPG_PASSPHRASE }} --pinentry-mode loopback --batch --yes" \
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --detach-sign --armor \
             dotghostboard_*.deb
 
       - name: Verify DEB signature
         run: |
-          dpkg-sig --verify dotghostboard_*.deb
+          gpg --verify dotghostboard_*.deb.asc dotghostboard_*.deb
           echo "✅ DEB signature verified"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-deb
-          path: dotghostboard_*_amd64.deb
+          path: dotghostboard_*_amd64.*
 
 
   release:
@@ -251,7 +251,8 @@ jobs:
           find artifacts -type f \( \
             -name "*.AppImage" -o \
             -name "*.AppImage.asc" -o \
-            -name "*.deb" \
+            -name "*.deb" -o \
+            -name "*.deb.asc" \
           \) -exec cp {} out/ \;
           echo "📦 Files to release:"
           ls -lh out/

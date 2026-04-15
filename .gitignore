@@ -88,3 +88,6 @@ todo_list(*).json
 roadmap(*).json
 
 bug_fixes_v1.4.1.md
+
+# ── Local Scripts ──
+scripts/setup_secrets.sh
