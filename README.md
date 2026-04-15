@@ -2,13 +2,13 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.0-00ff41?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Nexus-00ff41?style=flat-square&labelColor=0f0f0f)
-![Python](https://img.shields.io/badge/python-3.11+-00ff41?style=flat-square&labelColor=0f0f0f)
-![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-00ff41?style=flat-square&labelColor=0f0f0f)
-![Platform](https://img.shields.io/badge/platform-Linux-00ff41?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-178%20passed-00ff41?style=flat-square&labelColor=0f0f0f)
-![License](https://img.shields.io/badge/license-MIT-00ff41?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.1-238636?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
+![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
+![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
+![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-178%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
 
@@ -237,7 +237,7 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.0_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.1_amd64.deb
 
 # Install with dpkg
 sudo dpkg -i dotghostboard_*.deb
@@ -349,7 +349,7 @@ Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) befo
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE) for details.
+Apache 2.0 — see [`LICENSE`](LICENSE) for details.
 
 ---
 

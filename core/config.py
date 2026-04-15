@@ -1,6 +1,6 @@
 # Centralized application configuration
 
-APP_VERSION = "v1.5.0"
+APP_VERSION = "v1.5.1"
 APP_CODENAME = "Nexus"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"

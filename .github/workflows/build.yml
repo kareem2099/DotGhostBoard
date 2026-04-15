@@ -177,7 +177,7 @@ jobs:
       - name: Create DEB
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.5.0"
+          [ -z "$VERSION" ] && VERSION="1.5.1"
           PKGDIR="dotghostboard_${VERSION}_amd64"
 
           mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,opt/dotghostboard,usr/share/applications,usr/share/icons/hicolor/256x256/apps}

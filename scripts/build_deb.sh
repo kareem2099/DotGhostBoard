@@ -7,7 +7,7 @@ set -e
 
 APP_NAME="dotghostboard"
 # Get version from README or default to 1.4.1
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.0")
+VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.1")
 PKG_DIR="${APP_NAME}_${VERSION}_amd64"
 
 echo "🧹 Cleaning previous builds..."

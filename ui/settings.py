@@ -1045,15 +1045,14 @@ class SettingsDialog(QDialog):
         lic_layout = QVBoxLayout(lic_box)
         lic_layout.setContentsMargins(12, 10, 12, 10)
 
-        lic_title = QLabel("MIT License")
+        lic_title = QLabel("Apache License 2.0")
         lic_title.setStyleSheet("color: #00ff41; font-weight: bold; font-size: 12px;")
 
         lic_text = QLabel(
-            "Copyright © 2026  FreeRave (kareem) — DotSuite\n\n"
-            "Permission is hereby granted, free of charge, to any person\n"
-            "obtaining a copy of this software to use, copy, modify, merge,\n"
-            "publish, distribute, sublicense, and/or sell copies — subject\n"
-            "to the MIT License conditions."
+            "Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+            "you may not use this file except in compliance with the License.\n"
+            "You may obtain a copy of the License at:\n\n"
+            "http://www.apache.org/licenses/LICENSE-2.0"
         )
         lic_text.setStyleSheet("color: #555; font-size: 11px; line-height: 1.6;")
         lic_text.setWordWrap(True)

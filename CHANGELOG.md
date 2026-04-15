@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Planned for v2.0.0 (Cerberus)
+- **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
+- **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.
+- **Zero-Logging Mode (Paranoia)** — Ephemeral state that completely drops clipboard saves to the DB while active.
+- **Auto-Clear** — Automatically wipes the OS clipboard 30 seconds after copying from the Vault.
+
+---
+
 ## [1.5.0] — 2026-04-13 — *Nexus*
 
 The Sync & Connectivity release — introduces secure local network clipboard synchronization, a REST API for programmatic access, a CLI companion, and a secure device pairing system.
@@ -24,16 +34,6 @@ The Sync & Connectivity release — introduces secure local network clipboard sy
 - **API Server reachability** — Shifted server binding from `127.0.0.1` to `0.0.0.0` to enable cross-device communication.
 - **Handshake Race Conditions** — Improved UI synchronization between the server thread and the pairing dialog to handle asynchronous key verification.
 - **Resource Cleanup** — Ensured all background discovery and API threads are gracefully terminated on application exit.
-
----
-
-## [Unreleased]
-
-### Planned for v2.0.0 (Cerberus)
-- **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
-- **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.
-- **Zero-Logging Mode (Paranoia)** — Ephemeral state that completely drops clipboard saves to the DB while active.
-- **Auto-Clear** — Automatically wipes the OS clipboard 30 seconds after copying from the Vault.
 
 ---
 
@@ -68,7 +68,7 @@ Security & encryption release — AES-256 encryption for sensitive items, master
 - **Stealth mode** — `stealth_mode` boolean setting; uses `xprop` to set `_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER` X11 hints; window accessible only via tray icon or global hotkey; responsive resize (400px compact)
 - **Secure delete** — `core/secure_delete.py` with `secure_delete(path, passes=3)`; overwrites file bytes with random→zeros→random in 3 passes with `fsync`; integrated in `storage.delete_item(secure=True)` for image/video items
 - **App filter** — `core/app_filter.py` `AppFilter` class; blacklist/whitelist modes; detects active window via `xdotool` + `/proc/<pid>/comm` + `xprop WM_CLASS`; substring matching; fail-open when detection unavailable; Settings UI with mode selector and app list editor
-- **About tab** — `ui/settings.py` `_build_about_tab()` with logo, version v1.4.0 Eclipse, author FreeRave, MIT license, system info (Python/PyQt6/Qt/Platform/Arch), and social links organized in sections (Project, Articles, Social, Videos, Facebook)
+- **About tab** — `ui/settings.py` `_build_about_tab()` with logo, version v1.4.0 Eclipse, author FreeRave, Apache 2.0 license, system info (Python/PyQt6/Qt/Platform/Arch), and social links organized in sections (Project, Articles, Social, Videos, Facebook)
 - **Unit tests** — `tests/test_eclipse.py` with 27+ tests across 4 classes: `TestCrypto` (encrypt/decrypt roundtrip, wrong key, tampered ciphertext, unicode, master password flow, PBKDF2 determinism, salt persistence), `TestSecureDelete` (file gone, nonexistent, overwrite, batch, empty), `TestAppFilter` (blacklist/whitelist, match/unmatch, fail-open, hot-reload, substring), `TestStorageEclipse` (mark_secret, encrypt_item, decrypt_item, wrong key, get_secret_items, already encrypted, image rejection, permanent decrypt)
 
 ### Changed
