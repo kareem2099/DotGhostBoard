@@ -7,21 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.5.0] — 2026-04-13 — *Nexus*
 
-### Planned for v1.5.0 — *Nexus*
-- Cloud sync via local-network peer
-- Plugin API for custom item types
-- Light theme
+The Sync & Connectivity release — introduces secure local network clipboard synchronization, a REST API for programmatic access, a CLI companion, and a secure device pairing system.
+
+### Added
+- **Local Network Sync (v1.5.0 flagship)** — End-to-End Encrypted (E2EE) clipboard synchronization between devices on the same network using AES-256-GCM and per-peer shared secrets.
+- **mDNS Device Discovery** — Automatic zero-configuration discovery of other DotGhostBoard instances on the local network using Zeroconf (mDNS).
+- **Secure Pairing Handshake** — X25519 (ECDH) based key exchange protected by a 6-digit PIN and dynamic salts, ensuring safe pairing even on public Wi-Fi.
+- **REST API** — Background server (`core/api_server.py`) providing programmatic clipboard access. Includes endpoints for history retrieval, manual item pushing, and device pairing.
+- **CLI Companion (`dotghost`)** — Command-line interface for pushing and popping clipboard data, integrated with the local API.
+- **Sync Engine** — Multi-threaded background engine for pushing new captures to all trusted peers without blocking the main UI thread.
+- **Rate Limiting & Security Hardening** — Integrated IP-based rate limiting (3 attempts/min) for pairing endpoints and dynamic salt generation for all handshakes.
+
+### Fixed
+- **API Server reachability** — Shifted server binding from `127.0.0.1` to `0.0.0.0` to enable cross-device communication.
+- **Handshake Race Conditions** — Improved UI synchronization between the server thread and the pairing dialog to handle asynchronous key verification.
+- **Resource Cleanup** — Ensured all background discovery and API threads are gracefully terminated on application exit.
 
 ---
 
 ## [Unreleased]
 
-### Planned for v1.5.0 — *Nexus*
-- Cloud sync via local-network peer
-- Plugin API for custom item types
-- Light theme
+### Planned for v2.0.0 (Cerberus)
+- **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
+- **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.
+- **Zero-Logging Mode (Paranoia)** — Ephemeral state that completely drops clipboard saves to the DB while active.
+- **Auto-Clear** — Automatically wipes the OS clipboard 30 seconds after copying from the Vault.
 
 ---
 

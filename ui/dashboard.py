@@ -16,9 +16,11 @@ from core import storage
 from core.watcher import ClipboardWatcher
 from core.crypto     import has_master_password
 from core.app_filter import AppFilter
+from core.sync_engine import SyncEngine
 from ui.widgets import ItemCard
 from ui.settings import SettingsDialog, load_settings, save_settings
 from ui.lock_screen  import LockScreen
+from core.network_discovery import DotGhostDiscovery
 
 # Debug logger for drag & drop
 logger = logging.getLogger(__name__)
@@ -74,6 +76,21 @@ class Dashboard(QMainWindow):
         self._refresh_sidebar()
         # S003: clean old captures after loading history
         self._clean_captures()
+
+        # ── API Server ──
+        self._api_thread = None
+        self._start_api_server()
+
+        # ── Network Discovery ──
+        self._discovery_thread = None
+        self._start_discovery()
+
+        # ── Sync Engine ──
+        self._sync_engine: SyncEngine | None = None
+        self._init_sync_engine()
+
+        # ── Pairing State ──
+        self._active_pairing_dialogs = {}
 
         # ── Eclipse state ──
         self._active_key: bytes | None = None  # set after successful unlock
@@ -147,6 +164,22 @@ class Dashboard(QMainWindow):
 
         sidebar_layout.addLayout(sidebar_header)
         sidebar_layout.addWidget(self.collections_list)
+
+        # ── W005: Devices List (Sync Phase) ──
+        sidebar_layout.addSpacing(16)
+        dev_header = QHBoxLayout()
+        dev_label = QLabel("🌐 DEVICES")
+        dev_label.setStyleSheet("color: #666; font-weight: bold; font-size: 11px; letter-spacing: 1px;")
+        dev_header.addWidget(dev_label)
+        dev_header.addStretch()
+        sidebar_layout.addLayout(dev_header)
+
+        self.devices_list = QListWidget()
+        self.devices_list.setObjectName("DevicesList")
+        self.devices_list.setFixedHeight(140)
+        self.devices_list.setToolTip("Double-click a device to pair")
+        self.devices_list.itemDoubleClicked.connect(self._on_device_double_clicked)
+        sidebar_layout.addWidget(self.devices_list)
 
         main_hbox.addWidget(self.sidebar)
 
@@ -475,6 +508,215 @@ class Dashboard(QMainWindow):
         self.watcher.start()
 
     # ══════════════════════════════════════════
+    # Sync Engine
+    # ══════════════════════════════════════════
+    def _init_sync_engine(self):
+        node_id = self._settings.get("node_id", "")
+        port    = self._settings.get("api_port", 9090)
+        if node_id:
+            self._sync_engine = SyncEngine(local_node_id=node_id, api_port=port)
+
+    # ══════════════════════════════════════════
+    # API Server
+    # ══════════════════════════════════════════
+    def _start_api_server(self):
+        if self._settings.get("api_enabled", False):
+            port = self._settings.get("api_port", 9090)
+            token = self._settings.get("api_token", "")
+            node_id = self._settings.get("node_id", "")
+            device_name = self._settings.get("device_name", "")
+            if not token or not node_id:
+                return
+            from core.api_server import APIServerThread
+            self._api_thread = APIServerThread(port, token, node_id, device_name, parent=self)
+            self._api_thread.new_text_received.connect(self._on_api_new_text)
+            self._api_thread.pairing_requested.connect(self._on_pairing_requested)
+            self._api_thread.pairing_completed.connect(self._on_pairing_completed)
+            self._api_thread.pairing_failed.connect(self._on_pairing_failed)
+            self._api_thread.peer_unpaired.connect(self._on_peer_unpaired)
+            self._api_thread.sync_received.connect(self._on_sync_received)
+            self._api_thread.start()
+
+    def _on_api_new_text(self, item_id: int, text: str):
+        item = storage.get_item_by_id(item_id)
+        if item:
+            self._add_card(item, at_top=True)
+            self._refresh_stats()
+            # Push to peers
+            if self._sync_engine:
+                self._sync_engine.push("text", text)
+
+    def _on_peer_unpaired(self, node_id: str):
+        """Handle peer unpairing request"""
+        for i in range(self.devices_list.count()):
+            item = self.devices_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == node_id:
+                data = item.data(Qt.ItemDataRole.UserRole + 1)
+                item.setText(f"📱 {data['device_name']}")
+                item.setForeground(QColor("#ccc"))
+                self.statusBar().showMessage(f"Disconnected from {data['device_name']}")
+                break
+
+    def _on_sync_received(self, item_id: int, text: str):
+        """Called when a trusted peer pushes a clipboard item to us."""
+        item = storage.get_item_by_id(item_id)
+        if item:
+            self._add_card(item, at_top=True)
+            self._refresh_stats()
+            self.statusBar().showMessage(f"📥 Synced from peer: {text[:40]}..." if len(text) > 40 else f"📥 Synced: {text}")
+
+    # ══════════════════════════════════════════
+    # Network Discovery
+    # ══════════════════════════════════════════
+    def _start_discovery(self):
+        port = self._settings.get("api_port", 9090)
+        device_name = self._settings.get("device_name", "Unknown Ghost")
+        node_id = self._settings.get("node_id", "ghost_node")
+        
+        self._discovery_thread = DotGhostDiscovery(port, device_name, node_id, parent=self)
+        self._discovery_thread.signals.device_discovered.connect(self._on_device_discovered)
+        self._discovery_thread.signals.device_removed.connect(self._on_device_removed)
+        self._discovery_thread.start()
+
+    def _on_device_discovered(self, node_id, data):
+        # Prevent duplicates
+        for i in range(self.devices_list.count()):
+            if self.devices_list.item(i).data(Qt.ItemDataRole.UserRole) == node_id:
+                return
+        
+        item = QListWidgetItem(f"📱 {data['device_name']}")
+        item.setData(Qt.ItemDataRole.UserRole, node_id)
+        # Store full data for pairing info (IP, Port, etc.)
+        item.setData(Qt.ItemDataRole.UserRole + 1, data)
+        item.setToolTip(f"ID: {node_id}\nIP: {data['ip']}:{data['port']}")
+        if storage.is_peer_trusted(node_id):
+            item.setText(f"🔒 {data['device_name']}")
+            item.setForeground(QColor("#00ff41"))
+            
+        self.devices_list.addItem(item)
+        self.statusBar().showMessage(f"Discovered peer: {data['device_name']}")
+
+    def _on_device_double_clicked(self, item):
+        """Initiate pairing when a device is double-clicked (Role: Initiator)."""
+        node_id = item.data(Qt.ItemDataRole.UserRole)
+        data = item.data(Qt.ItemDataRole.UserRole + 1)
+        
+        if storage.is_peer_trusted(node_id):
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Device Options")
+            msg.setText(f"<b>{data['device_name']}</b> is already paired and trusted.")
+            msg.setInformativeText("What would you like to do?")
+            msg.setIcon(QMessageBox.Icon.Question)
+            
+            reconnect_btn = msg.addButton("🔄 Reconnect", QMessageBox.ButtonRole.AcceptRole)
+            reconnect_btn.setObjectName("BulkBtn")
+            
+            disconnect_btn = msg.addButton("❌ Disconnect", QMessageBox.ButtonRole.DestructiveRole)
+            disconnect_btn.setObjectName("BulkBtnDanger")
+            
+            cancel_btn = msg.addButton(QMessageBox.StandardButton.Cancel)
+            cancel_btn.setObjectName("BulkBtnCancel")
+            
+            msg.exec()
+            
+            if msg.clickedButton() == disconnect_btn or msg.clickedButton() == reconnect_btn:
+                # Tell the peer to unpair us as well
+                import threading
+                def notify_peer_unpair():
+                    try:
+                        import requests
+                        from core.sync_engine import _encrypt_for_peer
+                        peer_info = storage.get_trusted_peer(node_id)
+                        if peer_info:
+                            shared_secret = peer_info.get("shared_secret")
+                            peer_url = peer_info.get("ip_address")
+                            local_node_id = self._settings.get("node_id")
+                            payload = _encrypt_for_peer("unpair", shared_secret)
+                            requests.post(f"{peer_url}/api/pair/unpair", json={"node_id": local_node_id, "payload": payload}, timeout=3)
+                    except Exception as e:
+                        print(f"Failed to notify peer about unpair: {e}")
+                
+                threading.Thread(target=notify_peer_unpair, daemon=True).start()
+                
+                storage.remove_trusted_peer(node_id)
+                self.statusBar().showMessage(f"Unpaired with {data['device_name']}")
+                item.setText(f"📱 {data['device_name']}")
+                item.setForeground(QColor("#ccc"))
+                
+                if msg.clickedButton() == disconnect_btn:
+                    return
+                # If reconnect_btn, fall through to pairing below
+
+        from ui.pairing_dialog import PairingDialog
+        dialog = PairingDialog(
+            role="initiator",
+            peer_ip=data['ip'],
+            peer_port=data['port'],
+            peer_node_id=node_id,
+            peer_name=data['device_name'],
+            parent=self
+        )
+        if dialog.exec():
+            # Successfully paired
+            self.statusBar().showMessage(f"Successfully paired with {data['device_name']}!")
+            # Update the list item to show paired status icon
+            item.setText(f"🔒 {data['device_name']}")
+            item.setForeground(QColor("#00ff41"))
+
+
+    def _on_device_removed(self, node_id):
+        for i in range(self.devices_list.count()):
+            item = self.devices_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == node_id:
+                self.devices_list.takeItem(i)
+                break
+
+    def _on_pairing_requested(self, node_id, device_name):
+        """
+        Called when another device initiates a pairing request (Role: Receiver).
+        We show a dialog with a generated PIN.
+        """
+        # Get the salt that the server generated for this node
+        salt = None
+        if self._api_thread:
+            salt = self._api_thread.pending_salts.get(node_id)
+            
+        from ui.pairing_dialog import PairingDialog
+        dialog = PairingDialog(role="receiver", peer_node_id=node_id, 
+                               peer_name=device_name, salt=salt, parent=self)
+        
+        self._active_pairing_dialogs[node_id] = dialog
+        
+        # Give the session to the server thread so it can complete the handshake
+        if self._api_thread:
+            self._api_thread.active_pairing_sessions[node_id] = dialog.session
+            
+        if dialog.exec():
+            # Pairing accepted and completed via API
+            pass
+        else:
+            # Denied or timed out - clean up session
+            if self._api_thread:
+                self._api_thread.active_pairing_sessions.pop(node_id, None)
+                self._api_thread.pending_salts.pop(node_id, None)
+        
+        self._active_pairing_dialogs.pop(node_id, None)
+
+    def _on_pairing_completed(self, node_id, device_name):
+        self.statusBar().showMessage(f"Successfully paired with {device_name}!")
+        self._on_device_discovered(node_id, {"device_name": device_name, "ip": "paired", "port": 0})
+        
+        # Close the dialog if it's still open
+        if node_id in self._active_pairing_dialogs:
+            self._active_pairing_dialogs[node_id].mark_completed()
+
+    def _on_pairing_failed(self, node_id, error_message):
+        self.statusBar().showMessage(f"Pairing failed: {error_message}", 5000)
+        if node_id in self._active_pairing_dialogs:
+            self._active_pairing_dialogs[node_id].mark_failed(error_message)
+
+
+    # ══════════════════════════════════════════
     # Load history
     # ══════════════════════════════════════════
     def _load_history(self):
@@ -547,6 +789,7 @@ class Dashboard(QMainWindow):
             return  # Prevent spamming multiple threads
         self._update_thread = UpdateCheckerThread(self)
         self._update_thread.update_found.connect(self._on_update_found)
+        self._update_thread.finished.connect(lambda: setattr(self, '_update_thread', None))
         self._update_thread.finished.connect(self._update_thread.deleteLater)
         self._update_thread.start()
         
@@ -835,6 +1078,9 @@ class Dashboard(QMainWindow):
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
+            # Push to peers
+            if self._sync_engine:
+                self._sync_engine.push("text", text)
             preview = text[:40] + "…" if len(text) > 40 else text
             self.statusBar().showMessage(f"Text captured: {preview}")
 
@@ -1302,7 +1548,12 @@ class Dashboard(QMainWindow):
             if self._settings.get("clear_on_exit", False):
                 storage.delete_unpinned_items()
             self.watcher.stop()
-            self.watcher.wait(2000)
+            if getattr(self, "_api_thread", None):
+                self._api_thread.stop()
+                self._api_thread.wait()   # FIX: prevents IOT instruction crash
+            if getattr(self, "_discovery_thread", None):
+                self._discovery_thread.stop()
+                self._discovery_thread.wait()
             self.tray.hide()
             event.accept()
 
@@ -1471,3 +1722,31 @@ class Dashboard(QMainWindow):
             logger.debug(f"[Dashboard] Dragged card not in all cards, skipping reorder")
 
         event.acceptProposedAction()
+
+    def closeEvent(self, event):
+        """Handle application shutdown: stop threads gracefully."""
+        print("[Dashboard] Shutting down...")
+        
+        # 1. Stop Watcher
+        if hasattr(self, 'watcher') and self.watcher:
+            self.watcher.stop()
+            
+        # 2. Stop Discovery
+        if hasattr(self, '_discovery_thread') and self._discovery_thread:
+            self._discovery_thread.stop()
+            self._discovery_thread.wait(2000) # wait up to 2s
+            
+        # 3. Stop API Server
+        if hasattr(self, '_api_thread') and self._api_thread:
+            self._api_thread.stop()
+            self._api_thread.wait(2000)
+            
+        # 4. Stop Update Thread if running
+        try:
+            if hasattr(self, '_update_thread') and self._update_thread and self._update_thread.isRunning():
+                self._update_thread.terminate()
+                self._update_thread.wait(1000)
+        except RuntimeError:
+            pass # Object already deleted
+
+        super().closeEvent(event)

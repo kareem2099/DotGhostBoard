@@ -32,7 +32,10 @@ def tmp_settings_file(tmp_path):
 # ════════════════════════════════════════════
 class TestDefaults:
     def test_required_keys_present(self):
-        required = {"max_history", "max_captures", "theme", "clear_on_exit"}
+        required = {
+            "max_history", "max_captures", "theme", "clear_on_exit",
+            "api_enabled", "api_port", "api_token"
+        }
         assert required.issubset(settings_module._DEFAULTS.keys())
 
     def test_default_max_history(self):
@@ -53,9 +56,16 @@ class TestDefaults:
 # ════════════════════════════════════════════
 class TestLoadSettings:
     def test_returns_defaults_when_no_file(self):
-        # File doesn't exist → should return defaults
+        # File doesn't exist → should return defaults + generated values
         result = settings_module.load_settings()
-        assert result == settings_module._DEFAULTS
+        # Non-dynamic fields should match defaults
+        for key in ["max_history", "max_captures", "theme", "clear_on_exit", "api_port"]:
+            assert result[key] == settings_module._DEFAULTS[key]
+        
+        # Dynamic fields should be populated
+        assert len(result["api_token"]) > 0
+        assert len(result["node_id"]) > 0
+        assert len(result["device_name"]) > 0
 
     def test_reads_existing_file(self, tmp_settings_file):
         data = {"max_history": 50, "max_captures": 20,
@@ -81,7 +91,8 @@ class TestLoadSettings:
         with open(tmp_settings_file, "w") as f:
             f.write("{ this is not json }")
         result = settings_module.load_settings()
-        assert result == settings_module._DEFAULTS
+        assert result["max_history"] == settings_module._DEFAULTS["max_history"]
+        assert len(result["api_token"]) > 0
 
 
 # ════════════════════════════════════════════

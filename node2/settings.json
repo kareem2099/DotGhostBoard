@@ -1,0 +1,18 @@
+{
+  "max_history": 200,
+  "max_captures": 100,
+  "theme": "dark",
+  "clear_on_exit": false,
+  "multiselect_hint_dismissed": false,
+  "master_lock_enabled": false,
+  "auto_lock_minutes": 0,
+  "stealth_mode": false,
+  "app_filter_mode": "blacklist",
+  "app_filter_list": [],
+  "api_enabled": true,
+  "api_port": 9091,
+  "api_token": "b672ffb66198a11d652096412433e19a",
+  "node_id": "8fe082f59057a22b",
+  "device_name": "Ghost-Receiver",
+  "auto_update_check": true
+}

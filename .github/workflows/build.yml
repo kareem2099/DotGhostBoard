@@ -47,10 +47,23 @@ jobs:
 
       - name: Build
         run: |
-          pip install PyQt6 Pillow cryptography pyinstaller
+          pip install -r requirements.txt pyinstaller
           python scripts/generate_icon.py
           pyinstaller --noconsole --onedir --add-data "data:data" \
-            --hidden-import "PyQt6.sip" --name dotghostboard main.py
+            --hidden-import "PyQt6.sip" \
+            --hidden-import "cryptography" \
+            --hidden-import "cryptography.hazmat.primitives.asymmetric.x25519" \
+            --hidden-import "cryptography.hazmat.primitives.ciphers.aead" \
+            --name dotghostboard main.py
+
+      - name: Clean Conflicting Libraries
+        run: |
+          rm -f dist/dotghostboard/_internal/libxkbcommon.so*
+          rm -f dist/dotghostboard/_internal/libglib*.so*
+          rm -f dist/dotghostboard/_internal/libgio*.so*
+          rm -f dist/dotghostboard/_internal/libgobject*.so*
+          rm -f dist/dotghostboard/_internal/libgmodule*.so*
+          rm -f dist/dotghostboard/_internal/libgthread*.so*
 
       - name: Create AppDir
         run: |
@@ -93,10 +106,23 @@ jobs:
           [ -z "$VERSION" ] && VERSION="dev"
           ARCH=x86_64 ./appimagetool DotGhostBoard.AppDir "DotGhostBoard-${VERSION}-x86_64.AppImage"
 
+      - name: Sign AppImage (GPG)
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --detach-sign --armor \
+            DotGhostBoard-*.AppImage
+
+      - name: Verify AppImage signature
+        run: |
+          gpg --verify DotGhostBoard-*.AppImage.asc DotGhostBoard-*.AppImage
+          echo "✅ AppImage signature verified"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: DotGhostBoard-*.AppImage
+          path: DotGhostBoard-*
 
 
   linux-deb:
@@ -126,28 +152,38 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev debhelper fakeroot
+          sudo apt-get install -y dpkg-dev debhelper fakeroot dpkg-sig
 
       - name: Build
         run: |
-          pip install PyQt6 Pillow cryptography pyinstaller
+          pip install -r requirements.txt pyinstaller
           python scripts/generate_icon.py
           pyinstaller --noconsole --onedir --add-data "data:data" \
-            --hidden-import "PyQt6.sip" --hidden-import "cryptography" \
+            --hidden-import "PyQt6.sip" \
+            --hidden-import "cryptography" \
+            --hidden-import "cryptography.hazmat.primitives.asymmetric.x25519" \
+            --hidden-import "cryptography.hazmat.primitives.ciphers.aead" \
             --name dotghostboard main.py
+
+      - name: Clean Conflicting Libraries
+        run: |
+          rm -f dist/dotghostboard/_internal/libxkbcommon.so*
+          rm -f dist/dotghostboard/_internal/libglib*.so*
+          rm -f dist/dotghostboard/_internal/libgio*.so*
+          rm -f dist/dotghostboard/_internal/libgobject*.so*
+          rm -f dist/dotghostboard/_internal/libgmodule*.so*
+          rm -f dist/dotghostboard/_internal/libgthread*.so*
 
       - name: Create DEB
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.4.1"
+          [ -z "$VERSION" ] && VERSION="1.5.0"
           PKGDIR="dotghostboard_${VERSION}_amd64"
-          
+
           mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,opt/dotghostboard,usr/share/applications,usr/share/icons/hicolor/256x256/apps}
-          
-          # Move files to /opt (correct location for bundles)
+
           cp -r dist/dotghostboard/* "$PKGDIR/opt/dotghostboard/"
-          
-          # Create launcher in /usr/bin so 'which dotghostboard' works
+
           cat > "$PKGDIR/usr/bin/dotghostboard" << 'EOF'
           #!/bin/bash
           /opt/dotghostboard/dotghostboard "$@"
@@ -163,7 +199,7 @@ jobs:
           Categories=Utility;
           Terminal=false
           EOF
-          
+
           cp data/icons/icon_256.png "$PKGDIR/usr/share/icons/hicolor/256x256/apps/dotghostboard.png"
 
           cat > "$PKGDIR/DEBIAN/control" << EOF
@@ -172,12 +208,25 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0, python3-cryptography
+          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0
           Maintainer: FreeRave <kareem209907@gmail.com>
-          Description: Advanced clipboard manager for Linux (Eclipse v${VERSION})
+          Description: Advanced clipboard manager for Linux (Nexus v${VERSION})
           EOF
 
           fakeroot dpkg-deb --build "$PKGDIR"
+
+      - name: Sign DEB Package (GPG)
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+          dpkg-sig --sign builder \
+            -k "${{ secrets.GPG_KEY_ID }}" \
+            --gpg-options "--passphrase ${{ secrets.GPG_PASSPHRASE }} --pinentry-mode loopback --batch --yes" \
+            dotghostboard_*.deb
+
+      - name: Verify DEB signature
+        run: |
+          dpkg-sig --verify dotghostboard_*.deb
+          echo "✅ DEB signature verified"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -185,125 +234,8 @@ jobs:
           path: dotghostboard_*_amd64.deb
 
 
-  windows-exe:
-    runs-on: windows-latest
-    steps:
-      - name: Check authorization
-        run: |
-          if ("${{ secrets.BUILD_TOKEN }}" -eq "") {
-            Write-Error "Unauthorized: This workflow cannot be run on forks."
-            exit 1
-          }
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install PyQt6 Pillow cryptography pyinstaller
-
-      - name: Build
-        run: |
-          python scripts/generate_icon.py
-          pyinstaller `
-            --noconsole `
-            --onefile `
-            --add-data "data;data" `
-            --hidden-import "PyQt6.sip" `
-            --name dotghostboard `
-            main.py
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-exe
-          path: dist/dotghostboard.exe
-
-
-  macos-dmg:
-    runs-on: macos-latest
-    steps:
-      - name: Check authorization
-        run: |
-          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
-            echo "❌ Unauthorized: This workflow cannot be run on forks."
-            exit 1
-          fi
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/pip
-          key: ${{ runner.os }}-pip-pyqt6-pillow-pyinstaller
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install PyQt6 Pillow cryptography pyinstaller
-
-      - name: Build
-        run: |
-          python scripts/generate_icon.py
-          pyinstaller \
-            --noconsole \
-            --onedir \
-            --add-data "data:data" \
-            --hidden-import "PyQt6.sip" \
-            --name dotghostboard \
-            main.py
-
-      - name: Create DMG
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.4.1"
-
-          mkdir -p dist/dotghostboard.app/Contents/{MacOS,Resources}
-          cp -r dist/dotghostboard/* dist/dotghostboard.app/Contents/MacOS/
-          cp data/icons/icon_256.png dist/dotghostboard.app/Contents/Resources/icon.png
-
-          cat > dist/dotghostboard.app/Contents/Info.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key><string>DotGhostBoard</string>
-            <key>CFBundleExecutable</key><string>dotghostboard</string>
-            <key>CFBundleIconFile</key><string>icon</string>
-            <key>CFBundleIdentifier</key><string>com.github.kareem2099.dotghostboard</string>
-            <key>CFBundleVersion</key><string>${VERSION}</string>
-          </dict>
-          </plist>
-          EOF
-
-          hdiutil create \
-            -volname "DotGhostBoard" \
-            -srcfolder dist/dotghostboard.app \
-            -ov -format UDZO \
-            "DotGhostBoard-${VERSION}-macos.dmg"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: DotGhostBoard-*-macos.dmg
-
-
   release:
-    needs: [linux-appimage, linux-deb, windows-exe, macos-dmg]
+    needs: [linux-appimage, linux-deb]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -318,12 +250,18 @@ jobs:
           mkdir out
           find artifacts -type f \( \
             -name "*.AppImage" -o \
-            -name "*.deb" -o \
-            -name "*.exe" -o \
-            -name "*.dmg" \
+            -name "*.AppImage.asc" -o \
+            -name "*.deb" \
           \) -exec cp {} out/ \;
-          echo "Files to release:"
+          echo "📦 Files to release:"
           ls -lh out/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS.txt
+          echo "🔐 Checksums:"
+          cat SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
         with:

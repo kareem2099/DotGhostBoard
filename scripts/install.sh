@@ -122,6 +122,23 @@ fi
 echo "   ✓ App launcher entry created"
 
 # ─────────────────────────────────────────────────────────
+# 4. CLI Companion
+# ─────────────────────────────────────────────────────────
+echo "🔗 Setting up command-line tool (dotghost)..."
+
+mkdir -p "$HOME/.local/bin"
+CLI_SCRIPT="$PROJECT_DIR/cli/dotghost.py"
+SYMLINK_PATH="$HOME/.local/bin/dotghost"
+
+if [ -f "$CLI_SCRIPT" ]; then
+    chmod +x "$CLI_SCRIPT"
+    ln -sf "$CLI_SCRIPT" "$SYMLINK_PATH"
+    echo "   ✓ Created dotghost symlink in $HOME/.local/bin"
+else
+    echo "   ⚠ Could not find $CLI_SCRIPT"
+fi
+
+# ─────────────────────────────────────────────────────────
 # Done!
 # ─────────────────────────────────────────────────────────
 echo ""

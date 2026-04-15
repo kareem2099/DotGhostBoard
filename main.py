@@ -26,7 +26,9 @@ def _cleanup_old_appimage():
                     print(f"[Updater] Failed to remove {fname}: {e}")
 
 # Absolute path forces AppImage, .deb, and source to share the exact same socket
-SERVER_NAME = os.path.join(tempfile.gettempdir(), "dotghostboard_ipc.sock")
+# If DOTGHOST_HOME is used, we append a suffix to allow independent instances
+_home_suffix = f"_{os.getenv('DOTGHOST_HOME', 'default').replace('/', '_')}"
+SERVER_NAME  = os.path.join(tempfile.gettempdir(), f"dotghostboard_ipc{_home_suffix}.sock")
 
 
 def main():
@@ -97,7 +99,10 @@ def main():
     if server is not None:
         server.newConnection.connect(handle_new_connection)
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    # Ensure threads are stopped before the interpreter starts destroying objects
+    window.close()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

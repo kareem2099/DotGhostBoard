@@ -2,13 +2,13 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.4.1-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Memory%20&%20Performance%20Optimization-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Python](https://img.shields.io/badge/python-3.11+-ffcc00?style=flat-square&labelColor=0f0f0f)
-![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Platform](https://img.shields.io/badge/platform-Linux-ffcc00?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-162%20passed-ffcc00?style=flat-square&labelColor=0f0f0f)
-![License](https://img.shields.io/badge/license-MIT-ffcc00?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.0-00ff41?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Nexus-00ff41?style=flat-square&labelColor=0f0f0f)
+![Python](https://img.shields.io/badge/python-3.11+-00ff41?style=flat-square&labelColor=0f0f0f)
+![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-00ff41?style=flat-square&labelColor=0f0f0f)
+![Platform](https://img.shields.io/badge/platform-Linux-00ff41?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-178%20passed-00ff41?style=flat-square&labelColor=0f0f0f)
+![License](https://img.shields.io/badge/license-MIT-00ff41?style=flat-square&labelColor=0f0f0f)
 
 ---
 
@@ -77,6 +77,12 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Global tag manager** — ⚙ Settings → "Manage Tags…"; rename or delete tags across all items in one click
 - **Drag & drop visual feedback** — Ghost pixmap with neon border while dragging; source card dims to 35%; drop targets highlight with dashed green border
 
+- **E2EE Local Network Sync (Nexus)** — End-to-end encrypted clipboard synchronization across your local network. AES-256-GCM protection with X25519 (ECDH) handshakes.
+- **mDNS Auto-Discovery** — Zero-config discovery of peers on the same WiFi.
+- **REST API** — Programmatic access to history and pushing through a local localhost server.
+- **CLI Companion** — `dotghost push` and `dotghost pop` from your terminal for seamless shell workflow.
+- **Secure Device Pairing** — PIN-protected handshakes to ensure unauthorized devices can't intercept your sync data.
+
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with desktop environment dock and app launcher.
 
@@ -94,15 +100,23 @@ DotGhostBoard/
 │   ├── watcher.py               # Clipboard monitor (QTimer-based)
 │   ├── storage.py               # Database CRUD layer
 │   ├── crypto.py                # AES-256 encryption engine (Eclipse)
-│   ├── secure_delete.py         # Secure file deletion (Eclipse)
+│   ├── sync_engine.py           # E2EE background push worker (Nexus)
+│   ├── network_discovery.py     # Zeroconf mDNS peer discovery (Nexus)
+│   ├── api_server.py            # Local REST API & Handshake handler (Nexus)
+│   ├── pairing.py               # PIN-based ECDH handshake logic (Nexus)
+│   ├── updater.py               # GitHub auto-updater engine (v1.4.1)
 │   ├── app_filter.py            # App whitelist/blacklist (Eclipse)
 │   └── media.py                 # Image/video handler
 ├── ui/
 │   ├── dashboard.py             # Main window + keyboard nav + settings wiring
 │   ├── widgets.py               # Item card widget (double-click, focus)
 │   ├── settings.py              # Settings dialog with About tab
+│   ├── pairing_dialog.py        # Device pairing UI (Nexus)
 │   ├── lock_screen.py           # Master password lock screen (Eclipse)
+│   ├── updater_dialog.py        # GUI for GitHub updates
 │   └── ghost.qss                # Dark neon stylesheet
+├── cli/
+│   └── dotghost.py              # Command-line companion (Nexus)
 ├── data/
 │   ├── icons/                   # Generated app icons + ghost.svg source
 │   ├── captures/                # Saved images (.png)
@@ -110,16 +124,18 @@ DotGhostBoard/
 │   └── settings.json            # User settings
 ├── scripts/
 │   ├── generate_icon.py         # Draws ghost icon at 16/32/48/64/128/256px
-│   ├── install.sh               # Autostart + shortcut + .desktop installer
+│   ├── install.sh               # Autostart + shortcut + CLI symlinker
 │   ├── build_appimage.sh        # AppImage builder
 │   └── setup_autostart.py       # Standalone Python autostart installer
 ├── tests/
-│   ├── test_eclipse.py          # Eclipse feature tests (27+)
-│   ├── test_storage.py          # Storage CRUD tests
+│   ├── test_api.py              # REST API & Sync tests (178 total passed)
+│   ├── test_eclipse.py          # Encryption & Security tests
+│   ├── test_storage.py          # Database CRUD tests
 │   └── test_media.py            # Media detection tests
 ├── roadmap(v1.x).md
-├── pytest.ini
+├── CHANGELOG.md
 ├── requirements.txt
+├── pytest.ini
 └── .gitignore
 ```
 
@@ -221,7 +237,7 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.4.0_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.0_amd64.deb
 
 # Install with dpkg
 sudo dpkg -i dotghostboard_*.deb
@@ -292,14 +308,16 @@ python3 -m pytest
 
 Expected output:
 ```
-tests/test_eclipse.py .................................    [ 20%]
+tests/test_api.py .....                                    [  3%]
+tests/test_eclipse.py .................................    [ 21%]
 tests/test_media.py ...........................            [ 37%]
 tests/test_settings.py ............                       [ 44%]
-tests/test_storage.py ................................    [ 64%]
-tests/test_storage_v130.py ................................................. [ 94%]
-tests/test_thumbnailer.py .........                       [100%]
+tests/test_storage.py ................................    [ 62%]
+tests/test_storage_v130.py ................................................. [ 90%]
+tests/test_thumbnailer.py .........                       [ 95%]
+tests/test_updater_core.py ...........                    [100%]
 
-162 passed in 6.16s
+178 passed in 9.07s
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -316,9 +334,10 @@ tests/test_thumbnailer.py .........                       [100%]
 | v1.3.0 | Wraith | ✅ Released | Tags, collections, multi-select, bulk actions, export |
 | v1.4.0 | Eclipse | ✅ Released | AES-256 encryption, master lock, stealth mode, pro UI |
 | v1.4.1 | Mem & Perf | ✅ Released | Memory optimizations, GitHub auto-updater, IPC/Wayland bug fixes |
-| v1.5.0 | Nexus | 🔭 Future | Local network sync, CLI companion, plugin system |
+| v1.5.0 | Nexus | ✅ Released | E2EE Network Sync, mDNS Discovery, REST API, CLI Companion |
+| v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
-Full details in [`roadmap(v1.x).json`](roadmap(v1.x).json)
+Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
 
 ---
 

@@ -97,7 +97,7 @@
 
 ---
 
-## 🔮 v1.5.0 — Nexus `[Target: 2026-10-01]`
+## ✅ v1.5.0 — Nexus `[Released: 2026-04-13]`
 
 > **Goal:** Sync & sharing — cross-device, cloud optional
 
@@ -108,6 +108,12 @@
 - REST API mode: expose clipboard over localhost for scripts
 - CLI companion: `dotghost push` / `dotghost pop` from terminal
 - Plugin system: allow community extensions
+
+---
+
+## 🔒 v1.x Era Closed
+> **Status:** Finalized `[2026-04-15]`
+> Features such as cloud sync and plugins were cancelled to preserve the Zero-Trust integrity of DotGhostBoard. Development moving forward strictly targets `v2.x` (The Password Vault & Local Security).
 
 ---
 

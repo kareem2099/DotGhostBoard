@@ -10,6 +10,8 @@ v1.4.0  Eclipse  — E009: Master password, auto-lock, stealth, app filter
 
 import json
 import os
+import secrets
+import socket
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -25,7 +27,8 @@ from PyQt6.QtGui import QDesktopServices, QFont
 import core.storage as storage
 
 # ── Settings file path ────────────────────────────────────────────────────────
-_USER_DATA    = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+_DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+_USER_DATA    = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
 SETTINGS_PATH = os.path.join(_USER_DATA, "settings.json")
 
 _DEFAULTS: dict = {
@@ -41,6 +44,10 @@ _DEFAULTS: dict = {
     "stealth_mode":               False,
     "app_filter_mode":            "blacklist",
     "app_filter_list":            [],
+    # API & Sync
+    "api_enabled":                False,
+    "api_port":                   9090,
+    "api_token":                  "",
 }
 
 
@@ -48,15 +55,33 @@ _DEFAULTS: dict = {
 
 def load_settings() -> dict:
     """Return settings dict. Missing keys fall back to defaults."""
+    settings = dict(_DEFAULTS)
     if os.path.isfile(SETTINGS_PATH):
         try:
             with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Merge with defaults so new keys always exist
-            return {**_DEFAULTS, **data}
+            settings.update(data)
         except Exception:
             pass
-    return dict(_DEFAULTS)
+            
+    # Auto-generate API token if missing
+    if not settings.get("api_token"):
+        settings["api_token"] = secrets.token_hex(16)
+        save_settings(settings)
+        
+    # Auto-generate Node ID and default device name for Sync Phase
+    needs_save = False
+    if not settings.get("node_id"):
+        settings["node_id"] = secrets.token_hex(8)
+        needs_save = True
+    if not settings.get("device_name"):
+        settings["device_name"] = socket.gethostname()
+        needs_save = True
+        
+    if needs_save:
+        save_settings(settings)
+        
+    return settings
 
 
 def save_settings(settings: dict) -> None:
@@ -448,6 +473,7 @@ class SettingsDialog(QDialog):
         self._tabs.setObjectName("SettingsTabs")
         self._tabs.addTab(self._build_general_tab(), "General")
         self._tabs.addTab(self._build_eclipse_tab(), "🔐  Eclipse")
+        self._tabs.addTab(self._build_api_tab(),     "🌐  API")
         self._tabs.addTab(self._build_about_tab(),   "👻  About")
         root.addWidget(self._tabs)
 
@@ -864,6 +890,84 @@ class SettingsDialog(QDialog):
     def _open_tag_manager(self):
         TagManagerDialog(self).exec()
 
+    # ── API Tab ───────────────────────────────────────────────────────────────
+
+    def _build_api_tab(self) -> QWidget:
+        from PyQt6.QtWidgets import QApplication
+        
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(16, 20, 16, 20)
+        layout.setSpacing(18)
+
+        layout.addWidget(self._section_label("🔌  Local REST API"))
+
+        api_hint = QLabel(
+            "Enable a local background server on 127.0.0.1 to access the clipboard "
+            "programmatically via the CLI Companion (<code>dotghost push/pop</code>) "
+            "or your own scripts."
+        )
+        api_hint.setWordWrap(True)
+        api_hint.setStyleSheet("color:#444; font-size:11px;")
+        layout.addWidget(api_hint)
+
+        self._api_check = QCheckBox("Enable API Server")
+        self._api_check.setChecked(bool(self._settings.get("api_enabled", False)))
+        layout.addWidget(self._api_check)
+
+        warn_lbl = QLabel(
+            "⚠ Changes to port or enable toggles require an app restart."
+        )
+        warn_lbl.setStyleSheet("color:#555; font-size:10px;")
+        layout.addWidget(warn_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._api_port = QSpinBox()
+        self._api_port.setRange(1024, 65535)
+        self._api_port.setValue(self._settings.get("api_port", 9090))
+        form.addRow("API Port:", self._api_port)
+
+        token_row = QHBoxLayout()
+        self._api_token_in = QLineEdit()
+        self._api_token_in.setText(self._settings.get("api_token", ""))
+        self._api_token_in.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_token_in.setReadOnly(True)
+        self._api_token_in.setStyleSheet("font-family: monospace;")
+        
+        copy_btn = QPushButton("Copy")
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self._api_token_in.text()))
+        
+        show_btn = QPushButton("👁")
+        show_btn.setFixedWidth(30)
+        show_btn.setCheckable(True)
+        def toggle_pw(checked):
+            self._api_token_in.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
+        show_btn.toggled.connect(toggle_pw)
+        
+        token_row.addWidget(self._api_token_in)
+        token_row.addWidget(show_btn)
+        token_row.addWidget(copy_btn)
+        form.addRow("API Token:", token_row)
+
+        form.addRow(self._hsep())
+
+        # Sync / Discovery
+        self._device_name = QLineEdit()
+        self._device_name.setText(self._settings.get("device_name", socket.gethostname()))
+        self._device_name.setPlaceholderText("Name displayed to other devices")
+        form.addRow("Device Name:", self._device_name)
+        
+        node_id_lbl = QLabel(f"Node ID:  {self._settings.get('node_id', 'unknown')}")
+        node_id_lbl.setStyleSheet("color:#444; font-size:10px; font-family:monospace;")
+        form.addRow("", node_id_lbl)
+
+        layout.addLayout(form)
+        layout.addStretch()
+        return tab
+
     # ── About Tab ─────────────────────────────────────────────────────────────
 
     def _build_about_tab(self) -> QWidget:
@@ -1123,6 +1227,11 @@ class SettingsDialog(QDialog):
         self._settings["stealth_mode"]      = self._stealth_check.isChecked()
         self._settings["app_filter_mode"]   = self._app_filter_editor.get_mode()
         self._settings["app_filter_list"]   = self._app_filter_editor.get_app_list()
+
+        # API / Network
+        self._settings["api_enabled"]       = self._api_check.isChecked()
+        self._settings["api_port"]          = self._api_port.value()
+        self._settings["device_name"]       = self._device_name.text().strip() or socket.gethostname()
 
         save_settings(self._settings)
         self.accept()

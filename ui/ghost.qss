@@ -266,7 +266,6 @@ QCheckBox::indicator:hover {
 QCheckBox::indicator:checked {
     background-color: #00ff41;
     border: 1px solid #00ff41;
-    image: url(); 
 }
 
 /* ── SpinBox (Numbers in Settings) ── */

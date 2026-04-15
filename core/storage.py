@@ -3,7 +3,9 @@ import os
 from contextlib import contextmanager
 from datetime import datetime
 
-_USER_DATA = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+# ── Data Paths ───────────────────────────────────────────────────────────────
+_DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+_USER_DATA    = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
 os.makedirs(_USER_DATA, exist_ok=True)
 
 DB_PATH      = os.path.join(_USER_DATA, "ghost.db")
@@ -77,6 +79,17 @@ def init_db():
         except Exception:
             pass  # column already exists
 
+        # Create trusted_peers table for v1.5.0 (Sycn Phase)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trusted_peers (
+                node_id       TEXT PRIMARY KEY,
+                device_name   TEXT NOT NULL,
+                shared_secret TEXT NOT NULL,
+                ip_address    TEXT,
+                created_at    TEXT NOT NULL
+            )
+        """)
+
 
 # ─────────────────────────────────────────────
 # CREATE
@@ -98,6 +111,7 @@ def add_item(item_type: str, content: str, preview: str = None) -> int:
             VALUES (?, ?, ?, 0, ?, ?)
         """, (item_type, content, preview, now, now))
         return cursor.lastrowid
+
 
 
 # ─────────────────────────────────────────────
@@ -211,6 +225,20 @@ def toggle_pin(item_id: int) -> bool:
             WHERE id = ?
         """, (new_state, now, item_id))
     return bool(new_state)
+
+
+def update_item_field(item_id: int, field: str, value: any) -> None:
+    """Update a specific field for an item with whitelist protection."""
+    ALLOWED = {"is_secret", "is_pinned", "sort_order", "collection_id"}
+    if field not in ALLOWED:
+        raise ValueError(f"Field '{field}' is not whitelisted for direct update")
+        
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute(
+            f"UPDATE clipboard_items SET {field} = ?, updated_at = ? WHERE id = ?",
+            (value, now, item_id)
+        )
 
 
 def update_preview(item_id: int, preview_path: str) -> None:
@@ -866,3 +894,49 @@ def clean_old_captures(keep: int = 100) -> int:
         deleted += 1
 
     return deleted
+
+
+# ─────────────────────────────────────────────
+# TRUSTED PEERS (Sync Phase)
+# ─────────────────────────────────────────────
+
+def add_trusted_peer(node_id: str, device_name: str, shared_secret: str, ip: str = None) -> None:
+    """Store a newly paired peer and its shared encryption key."""
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO trusted_peers (node_id, device_name, shared_secret, ip_address, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (node_id, device_name, shared_secret, ip, now))
+
+
+def get_trusted_peer(node_id: str) -> dict | None:
+    """Retrieve peer info and shared secret by node_id."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT * FROM trusted_peers WHERE node_id = ?", (node_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_trusted_peers() -> list[dict]:
+    """Retrieve a list of all paired devices."""
+    with _db() as conn:
+        cursor = conn.execute("SELECT * FROM trusted_peers ORDER BY created_at DESC")
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def remove_trusted_peer(node_id: str) -> bool:
+    """Un-pair a device."""
+    with _db() as conn:
+        cursor = conn.execute("DELETE FROM trusted_peers WHERE node_id = ?", (node_id,))
+        return cursor.rowcount > 0
+
+
+def is_peer_trusted(node_id: str) -> bool:
+    """Fast check for paired status."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM trusted_peers WHERE node_id = ? LIMIT 1", (node_id,)
+        ).fetchone()
+        return bool(row)

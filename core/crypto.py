@@ -18,7 +18,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-_CFG_DIR     = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+_DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
+_CFG_DIR      = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
 _SALT_FILE   = os.path.join(_CFG_DIR, "eclipse.salt")
 _VERIFY_FILE = os.path.join(_CFG_DIR, "eclipse.verify")
 
