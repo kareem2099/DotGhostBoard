@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 
+from core.paths import resource_path
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QScrollArea, QLabel, QPushButton,
@@ -25,7 +27,7 @@ from core.network_discovery import DotGhostDiscovery
 # Debug logger for drag & drop
 logger = logging.getLogger(__name__)
 
-QSS_PATH = os.path.join(os.path.dirname(__file__), "ghost.qss")
+QSS_PATH = resource_path("ui", "ghost.qss")
 
 _PAGE_SIZE = 20   # Cards loaded per page
 
@@ -391,10 +393,7 @@ class Dashboard(QMainWindow):
     @staticmethod
     def _make_tray_icon() -> QIcon:
         """Load icon.png if available, else draw a minimal fallback."""
-        icon_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "data", "icons", "icon.png"
-        )
+        icon_path = resource_path("data", "icons", "icon.png")
         if os.path.isfile(icon_path):
             return QIcon(icon_path)
 

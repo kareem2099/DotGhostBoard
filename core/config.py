@@ -3,7 +3,7 @@
 import os
 import sys
 
-APP_VERSION = "v1.5.2"
+APP_VERSION = "v1.5.3"
 APP_CODENAME = "Nexus"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"

@@ -17,7 +17,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.3] — 2026-04-16 — *Nexus Hotfix III*
+
+Critical rendering fix — resolves the blank/white window that appeared when running the `.deb` or AppImage build.
+
+### Added
+- **`core/paths.py`** — New `resource_path(*parts)` helper that resolves bundled asset paths correctly in **both** environments:
+  - **Dev / source run**: resolves relative to the project root (same behaviour as before).
+  - **Frozen / PyInstaller** (deb & AppImage): resolves relative to `sys._MEIPASS` where PyInstaller extracts all data files at runtime.
+
+### Fixed
+- **Blank white window in deb & AppImage** — `ui/dashboard.py` computed `QSS_PATH` at **import time** using `os.path.dirname(__file__)`. Inside a PyInstaller bundle, `__file__` points into the zip archive, not the extracted data directory, so `os.path.exists()` returned `False` and the stylesheet was silently skipped — resulting in an unstyled, white-background window. Fixed by switching to `resource_path("ui", "ghost.qss")` which correctly uses `sys._MEIPASS` when frozen.
+- **Tray icon not found in deb & AppImage** — Same `__file__`-based path bug affected `_make_tray_icon()`. Fixed via `resource_path("data", "icons", "icon.png")`.
+
+---
+
 ## [1.5.2] — 2026-04-16 — *Nexus Hotfix II*
+
 
 Stability & UX polish release — secures the update pipeline, adds a cinematic "Aura Check" easter egg for Clear History, and fixes database migration regressions.
 
