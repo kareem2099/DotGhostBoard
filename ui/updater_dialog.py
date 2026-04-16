@@ -28,8 +28,10 @@ class DownloadWorker(QThread):
             filename = self.asset_url.split("/")[-1]
             # Sanitise filename — keep only safe characters
             filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+            output_dir = os.path.expanduser("~/.local/share/dotghostboard/updates")
+            os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(
-                tempfile.gettempdir(), f"dotghostboard_update_{filename}"
+                output_dir, f"dotghostboard_update_{filename}"
             )
             download_update(self.asset_url, output_path, self.progress.emit)
             self.finished_download.emit(output_path, self.asset_url)

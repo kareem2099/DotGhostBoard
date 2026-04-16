@@ -214,13 +214,22 @@ def apply_update(downloaded_file: str, asset_url: str):
         # FIX #3 — shlex.quote prevents shell-injection and handles paths
         #           that contain spaces or special characters.
         safe_path   = shlex.quote(downloaded_file)
-        script_path = os.path.join(tempfile.gettempdir(), "dotghostboard_install.sh")
+        script_dir = os.path.expanduser("~/.local/share/dotghostboard/updates")
+        os.makedirs(script_dir, exist_ok=True)
+        script_path = os.path.join(script_dir, "dotghostboard_install.sh")
 
         with open(script_path, "w") as f:
-            f.write(f"#!/bin/sh\ndpkg -i {safe_path}\n")
+            f.write("#!/bin/sh\n")
+            f.write(f"dpkg -i {safe_path}\n")
+            f.write(f"rm -f {safe_path}\n")
+            f.write("rm -f \"$0\"\n")
 
         os.chmod(script_path, 0o755)
-        subprocess.Popen(["pkexec", script_path])
+        
+        try:
+            subprocess.Popen(["pkexec", script_path])
+        except Exception as e:
+            print(f"[Updater] Failed to execute update script: {e}")
 
     # ── Windows installer ───────────────────────────────────────────────────
     elif ext in (".exe", ".msi"):

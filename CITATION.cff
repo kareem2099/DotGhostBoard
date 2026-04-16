@@ -5,8 +5,8 @@ authors:
   family-names: "Kareem"
   given-names: ""
 title: "DotGhostBoard: Advanced encrypted clipboard manager for Linux"
-version: 1.5.1
-date-released: 2026-04-15
+version: 1.5.2
+date-released: 2026-04-16
 url: "https://github.com/kareem2099/DotGhostBoard"
 repository-code: "https://github.com/kareem2099/DotGhostBoard"
 license: Apache-2.0

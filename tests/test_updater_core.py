@@ -14,13 +14,13 @@ from core.updater import (
 # ════════════════════════════════════════════
 def test_parse_version_valid():
     from packaging.version import Version
-    v = _parse_version("v1.5.1")
+    v = _parse_version("v1.5.2")
     assert isinstance(v, Version)
-    assert str(v) == "1.5.1"
+    assert str(v) == "1.5.2"
 
 def test_parse_version_no_v():
-    v = _parse_version("1.5.1")
-    assert str(v) == "1.5.1"
+    v = _parse_version("1.5.2")
+    assert str(v) == "1.5.2"
 
 def test_parse_version_invalid():
     assert _parse_version("invalid-tag") is None
@@ -31,27 +31,27 @@ def test_parse_version_invalid():
 # ════════════════════════════════════════════
 @patch("core.updater.urllib.request.urlopen")
 def test_check_for_updates_newer(mock_urlopen):
-    # Mocking a response with v1.6.0 when current is v1.5.1
+    # Mocking a response with v1.6.0 when current is v1.5.2
     mock_response = MagicMock()
     mock_response.status = 200
     mock_response.read.return_value = b'{"tag_name": "v1.6.0", "body": "New features", "assets": []}'
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 
-    result = check_for_updates("v1.5.1")
+    result = check_for_updates("v1.5.2")
     assert result is not None
     assert result["version"] == "v1.6.0"
 
 @patch("core.updater.urllib.request.urlopen")
 def test_check_for_updates_older(mock_urlopen):
-    # Mocking v1.3.0 when current is v1.5.1 (no update expected)
+    # Mocking v1.3.0 when current is v1.5.2 (no update expected)
     mock_response = MagicMock()
     mock_response.status = 200
     mock_response.read.return_value = b'{"tag_name": "v1.3.0", "body": "Old", "assets": []}'
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 
-    result = check_for_updates("v1.5.1")
+    result = check_for_updates("v1.5.2")
     assert result is None
 
 def test_version_logic_v9_vs_v10():

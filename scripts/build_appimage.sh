@@ -7,7 +7,7 @@ set -e
 
 APP_NAME="DotGhostBoard"
 # Get version from README or default to 1.4.1
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.1")
+VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.2")
 ARCH="x86_64"
 APPDIR="${APP_NAME}.AppDir"
 
@@ -22,6 +22,7 @@ echo "🚀 Compiling with PyInstaller (Local Context)..."
 # Added --hidden-import and --collect-all to ensure cryptography is bundled locally
 pyinstaller --noconsole --onedir \
     --add-data "data:data" \
+    --add-data "ui/ghost.qss:ui" \
     --hidden-import "PyQt6.sip" \
     --hidden-import "cryptography" \
     --collect-all "cryptography" \

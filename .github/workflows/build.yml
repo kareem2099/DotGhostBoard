@@ -103,6 +103,7 @@ jobs:
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
           chmod +x appimagetool
           VERSION=${GITHUB_REF_NAME#v}
+          [ -z "$VERSION" ] && VERSION=$(grep -oP '(?<=^version = ")[^"]+' pyproject.toml)
           [ -z "$VERSION" ] && VERSION="dev"
           ARCH=x86_64 ./appimagetool DotGhostBoard.AppDir "DotGhostBoard-${VERSION}-x86_64.AppImage"
 
@@ -177,7 +178,8 @@ jobs:
       - name: Create DEB
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          [ -z "$VERSION" ] && VERSION="1.5.1"
+          [ -z "$VERSION" ] && VERSION=$(grep -oP '(?<=^version = ")[^"]+' pyproject.toml)
+          [ -z "$VERSION" ] && VERSION="0.0.0"
           PKGDIR="dotghostboard_${VERSION}_amd64"
 
           mkdir -p "$PKGDIR"/{DEBIAN,usr/bin,opt/dotghostboard,usr/share/applications,usr/share/icons/hicolor/256x256/apps}

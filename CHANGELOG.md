@@ -17,6 +17,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.2] — 2026-04-16 — *Nexus Hotfix II*
+
+Stability & UX polish release — secures the update pipeline, adds a cinematic "Aura Check" easter egg for Clear History, and fixes database migration regressions.
+
+### Added
+- **Aura Check easter egg** — `_clear_history()` in `ui/dashboard.py` now requires the user to pass a two-stage confirmation: a styled `QMessageBox` Aura Check dialog (`QMessageBox.StandardButton.No` as default), followed by the Pigeon Doctor cinematic overlay.
+- **Pigeon Doctor Purge Screen** (`ui/purge_easter_egg.py`) — Frameless, dark full-window overlay playing `pigeon_boss.gif` with a cinematic timeline: fade-in at `t=0`, DB purge fires in a `QThread` at `t=600ms`, sub-caption flips to `✓ Purge Complete` at `t=700ms`, fade-out at `t=2200ms`, dialog closes at `t=2700ms`. Purge is guaranteed complete via `worker.wait()` before `accept()`.
+- **`get_asset_path(filename)`** in `core/config.py` — Bulletproof asset resolver that works in dev mode, PyInstaller bundles (`sys._MEIPASS`), and AppImage/DEB installs. Points to `data/assets/` relative to the project root.
+
+### Fixed
+- **Update directory security** — `core/updater.py` now saves downloaded `.deb`/`.AppImage` files to `~/.local/share/dotghostboard/updates/` instead of `/tmp/`, preventing TOCTOU attacks and surviving cross-session updates.
+- **Self-cleanup after install** — The generated install script now removes both the downloaded asset and itself after `pkexec` completes, leaving no stale files.
+- **`pkexec` error handling** — `ui/updater_dialog.py` now catches non-zero exit codes from `pkexec` and shows a user-friendly error dialog instead of silently failing or crashing.
+- **Database migration regression** — `core/storage.py` migration guard (`PRAGMA user_version`) now correctly handles databases upgraded from v1.4.x without re-running migrations on clean v1.5.x installs.
+- **Theme inconsistency hotfix** — QSS rules for `ItemCard` states (`focused`, `selected`, `droptarget`) are now applied consistently after stylesheet reload in `_load_stylesheet()`.
+
+---
+
 ## [1.5.0] — 2026-04-13 — *Nexus*
 
 The Sync & Connectivity release — introduces secure local network clipboard synchronization, a REST API for programmatic access, a CLI companion, and a secure device pairing system.

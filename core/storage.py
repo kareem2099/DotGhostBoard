@@ -79,16 +79,28 @@ def init_db():
         except Exception:
             pass  # column already exists
 
-        # Create trusted_peers table for v1.5.0 (Sycn Phase)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trusted_peers (
-                node_id       TEXT PRIMARY KEY,
-                device_name   TEXT NOT NULL,
-                shared_secret TEXT NOT NULL,
-                ip_address    TEXT,
-                created_at    TEXT NOT NULL
-            )
-        """)
+        # ── PRAGMA Auto-Migration ──
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA user_version;")
+        current_version = cursor.fetchone()[0]
+
+        if current_version == 0:
+            print("[Migration] Old database detected (v1.4.x). Starting migration to v1.5...")
+            try:
+                # Create trusted_peers table for v1.5.0 (Sycn Phase)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS trusted_peers (
+                        node_id       TEXT PRIMARY KEY,
+                        device_name   TEXT NOT NULL,
+                        shared_secret TEXT NOT NULL,
+                        ip_address    TEXT,
+                        created_at    TEXT NOT NULL
+                    )
+                """)
+                cursor.execute("PRAGMA user_version = 1;")
+                print("[Migration] Successfully migrated database to v1.5.x schema.")
+            except Exception as e:
+                print(f"[Migration] FATAL ERROR during migration: {e}")
 
 
 # ─────────────────────────────────────────────

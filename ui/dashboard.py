@@ -1339,20 +1339,44 @@ class Dashboard(QMainWindow):
     # Clear History
     # ══════════════════════════════════════════
     def _clear_history(self):
-        reply = QMessageBox.question(
-            self, "Clear History",
-            "Are you sure you want to delete all unpinned history?\n(Pinned items and collections will be kept).",
+        # ── Stage 1: Aura Check 😂 ─────────────────────────────
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Aura Check 🐦⬛")
+        msg.setText(
+            "<b>Do you have the aura of the Pigeon Doctor</b><br>"
+            "to delete all this data?"
+        )
+        msg.setInformativeText(
+            "Unpinned items will be permanently erased.\n"
+            "Pinned items and collections will survive."
+        )
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
 
-        storage.delete_unpinned_items()
+        if msg.exec() != QMessageBox.StandardButton.Yes:
+            return   # User backed out / changed their mind 🐔
+
+        # ── Stage 2: Pigeon Doctor Loading Screen 🎬 ───────────
+        from ui.purge_easter_egg import PurgeEasterEggDialog
+
+        # The actual DB purge runs inside the dialog at t=600ms (background thread).
+        # We only need to tell it *what* to delete.
+        dialog = PurgeEasterEggDialog(
+            purge_fn=storage.delete_unpinned_items,
+            parent=self,
+        )
+        dialog.exec()   # blocks until fade-out + worker.wait() are done
+
+        # ── Stage 3: Remove cards + refresh UI after curtain falls ──
         for iid in [iid for iid, c in self._cards.items() if not c.is_pinned]:
             self._remove_card(iid)
         self._focused_idx = -1
         self._refresh_stats()
-        self.statusBar().showMessage("History cleared (pinned items kept)")
+        self.statusBar().showMessage("🐦⬛ The Pigeon Doctor has cleansed the board.")
+
 
     # ══════════════════════════════════════════
     # Stats

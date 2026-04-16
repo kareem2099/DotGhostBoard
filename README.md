@@ -2,7 +2,7 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.1-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.2-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
@@ -237,7 +237,7 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.1_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.2_amd64.deb
 
 # Install with dpkg
 sudo dpkg -i dotghostboard_*.deb
@@ -335,6 +335,8 @@ tests/test_updater_core.py ...........                    [100%]
 | v1.4.0 | Eclipse | ✅ Released | AES-256 encryption, master lock, stealth mode, pro UI |
 | v1.4.1 | Mem & Perf | ✅ Released | Memory optimizations, GitHub auto-updater, IPC/Wayland bug fixes |
 | v1.5.0 | Nexus | ✅ Released | E2EE Network Sync, mDNS Discovery, REST API, CLI Companion |
+| v1.5.1 | Nexus Hotfix I | ✅ Released | Update pipeline security, self-cleanup install script |
+| v1.5.2 | Nexus Hotfix II | ✅ Released | Aura Check easter egg, Pigeon Doctor purge screen, migration fix |
 | v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
