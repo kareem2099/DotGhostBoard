@@ -19,16 +19,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.5.3] — 2026-04-16 — *Nexus Hotfix III*
 
-Critical rendering fix — resolves the blank/white window that appeared when running the `.deb` or AppImage build.
+Critical rendering fix — resolves the blank/white window that appeared in **GitHub-built** `.deb` and AppImage releases.
+
+### Root Cause
+The GitHub Actions workflow (`.github/workflows/build.yml`) was missing `--add-data "ui/ghost.qss:ui"` from both the AppImage and DEB build steps. The local build scripts (`scripts/build_deb.sh`, `scripts/build_appimage.sh`) had it correctly, which is why local builds always worked. GitHub builds shipped without the stylesheet file entirely.
 
 ### Added
-- **`core/paths.py`** — New `resource_path(*parts)` helper that resolves bundled asset paths correctly in **both** environments:
-  - **Dev / source run**: resolves relative to the project root (same behaviour as before).
-  - **Frozen / PyInstaller** (deb & AppImage): resolves relative to `sys._MEIPASS` where PyInstaller extracts all data files at runtime.
+- **`core/paths.py`** — New `resource_path(*parts)` helper as a defensive measure that resolves bundled asset paths correctly in both dev and frozen (PyInstaller `sys._MEIPASS`) environments.
 
 ### Fixed
-- **Blank white window in deb & AppImage** — `ui/dashboard.py` computed `QSS_PATH` at **import time** using `os.path.dirname(__file__)`. Inside a PyInstaller bundle, `__file__` points into the zip archive, not the extracted data directory, so `os.path.exists()` returned `False` and the stylesheet was silently skipped — resulting in an unstyled, white-background window. Fixed by switching to `resource_path("ui", "ghost.qss")` which correctly uses `sys._MEIPASS` when frozen.
-- **Tray icon not found in deb & AppImage** — Same `__file__`-based path bug affected `_make_tray_icon()`. Fixed via `resource_path("data", "icons", "icon.png")`.
+- **`.github/workflows/build.yml`** — Added `--add-data "ui/ghost.qss:ui"` to both the `linux-appimage` and `linux-deb` build steps. This was the actual cause of the white/unstyled window in all published GitHub releases.
+- **`ui/dashboard.py`** — Switched `QSS_PATH` and tray icon path to use `resource_path()` as a secondary fix, making the code robust against this class of bundling bugs in the future.
 
 ---
 

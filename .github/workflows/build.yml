@@ -49,7 +49,9 @@ jobs:
         run: |
           pip install -r requirements.txt pyinstaller
           python scripts/generate_icon.py
-          pyinstaller --noconsole --onedir --add-data "data:data" \
+          pyinstaller --noconsole --onedir \
+            --add-data "data:data" \
+            --add-data "ui/ghost.qss:ui" \
             --hidden-import "PyQt6.sip" \
             --hidden-import "cryptography" \
             --hidden-import "cryptography.hazmat.primitives.asymmetric.x25519" \
@@ -159,7 +161,9 @@ jobs:
         run: |
           pip install -r requirements.txt pyinstaller
           python scripts/generate_icon.py
-          pyinstaller --noconsole --onedir --add-data "data:data" \
+          pyinstaller --noconsole --onedir \
+            --add-data "data:data" \
+            --add-data "ui/ghost.qss:ui" \
             --hidden-import "PyQt6.sip" \
             --hidden-import "cryptography" \
             --hidden-import "cryptography.hazmat.primitives.asymmetric.x25519" \
