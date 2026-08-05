@@ -7,13 +7,13 @@ set -e
 
 APP_NAME="DotGhostBoard"
 # Get version from README or default to 1.4.1
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.2")
+VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.5")
 ARCH="x86_64"
 APPDIR="${APP_NAME}.AppDir"
 
 echo "🛡️ Checking Dependencies..."
 # Ensure required libraries are installed in current environment
-pip install PyQt6 Pillow cryptography pyinstaller --quiet
+pip install PyQt6 Pillow cryptography pyinstaller --break-system-packages --quiet || true
 
 echo "🎨 Generating Fresh Icons..."
 python3 scripts/generate_icon.py

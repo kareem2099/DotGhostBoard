@@ -17,6 +17,59 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.5] — 2026-08-05 — *Nexus Polish & Spotlight*
+
+UI state intelligence, quick Spotlight search overlay, relative time formatting, copy count reset, image deduplication, and search input debouncing.
+
+### Added
+
+- **Spotlight Quick Search Overlay** (`ui/spotlight.py`) — Frameless floating search popup accessible globally via `Ctrl+Shift+F`. Provides real-time search, keyboard navigation (`Up`/`Down`/`Enter`), and instant copy/paste. Encrypted secret items are masked with `🔒 Secret Item (Encrypted)` preview for privacy.
+- **Master Password Prompt for Secret Copying** (`ui/dashboard.py` — `_on_copy`) — Prompting for Master Password using `LockScreen` before copying secret items, decrypting content in-memory for pasting without saving plaintext back to DB or re-capturing as unencrypted cards.
+- **Image SHA-256 Deduplication** (`core/storage.py` — `_get_file_hash`, `add_item`) — Identical image captures/screenshots are deduplicated via SHA-256 checksums, automatically moving the existing image card to top and incrementing `copy_count` while purging duplicate temporary files.
+- **Search Input Debouncing** (`ui/dashboard.py`, `ui/spotlight.py`) — Added 200ms (Dashboard) and 150ms (Spotlight) `QTimer` search input debounce to prevent unnecessary SQL execution and UI rebuilds during rapid typing.
+- **Dashboard Stats & State Header** (`ui/widgets.py` — `StatsHeaderCard`, `core/storage.py` — `get_today_stats`) — Live status bar banner displaying Today's Captures, Top Copied Clip created today (excluding secrets), and Pinned Items Count.
+- **Relative Timestamp Formatting** (`ui/widgets.py` — `_format_time`) — Human relative timestamps ("just now", "5m ago", "2h ago", "3d ago") with a 60-second background `QTimer` UI refresh.
+
+### Fixed
+
+- **Duplicate `closeEvent` Method Override** (`ui/dashboard.py`) — Merged duplicate `closeEvent` definitions into a single method to restore system tray minimization on window close (`X`), `clear_on_exit` cleanup, and graceful thread shutdown.
+- **Self-Paste Re-capture Prevention** (`core/watcher.py` — `_check_clipboard`) — Fixed `_last_content` update on self-paste to prevent app-pasted text/decrypted secrets from being re-captured as new cards in the DB.
+- **`reset_copy_count` Return Type** (`core/storage.py`) — Updated `reset_copy_count(item_id)` to return `bool` (`True` when item count is reset, `False` when item is not found), with UI handling in Dashboard status bar.
+
+---
+
+## [1.5.4] — 2026-08-05 — *Nexus Hotfix IV*
+
+
+Clipboard reliability fix + copy intelligence feature.
+Resolves a 3-layer bug where repeated copies of the same text would silently stop being captured.
+Introduces **Copy Count Badge** and **Auto-Pin Suggestion** for frequently-used items.
+
+### Fixed
+
+- **Clipboard capture stopping on repeated copies** — Three compounding root causes were identified and resolved:
+  - **`core/storage.py` — `add_item()` silent no-op on duplicate:** When the same content already existed in the DB, `add_item()` returned the old ID without updating `updated_at` or emitting any signal, causing the UI to never refresh. Fixed to do a **"Move to Top"** (`UPDATE updated_at = NOW, copy_count += 1`) so the card floats up and the watcher signal fires correctly.
+  - **`core/watcher.py` — self-paste blocks re-copy:** After the app pasted an item back to clipboard via the ⎘ button, `_is_self_paste` was cleared but `_last_content` still held the old text. Any subsequent manual copy of that same text would be silently skipped. Fixed by resetting `_last_content = None` on self-paste, allowing immediate re-capture.
+  - **`ui/dashboard.py` — `_add_card()` ignores existing cards:** When the watcher emitted a signal for an already-seen item, `_add_card()` returned early without moving the card to the top of the list. Fixed to `removeWidget()` + `insertWidget(0, ...)` when `at_top=True`.
+
+### Added
+
+- **Copy Count Badge** (`ui/widgets.py`) — A pill badge on each `ItemCard` showing how many times the item has been copied. Hidden for first copies; appears from `×2` onwards with color tiers:
+  - `↩ ×2–4` — Muted teal (mild)
+  - `♻ ×5–9` — Orange (warm)
+  - `🔥 ×10+` — Gold/red (hot)
+  Badge updates live via `update_copy_count(count)` without rebuilding the card.
+
+- **`copy_count` DB column** (`core/storage.py`) — New `INTEGER DEFAULT 0` column on `clipboard_items`. Automatic `ALTER TABLE` migration for existing databases. `add_item()` sets `copy_count = 1` on insert and increments on re-copy. New `increment_copy_count(item_id) → int` function for copy-button presses.
+
+- **Pin Suggestion Toast** (`ui/dashboard.py` — `PinSuggestionToast`) — Non-blocking toast overlay at the bottom-left of the window, triggered when an item reaches `×5` copies. Shows item preview, a **Pin It** button and a **Dismiss** button. Auto-dismisses after 6 seconds.
+
+- **Auto-Pin at ×10** (`ui/dashboard.py` — `_check_pin_suggestion()`) — Items copied 10 or more times are automatically pinned with a status bar notification: `📍 Auto-pinned! Copied ×10 times — keeping it safe.`
+
+- **Badge + suggestion on keyboard copy** (`ui/dashboard.py` — `_on_new_text/image/video()`) — Badge refresh and pin suggestion now trigger for all copy paths (keyboard `Ctrl+C` via watcher, not just the ⎘ button in the UI).
+
+---
+
 ## [1.5.3] — 2026-04-16 — *Nexus Hotfix III*
 
 Critical rendering fix — resolves the blank/white window that appeared in **GitHub-built** `.deb` and AppImage releases.

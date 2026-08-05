@@ -29,9 +29,96 @@ logger = logging.getLogger(__name__)
 def _format_time(iso_str: str) -> str:
     try:
         dt = datetime.fromisoformat(iso_str)
-        return dt.strftime("%d %b, %H:%M")
+        now = datetime.now()
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+
+        if seconds < 45:
+            return "just now"
+        elif seconds < 3600:
+            mins = max(1, seconds // 60)
+            return f"{mins}m ago"
+        elif seconds < 86400:
+            hours = seconds // 3600
+            return f"{hours}h ago"
+        elif seconds < 86400 * 7:
+            days = seconds // 86400
+            return f"{days}d ago"
+        else:
+            return dt.strftime("%d %b, %H:%M")
     except Exception:
         return ""
+
+
+# ──────────────────────────────────────────────────────────────
+# StatsHeaderCard — Dashboard state summary banner
+# ──────────────────────────────────────────────────────────────
+class StatsHeaderCard(QFrame):
+    """
+    State summary widget displayed at top of history feed.
+    Displays today's total captures, top copied clip, and total pinned count.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("StatsHeaderCard")
+        self.setStyleSheet("""
+            QFrame#StatsHeaderCard {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #161622, stop:1 #12121c);
+                border: 1px solid #28283a;
+                border-radius: 10px;
+                padding: 4px 10px;
+            }
+            QLabel {
+                font-size: 11px;
+                font-family: monospace;
+            }
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(12)
+
+        self.lbl_today = QLabel("📋 Today: 0")
+        self.lbl_today.setStyleSheet("color: #38bdf8; font-weight: 600;")
+
+        self.lbl_top = QLabel("🔥 Top: None")
+        self.lbl_top.setStyleSheet("color: #f59e0b; font-weight: 600;")
+
+        self.lbl_pinned = QLabel("📍 Pinned: 0")
+        self.lbl_pinned.setStyleSheet("color: #a855f7; font-weight: 600;")
+
+        sep1 = QLabel("•")
+        sep1.setStyleSheet("color: #334155;")
+        sep2 = QLabel("•")
+        sep2.setStyleSheet("color: #334155;")
+
+        layout.addWidget(self.lbl_today)
+        layout.addWidget(sep1)
+        layout.addWidget(self.lbl_top)
+        layout.addWidget(sep2)
+        layout.addWidget(self.lbl_pinned)
+        layout.addStretch()
+
+        self.refresh_stats()
+
+    def refresh_stats(self):
+        try:
+            stats = storage.get_today_stats()
+            total_today = stats.get("total_today", 0)
+            top_preview = stats.get("top_copied_preview", "")
+            top_count = stats.get("top_copied_count", 0)
+            total_pinned = stats.get("total_pinned", 0)
+
+            self.lbl_today.setText(f"📋 Today: {total_today}")
+            if top_preview and top_count > 0:
+                self.lbl_top.setText(f"🔥 Top: {top_preview} (×{top_count})")
+            else:
+                self.lbl_top.setText("🔥 Top: None")
+
+            self.lbl_pinned.setText(f"📍 Pinned: {total_pinned}")
+        except Exception as e:
+            logger.error(f"Error refreshing stats header: {e}")
+
 
 
 # ──────────────────────────────────────────────────────────────
@@ -196,6 +283,7 @@ class ItemCard(QFrame):
     sig_tag_added   = pyqtSignal(int, str)
     sig_tag_removed = pyqtSignal(int, str)
     sig_clicked     = pyqtSignal(int, object)
+    sig_reset_count = pyqtSignal(int)
 
     # E003: emitted when the card asks Dashboard for the active key
     sig_reveal_requested = pyqtSignal(int)   # (item_id)
@@ -210,11 +298,16 @@ class ItemCard(QFrame):
         self.item_type = item.get("type", "text")
         self.is_pinned = bool(item.get("is_pinned", 0))
         self.is_secret = bool(item.get("is_secret", 0))   # E003
+        self._copy_count = item.get("copy_count", 0) or 0
+        self._created_at_iso = item.get("created_at", "")
+        self._time_meta: QLabel | None = None
+
 
         self._file_path   = item.get("content", "")
         self._preview     = item.get("preview") or self._file_path
         self._img_label:  QLabel | None        = None
         self._tag_row:    TagInputRow | None   = None
+        self._count_badge: QLabel | None       = None   # copy count pill
 
         # E003: revealed state — True while decrypted content is visible
         self._is_revealed: bool = False
@@ -276,11 +369,24 @@ class ItemCard(QFrame):
         badge.style().polish(badge)
 
         # Time meta
-        meta = QLabel(_format_time(item["created_at"]))
-        meta.setObjectName("ItemMeta")
+        self._time_meta = QLabel(_format_time(item.get("created_at", "")))
+        self._time_meta.setObjectName("ItemMeta")
 
         top_row.addWidget(badge)
-        top_row.addWidget(meta)
+        top_row.addWidget(self._time_meta)
+
+        # ── Copy count badge ─────────────────────────────────
+        self._count_badge = QLabel()
+        self._count_badge.setObjectName("CopyCountBadge")
+        self._count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._count_badge.setFixedHeight(18)
+        self._count_badge.setToolTip("Click to reset copy count")
+        self._count_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._count_badge.mousePressEvent = lambda e: self.sig_reset_count.emit(self.item_id)
+        self._apply_count_badge_style(self._copy_count)
+        top_row.addWidget(self._count_badge)
+
+
         top_row.addStretch()
 
         # E003: secret toggle button (lock/reveal) — only for secret items
@@ -695,3 +801,43 @@ class ItemCard(QFrame):
         self.style().polish(self)
         self.pin_btn.style().unpolish(self.pin_btn)
         self.pin_btn.style().polish(self.pin_btn)
+
+    # ──────────────────────────────────────────────────────────
+    # Copy count badge
+    # ──────────────────────────────────────────────────────────
+    def update_copy_count(self, count: int):
+        """Refresh the copy count badge without rebuilding the card."""
+        self._copy_count = count
+        if self._count_badge:
+            self._apply_count_badge_style(count)
+
+    def _apply_count_badge_style(self, count: int):
+        """Set badge text and colour based on copy frequency tier."""
+        if count < 2:
+            self._count_badge.setText("")
+            self._count_badge.setVisible(False)
+            return
+
+        self._count_badge.setVisible(True)
+
+        if count >= 10:
+            # 🔥 Hot — gold/red
+            bg, fg, icon = "#ff6b35", "#0a0a0a", "🔥"
+        elif count >= 5:
+            # Warm — orange  
+            bg, fg, icon = "#e8a020", "#0a0a0a", "♻"
+        else:
+            # Mild — muted teal
+            bg, fg, icon = "#2a4a4a", "#7ecfcf", "↩"
+
+        self._count_badge.setText(f"{icon} ×{count}")
+        self._count_badge.setStyleSheet(
+            f"background: {bg}; color: {fg};"
+            "border-radius: 9px; padding: 0 7px;"
+            "font-size: 11px; font-weight: 600;"
+        )
+
+    def update_relative_time(self):
+        """Refresh timestamp label to latest relative format."""
+        if hasattr(self, "_created_at_iso") and self._time_meta and self._created_at_iso:
+            self._time_meta.setText(_format_time(self._created_at_iso))

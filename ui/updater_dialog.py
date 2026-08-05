@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
-from core.updater import download_update, apply_update
+from core.updater import download_update
 from core.config import APP_VERSION
 
 
@@ -154,15 +154,19 @@ class UpdaterDialog(QDialog):
         self.worker = None
 
         self.progress_bar.setValue(100)
+        self.accept()   # close the download dialog first
 
-        try:
-            apply_update(output_path, asset_url)
-            self.accept()
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Update Failed", f"Failed to apply update:\n{e}"
-            )
-            self.reject()
+        # Open the terminal-style install log screen
+        from ui.update_log_screen import UpdateLogScreen
+        log_screen = UpdateLogScreen(
+            downloaded_file=output_path,
+            asset_url=asset_url,
+            new_version=self.update_info.get("version", "latest"),
+            current_version=APP_VERSION,
+            release_notes=self.update_info.get("body", ""),
+            parent=self.parent(),
+        )
+        log_screen.exec()
 
     def _on_error(self, message: str):
         # FIX #3 — cleanup worker on error path too

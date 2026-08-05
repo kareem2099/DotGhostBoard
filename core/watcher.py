@@ -73,12 +73,25 @@ class ClipboardWatcher(QObject):
     # ─────────────────────────────────────────
     def _check_clipboard(self):
         try:
-            if self._is_self_paste:
-                self._is_self_paste = False
-                return
-
             mime = self._clipboard.mimeData()
             if mime is None:
+                return
+
+            if self._is_self_paste:
+                self._is_self_paste = False
+                # Record pasted content in _last_content so the watcher
+                # ignores it on subsequent poll ticks and doesn't re-capture
+                # decrypted secret text as a new unencrypted card.
+                if mime.hasText():
+                    self._last_content = mime.text().strip()
+                elif mime.hasUrls():
+                    urls = mime.urls()
+                    if urls:
+                        self._last_content = urls[0].toLocalFile()
+                elif mime.hasImage():
+                    qimage = self._clipboard.image()
+                    if not qimage.isNull():
+                        self._last_content = f"{qimage.width()}x{qimage.height()}_{qimage.sizeInBytes()}"
                 return
 
             # ──────────────────────────────────────────────────────────
@@ -129,7 +142,14 @@ class ClipboardWatcher(QObject):
             # ──────────────────────────────────────────────────────────
             if mime.hasText():
                 text = mime.text().strip()
-                if not text or text == self._last_content:
+                if not text:
+                    return
+
+                # Only skip if the clipboard poll sees the exact same
+                # content as the previous poll (no new copy action).
+                # This prevents flooding the DB on every 500ms tick, but
+                # allows re-copying the same word intentionally.
+                if text == self._last_content:
                     return
                 self._last_content = text
 

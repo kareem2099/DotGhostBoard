@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.3-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.5-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-178%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-184%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -82,6 +82,8 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **REST API** — Programmatic access to history and pushing through a local localhost server.
 - **CLI Companion** — `dotghost push` and `dotghost pop` from your terminal for seamless shell workflow.
 - **Secure Device Pairing** — PIN-protected handshakes to ensure unauthorized devices can't intercept your sync data.
+- **Copy Count Badge** — Each card shows a live pill badge (`×2`, `×5`, `×10+`) tracking how many times an item has been copied. Color escalates from teal → orange → 🔥 as the count grows.
+- **Auto-Pin Suggestion** — At `×5` copies a non-blocking toast appears suggesting you pin the item. At `×10` the item is **auto-pinned silently** so frequently-used text is always protected from deletion.
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with desktop environment dock and app launcher.
@@ -338,6 +340,8 @@ tests/test_updater_core.py ...........                    [100%]
 | v1.5.1 | Nexus Hotfix I | ✅ Released | Update pipeline security, self-cleanup install script |
 | v1.5.2 | Nexus Hotfix II | ✅ Released | Aura Check easter egg, Pigeon Doctor purge screen, migration fix |
 | v1.5.3 | Nexus Hotfix III | ✅ Released | Fix blank/white window in deb & AppImage (PyInstaller resource path) |
+| v1.5.4 | Nexus Hotfix IV | ✅ Released | Clipboard capture reliability fix (3-layer bug); Copy Count Badge; Auto-Pin Suggestion |
+| v1.5.5 | Nexus Polish & Spotlight | ✅ Released | Spotlight quick search overlay, relative time, copy count reset, image deduplication, search debounce |
 | v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)

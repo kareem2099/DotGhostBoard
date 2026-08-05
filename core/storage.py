@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import hashlib
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -39,6 +40,7 @@ def init_db():
                 preview     TEXT    DEFAULT NULL,
                 is_pinned   INTEGER DEFAULT 0,
                 sort_order  INTEGER DEFAULT 0,
+                copy_count  INTEGER DEFAULT 0,
                 created_at  TEXT    NOT NULL,
                 updated_at  TEXT    NOT NULL
             )
@@ -52,6 +54,12 @@ def init_db():
         # Migration: add tags column for v1.3.0
         try:
             conn.execute("ALTER TABLE clipboard_items ADD COLUMN tags TEXT DEFAULT ''")
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add copy_count for v1.5.x
+        try:
+            conn.execute("ALTER TABLE clipboard_items ADD COLUMN copy_count INTEGER DEFAULT 0")
         except Exception:
             pass  # column already exists
 
@@ -106,23 +114,156 @@ def init_db():
 # ─────────────────────────────────────────────
 # CREATE
 # ─────────────────────────────────────────────
+def _get_file_hash(filepath: str) -> str | None:
+    """Calculate SHA-256 hash of a file for image duplicate detection."""
+    if not filepath or not os.path.isfile(filepath):
+        return None
+    try:
+        h = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
 def add_item(item_type: str, content: str, preview: str = None) -> int:
     """
     Add a new item to the database.
-    Returns the ID of the new item.
+    If the item already exists (by content or image hash), bump its updated_at
+    (move to top) and increment its copy_count, then return the existing ID
+    so the watcher can refresh the UI.
     """
-    # Check if the item already exists (to prevent duplicates)
+    # 1. Direct content match (text string, video path, or identical image path)
     existing = get_item_by_content(content)
     if existing:
+        now = datetime.now().isoformat()
+        with _db() as conn:
+            conn.execute(
+                "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
+                (now, existing["id"]),
+            )
         return existing["id"]
 
+    # 2. Image content hash match (detect duplicate screenshots / image pixel data)
+    if item_type == "image" and os.path.isfile(content):
+        new_hash = _get_file_hash(content)
+        if new_hash:
+            new_size = os.path.getsize(content)
+            with _db() as conn:
+                rows = conn.execute(
+                    "SELECT id, content FROM clipboard_items WHERE type = 'image' ORDER BY updated_at DESC LIMIT 100"
+                ).fetchall()
+
+            for row in rows:
+                existing_path = row["content"]
+                if existing_path and os.path.isfile(existing_path):
+                    if os.path.getsize(existing_path) == new_size:
+                        if _get_file_hash(existing_path) == new_hash:
+                            # Duplicate image detected! Remove temporary newly created file
+                            try:
+                                os.remove(content)
+                            except OSError:
+                                pass
+
+                            now = datetime.now().isoformat()
+                            with _db() as conn:
+                                conn.execute(
+                                    "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
+                                    (now, row["id"]),
+                                )
+                            return row["id"]
+
+    # 3. New item insertion
     now = datetime.now().isoformat()
     with _db() as conn:
         cursor = conn.execute("""
-            INSERT INTO clipboard_items (type, content, preview, is_pinned, created_at, updated_at)
-            VALUES (?, ?, ?, 0, ?, ?)
+            INSERT INTO clipboard_items (type, content, preview, is_pinned, copy_count, created_at, updated_at)
+            VALUES (?, ?, ?, 0, 1, ?, ?)
         """, (item_type, content, preview, now, now))
         return cursor.lastrowid
+
+
+def increment_copy_count(item_id: int) -> int:
+    """
+    Increment the copy_count for an item (called when user presses the copy button).
+    Returns the new copy_count value.
+    """
+    with _db() as conn:
+        conn.execute(
+            "UPDATE clipboard_items SET copy_count = copy_count + 1 WHERE id = ?",
+            (item_id,)
+        )
+        cursor = conn.execute(
+            "SELECT copy_count FROM clipboard_items WHERE id = ?",
+            (item_id,)
+        )
+        row = cursor.fetchone()
+        return row["copy_count"] if row else 0
+
+
+def reset_copy_count(item_id: int) -> bool:
+    """Reset the copy_count for an item to 0. Returns True if updated, False if item not found."""
+    with _db() as conn:
+        cursor = conn.execute(
+            "UPDATE clipboard_items SET copy_count = 0 WHERE id = ?",
+            (item_id,)
+        )
+        return cursor.rowcount > 0
+
+
+def get_today_stats() -> dict:
+    """
+    Get summary statistics for the dashboard state header:
+    - total_today: number of items created today
+    - total_copies: sum of all item copy counts
+    - top_copied_preview: snippet of most copied item created today
+    - top_copied_count: copy count of top item
+    - total_pinned: total count of pinned items
+    """
+    today_prefix = datetime.now().strftime("%Y-%m-%d")
+    with _db() as conn:
+        cur1 = conn.execute(
+            "SELECT COUNT(*) as cnt FROM clipboard_items WHERE created_at LIKE ?",
+            (f"{today_prefix}%",)
+        )
+        total_today = cur1.fetchone()["cnt"]
+
+        cur2 = conn.execute("SELECT SUM(copy_count) as total_copies FROM clipboard_items")
+        row2 = cur2.fetchone()
+        total_copies = row2["total_copies"] if row2 and row2["total_copies"] else 0
+
+        cur3 = conn.execute(
+            """
+            SELECT preview, content, copy_count
+            FROM clipboard_items
+            WHERE copy_count > 0
+              AND created_at LIKE ?
+              AND COALESCE(is_secret, 0) = 0
+            ORDER BY copy_count DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (f"{today_prefix}%",)
+        )
+        top_row = cur3.fetchone()
+        top_copied_preview = ""
+        top_copied_count = 0
+        if top_row:
+            top_copied_preview = top_row["preview"] or top_row["content"] or ""
+            top_copied_count = top_row["copy_count"]
+
+        cur4 = conn.execute("SELECT COUNT(*) as cnt FROM clipboard_items WHERE is_pinned = 1")
+        total_pinned = cur4.fetchone()["cnt"]
+
+        return {
+            "total_today": total_today,
+            "total_copies": total_copies,
+            "top_copied_preview": top_copied_preview[:25] + "…" if len(top_copied_preview) > 25 else top_copied_preview,
+            "top_copied_count": top_copied_count,
+            "total_pinned": total_pinned,
+        }
+
 
 
 

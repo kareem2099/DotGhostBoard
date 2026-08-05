@@ -214,10 +214,31 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0
+          Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0, policykit-1 | polkitd
           Maintainer: FreeRave <kareem209907@gmail.com>
           Description: Advanced clipboard manager for Linux (Nexus v${VERSION})
           EOF
+
+          cat > "$PKGDIR/DEBIAN/postinst" << 'POSTINST'
+          #!/bin/bash
+          # DotGhostBoard post-install: ensure pkexec has the SUID bit set
+          # so the in-app updater can install packages without a terminal.
+          set -e
+          fix_suid() {
+              local bin="$1"
+              if [ -f "$bin" ]; then
+                  current=$(stat -c '%a' "$bin" 2>/dev/null || echo "0")
+                  if [ "$current" != "4755" ]; then
+                      chmod 4755 "$bin" && echo "[DotGhostBoard] Fixed SUID on $bin" || true
+                  fi
+              fi
+          }
+          fix_suid /usr/bin/pkexec
+          fix_suid /usr/lib/polkit-1/polkit-agent-helper-1
+          fix_suid /usr/lib/x86_64-linux-gnu/polkit-1/polkit-agent-helper-1
+          exit 0
+          POSTINST
+          chmod 0755 "$PKGDIR/DEBIAN/postinst"
 
           fakeroot dpkg-deb --build "$PKGDIR"
 
@@ -239,9 +260,83 @@ jobs:
           name: linux-deb
           path: dotghostboard_*_amd64.*
 
+  linux-tarball:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check authorization
+        run: |
+          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
+            echo "❌ Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build Tarball
+        run: |
+          pip install -r requirements.txt pyinstaller
+          python scripts/generate_icon.py
+          ./scripts/build_tarball.sh
+
+      - name: Sign Tarball Package (GPG)
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --detach-sign --armor \
+            dotghostboard_*_amd64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dotghostboard_*_amd64.tar.gz*
+
+  linux-arch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check authorization
+        run: |
+          if [ -z "${{ secrets.BUILD_TOKEN }}" ]; then
+            echo "❌ Unauthorized: This workflow cannot be run on forks."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install zstd
+        run: sudo apt-get update && sudo apt-get install -y zstd
+
+      - name: Build Arch Package
+        run: |
+          pip install -r requirements.txt pyinstaller
+          python scripts/generate_icon.py
+          ./scripts/build_arch.sh
+
+      - name: Sign Arch Package (GPG)
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --detach-sign --armor \
+            dotghostboard-*.pkg.tar.zst || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arch
+          path: |
+            dotghostboard-*.pkg.tar.*
+
 
   release:
-    needs: [linux-appimage, linux-deb]
+    needs: [linux-appimage, linux-deb, linux-tarball, linux-arch]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -251,24 +346,33 @@ jobs:
         with:
           path: artifacts
 
-      - name: Organize Files
+      - name: Organize Files & Generate Checksums
         run: |
           mkdir out
           find artifacts -type f \( \
             -name "*.AppImage" -o \
             -name "*.AppImage.asc" -o \
             -name "*.deb" -o \
-            -name "*.deb.asc" \
+            -name "*.deb.asc" -o \
+            -name "*.tar.gz" -o \
+            -name "*.tar.gz.asc" -o \
+            -name "*.pkg.tar.zst" -o \
+            -name "*.pkg.tar.zst.asc" \
           \) -exec cp {} out/ \;
-          echo "📦 Files to release:"
-          ls -lh out/
 
-      - name: Generate SHA256 checksums
-        run: |
           cd out
-          sha256sum * > SHA256SUMS.txt
-          echo "🔐 Checksums:"
-          cat SHA256SUMS.txt
+          sha256sum * > SHA256SUMS
+
+          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --detach-sign --armor \
+              SHA256SUMS || true
+          fi
+
+          echo "📦 Final release contents:"
+          ls -lh
 
       - uses: softprops/action-gh-release@v2
         with:

@@ -91,3 +91,16 @@ bug_fixes_v1.4.1.md
 
 # ── Local Scripts ──
 scripts/setup_secrets.sh
+
+# ── Articles ──
+articles/
+
+# ── Release Build Artifacts & Packages ──
+*.deb
+*.tar.gz
+*.pkg.tar.zst
+*.pkg.tar.gz
+*.AppImage
+*.asc
+SHA256SUMS*
+PKGBUILD

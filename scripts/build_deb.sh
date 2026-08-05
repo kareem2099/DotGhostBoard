@@ -1,13 +1,13 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════
-# DotGhostBoard — Local DEB Builder (v1.5.0 Nexus)
+# DotGhostBoard — Local DEB Builder (v1.5.5 Nexus)
 # ═══════════════════════════════════════════════════════
 
 set -e
 
 APP_NAME="dotghostboard"
 # Get version from README or default to 1.4.1
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.2")
+VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.5")
 PKG_DIR="${APP_NAME}_${VERSION}_amd64"
 
 echo "🧹 Cleaning previous builds..."
@@ -15,7 +15,7 @@ rm -rf build dist "$PKG_DIR" "${PKG_DIR}.deb"
 
 echo "🚀 Compiling with PyInstaller..."
 # Bundle all libraries and name the executable dotghostboard-app
-pip install PyQt6 Pillow cryptography pyinstaller --quiet
+pip install PyQt6 Pillow cryptography pyinstaller --break-system-packages --quiet || true
 pyinstaller --noconsole --onedir \
     --add-data "data:data" \
     --add-data "ui/ghost.qss:ui" \
@@ -69,11 +69,37 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0, python3-cryptography
+Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0, python3-cryptography, policykit-1 | polkitd
 Maintainer: FreeRave <kareem209907@gmail.com>
-Description: Advanced clipboard manager for Linux (Eclipse v${VERSION})
+Description: Advanced clipboard manager for Linux (Nexus v${VERSION})
  Built with PyQt6 and AES-256 encryption. Part of the DotSuite tools.
 EOF
+
+# 6. Create postinst script (fixes pkexec SUID for in-app updater)
+echo "⚙️ Generating DEBIAN/postinst script..."
+cat > "$PKG_DIR/DEBIAN/postinst" << 'POSTINST'
+#!/bin/bash
+# DotGhostBoard post-install: ensure pkexec has the SUID bit set
+# so the in-app updater can install .deb packages without a terminal.
+set -e
+
+fix_suid() {
+    local bin="$1"
+    if [ -f "$bin" ]; then
+        current=$(stat -c '%a' "$bin" 2>/dev/null || echo "0")
+        if [ "$current" != "4755" ]; then
+            chmod 4755 "$bin" && echo "[DotGhostBoard] Fixed SUID on $bin" || true
+        fi
+    fi
+}
+
+fix_suid /usr/bin/pkexec
+fix_suid /usr/lib/polkit-1/polkit-agent-helper-1
+fix_suid /usr/lib/x86_64-linux-gnu/polkit-1/polkit-agent-helper-1
+
+exit 0
+POSTINST
+chmod 0755 "$PKG_DIR/DEBIAN/postinst"
 
 # 6. Build final package
 echo "🔨 Packaging .deb file..."

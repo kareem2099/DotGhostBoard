@@ -11,21 +11,112 @@ from PyQt6.QtWidgets import (
     QApplication, QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
     QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEvent
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QPoint
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeyEvent, QShortcut, QKeySequence
 
 from core import storage
 from core.watcher import ClipboardWatcher
 from core.crypto     import has_master_password
 from core.app_filter import AppFilter
 from core.sync_engine import SyncEngine
-from ui.widgets import ItemCard
+from ui.widgets import ItemCard, StatsHeaderCard
+from ui.spotlight import SpotlightSearchDialog
 from ui.settings import SettingsDialog, load_settings, save_settings
 from ui.lock_screen  import LockScreen
 from core.network_discovery import DotGhostDiscovery
 
 # Debug logger for drag & drop
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────
+# Pin Suggestion Toast
+# ──────────────────────────────────────────────────────────
+class PinSuggestionToast(QFrame):
+    """
+    A non-blocking toast shown at the bottom-left of the Dashboard
+    suggesting the user to pin a frequently-copied item.
+    Disappears after 6 s or when the user clicks Pin/Dismiss.
+    """
+    sig_pin   = pyqtSignal(int)  # item_id
+    sig_close = pyqtSignal()
+
+    def __init__(self, item_id: int, preview: str, parent=None):
+        super().__init__(parent)
+        self._item_id = item_id
+        self.setObjectName("PinToast")
+        self.setFixedWidth(340)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QFrame#PinToast {
+                background: #1a2a1a;
+                border: 1px solid #00ff4166;
+                border-radius: 10px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(6)
+
+        # Header
+        header = QLabel("📌 You've copied this 5 times — Pin it?")
+        header.setStyleSheet("color:#00ff41; font-weight:600; font-size:12px;")
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        # Preview snippet
+        snippet = QLabel(f"\"{preview}\"")
+        snippet.setStyleSheet("color:#888; font-size:11px;")
+        snippet.setWordWrap(True)
+        snippet.setMaximumWidth(310)
+        layout.addWidget(snippet)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+
+        dismiss_btn = QPushButton("Dismiss")
+        dismiss_btn.setFixedHeight(26)
+        dismiss_btn.setStyleSheet(
+            "QPushButton { background:#222; color:#666; border:1px solid #333;"
+            "border-radius:5px; padding:0 12px; font-size:11px; }"
+            "QPushButton:hover { color:#aaa; border-color:#555; }"
+        )
+        dismiss_btn.clicked.connect(self._dismiss)
+        btn_row.addWidget(dismiss_btn)
+
+        pin_btn = QPushButton("📌  Pin It")
+        pin_btn.setFixedHeight(26)
+        pin_btn.setStyleSheet(
+            "QPushButton { background:#004d15; color:#00ff41; border:1px solid #00ff4166;"
+            "border-radius:5px; padding:0 14px; font-size:11px; font-weight:600; }"
+            "QPushButton:hover { background:#006620; }"
+        )
+        pin_btn.clicked.connect(self._on_pin)
+        btn_row.addWidget(pin_btn)
+
+        layout.addLayout(btn_row)
+        self.adjustSize()
+
+        # Auto-dismiss after 6 s
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(6000)
+        self._timer.timeout.connect(self._dismiss)
+        self._timer.start()
+
+    def _on_pin(self):
+        self._timer.stop()
+        self.sig_pin.emit(self._item_id)
+        self._dismiss()
+
+    def _dismiss(self):
+        self._timer.stop()
+        self.sig_close.emit()
+        self.deleteLater()
+
 
 QSS_PATH = resource_path("ui", "ghost.qss")
 
@@ -117,6 +208,28 @@ class Dashboard(QMainWindow):
         # Apply stealth mode if it was saved
         if self._settings.get("stealth_mode", False):
             self._set_stealth(True)
+
+        # Spotlight Search Overlay
+        self.spotlight_dialog = SpotlightSearchDialog(self)
+        self.spotlight_dialog.sig_item_selected.connect(self._on_spotlight_item_selected)
+
+        # Hotkeys (Ctrl+Shift+F for Spotlight Search)
+        self.spotlight_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        self.spotlight_shortcut.activated.connect(self.show_spotlight)
+
+        # Periodic timer for relative timestamps & stats (60s)
+        self._rel_time_timer = QTimer(self)
+        self._rel_time_timer.setInterval(60000)
+        self._rel_time_timer.timeout.connect(self._update_relative_times)
+        self._rel_time_timer.start()
+
+        # Search debounce timer (200ms)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._do_search)
+        self._pending_search_query = ""
+
 
     # ══════════════════════════════════════════
     # Build UI  (W005 — Collections Sidebar)
@@ -244,8 +357,14 @@ class Dashboard(QMainWindow):
         top_layout.addWidget(self.clear_btn)
         root.addWidget(top_bar)
 
+        # ── Dashboard Stats Header ──
+        self.stats_header = StatsHeaderCard()
+        root.addWidget(self.stats_header)
+
+
         # ── Search ──
         search_frame = QFrame()
+
         search_frame.setStyleSheet("padding: 8px 12px;")
         search_layout = QHBoxLayout(search_frame)
         search_layout.setContentsMargins(0, 0, 0, 0)
@@ -905,7 +1024,12 @@ class Dashboard(QMainWindow):
     # Cards management
     # ══════════════════════════════════════════
     def _add_card(self, item: dict, at_top: bool = True):
+        # If card already exists and we're adding at top → move it to top
         if item["id"] in self._cards:
+            if at_top:
+                existing_card = self._cards[item["id"]]
+                self.cards_layout.removeWidget(existing_card)
+                self.cards_layout.insertWidget(0, existing_card)
             return
 
         card = ItemCard(item)
@@ -916,6 +1040,8 @@ class Dashboard(QMainWindow):
         card.sig_tag_removed.connect(self._on_tag_removed)
         card.sig_clicked.connect(self._on_card_clicked)
         card.sig_reveal_requested.connect(self._on_reveal_requested)  # E003
+        card.sig_reset_count.connect(self._on_reset_count)
+
 
         # E003: right-click → mark/unmark as secret
         card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -961,6 +1087,12 @@ class Dashboard(QMainWindow):
         pin_action = QAction(pin_label, self)
         pin_action.triggered.connect(lambda: self._on_pin(card.item_id))
         menu.addAction(pin_action)
+
+        if card._copy_count > 0:
+            reset_action = QAction("🔄  Reset Copy Count", self)
+            reset_action.triggered.connect(lambda: self._on_reset_count(card.item_id))
+            menu.addAction(reset_action)
+
 
         # ── Eclipse: encryption (only if master password is set) ──
         if has_master_password() and card.item_type == "text":
@@ -1077,17 +1209,30 @@ class Dashboard(QMainWindow):
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
+
+            # Refresh badge and run pin suggestion for keyboard copies too
+            copy_count = item.get("copy_count", 0) or 0
+            card = self._cards.get(item_id)
+            if card:
+                card.update_copy_count(copy_count)
+            self._check_pin_suggestion(item_id, copy_count)
+
             # Push to peers
             if self._sync_engine:
                 self._sync_engine.push("text", text)
             preview = text[:40] + "…" if len(text) > 40 else text
-            self.statusBar().showMessage(f"Text captured: {preview}")
+            self.statusBar().showMessage(f"Text captured: {preview}  (×{copy_count})")
 
     def _on_new_image(self, item_id: int, file_path: str):
         item = storage.get_item_by_id(item_id)
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
+            copy_count = item.get("copy_count", 0) or 0
+            card = self._cards.get(item_id)
+            if card:
+                card.update_copy_count(copy_count)
+            self._check_pin_suggestion(item_id, copy_count)
             self.statusBar().showMessage("Image captured 📸")
 
     def _on_new_video(self, item_id: int, video_path: str):
@@ -1095,7 +1240,13 @@ class Dashboard(QMainWindow):
         if item:
             self._add_card(item, at_top=True)
             self._refresh_stats()
+            copy_count = item.get("copy_count", 0) or 0
+            card = self._cards.get(item_id)
+            if card:
+                card.update_copy_count(copy_count)
+            self._check_pin_suggestion(item_id, copy_count)
             self.statusBar().showMessage("Video path captured 🎬")
+
 
     # S002: update card when video thumbnail is extracted
     def _on_thumb_ready(self, item_id: int, thumb_path: str):
@@ -1108,10 +1259,86 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     def _on_copy(self, item_id: int):
         item = storage.get_item_by_id(item_id)
-        if item:
-            self.watcher.mark_self_paste()
-            self.watcher.paste_item_to_clipboard(item)
-            self.statusBar().showMessage("Copied! ⎘")
+        if not item:
+            return
+
+        if item.get("is_secret"):
+            # Check if session is unlocked
+            if self._active_key is None:
+                dlg = LockScreen(setup=False)
+                if dlg.exec() == LockScreen.DialogCode.Accepted:
+                    self._active_key = dlg.get_key()
+                    self._reset_auto_lock()
+                else:
+                    self.statusBar().showMessage("⚠ Session is locked — unlock to copy secret.")
+                    return
+
+            # Decrypt item content in-memory for copying
+            plaintext = storage.decrypt_item(item_id, self._active_key)
+            if plaintext is None:
+                self.statusBar().showMessage("⚠ Decryption failed — wrong key or corrupted data.")
+                return
+
+            item["content"] = plaintext
+
+        self.watcher.mark_self_paste()
+        self.watcher.paste_item_to_clipboard(item)
+
+        # Increment copy count in DB and refresh badge on card
+        new_count = storage.increment_copy_count(item_id)
+        card = self._cards.get(item_id)
+        if card:
+            card.update_copy_count(new_count)
+
+        # Pin suggestion logic
+        self._check_pin_suggestion(item_id, new_count)
+
+        self.statusBar().showMessage(f"Copied! ⏘  (×{new_count})")
+
+    def _check_pin_suggestion(self, item_id: int, count: int):
+        """Show pin toast at 5 copies, auto-pin at 10."""
+        item = storage.get_item_by_id(item_id)
+        if not item:
+            return
+
+        if count == 10 and not item.get("is_pinned"):
+            # Auto-pin silently
+            storage.toggle_pin(item_id)
+            card = self._cards.get(item_id)
+            if card:
+                card.update_pin_state(True)
+            self.statusBar().showMessage(
+                "📍 Auto-pinned! Copied ×10 times — keeping it safe."
+            )
+
+        elif count == 5 and not item.get("is_pinned"):
+            self._show_pin_toast(item_id, item)
+
+    def _show_pin_toast(self, item_id: int, item: dict):
+        """Display the pin suggestion toast at the bottom-left of the window."""
+        # Only one toast at a time
+        if hasattr(self, '_active_toast') and self._active_toast:
+            try:
+                self._active_toast.deleteLater()
+            except Exception:
+                pass
+
+        content = item.get("content", "")
+        preview = content[:60] + "…" if len(content) > 60 else content
+
+        toast = PinSuggestionToast(item_id, preview, parent=self)
+        toast.sig_pin.connect(self._on_pin)
+        toast.sig_close.connect(lambda: setattr(self, '_active_toast', None))
+        self._active_toast = toast
+
+        # Position: bottom-left corner with some margin
+        toast.adjustSize()
+        margin = 16
+        x = margin
+        y = self.height() - toast.height() - margin - 30  # above status bar
+        toast.move(x, y)
+        toast.show()
+        toast.raise_()
 
     def _on_pin(self, item_id: int):
         new_state = storage.toggle_pin(item_id)
@@ -1297,14 +1524,24 @@ class Dashboard(QMainWindow):
     # W003 — Search (text + optional #tag filter)
     # ══════════════════════════════════════════
     def _on_search(self, query: str):
+        """Debounce search input by 200ms."""
+        self._pending_search_query = query
+        if not query.strip():
+            self._search_timer.stop()
+            self._do_search()
+        else:
+            self._search_timer.start()
+
+    def _do_search(self):
         """
-        Parse the search box value and apply text + tag filtering.
+        Parse the search box value and apply text + tag filtering (after 200ms debounce).
 
         Supported formats:
           "python"          → text search only
           "#code"           → tag filter only (show all items with that tag)
           "python #code"    → text search AND tag filter combined
         """
+        query = getattr(self, "_pending_search_query", "")
         self._focused_idx = -1
         raw = query.strip()
 
@@ -1386,6 +1623,41 @@ class Dashboard(QMainWindow):
             f"Total: {s['total']}  |  📌 {s['pinned']}  |  "
             f"T: {s['texts']}  I: {s['images']}"
         )
+        if hasattr(self, "stats_header") and self.stats_header:
+            self.stats_header.refresh_stats()
+
+    def show_spotlight(self):
+        """Show Spotlight Quick Search Overlay."""
+        if hasattr(self, "spotlight_dialog") and self.spotlight_dialog:
+            self.spotlight_dialog.show()
+            self.spotlight_dialog.raise_()
+            self.spotlight_dialog.activateWindow()
+
+    def _on_spotlight_item_selected(self, item: dict):
+        """User selected an item in Spotlight overlay → copy to clipboard."""
+        item_id = item.get("id")
+        if item_id:
+            self._on_copy(item_id)
+
+    def _update_relative_times(self):
+        """Periodic 60s refresh of relative timestamp labels & stats card."""
+        for card in self._cards.values():
+            card.update_relative_time()
+        self._refresh_stats()
+
+    def _on_reset_count(self, item_id: int):
+        """Reset copy_count of an item to 0."""
+        success = storage.reset_copy_count(item_id)
+        if not success:
+            self.statusBar().showMessage("Item not found ⚠")
+            return
+
+        card = self._cards.get(item_id)
+        if card:
+            card.update_copy_count(0)
+        self._refresh_stats()
+        self.statusBar().showMessage("Copy count reset 🔄")
+
 
     # ══════════════════════════════════════════
     # Keyboard Navigation (P005)
@@ -1566,19 +1838,37 @@ class Dashboard(QMainWindow):
                 QSystemTrayIcon.MessageIcon.Information,
                 2000
             )
-        else:
-            # Real quit — check clear_on_exit setting
-            if self._settings.get("clear_on_exit", False):
-                storage.delete_unpinned_items()
+            return
+
+        # Real quit — check clear_on_exit setting & stop threads
+        print("[Dashboard] Shutting down...")
+        if self._settings.get("clear_on_exit", False):
+            storage.delete_unpinned_items()
+
+        # 1. Stop Watcher
+        if hasattr(self, 'watcher') and self.watcher:
             self.watcher.stop()
-            if getattr(self, "_api_thread", None):
-                self._api_thread.stop()
-                self._api_thread.wait()   # FIX: prevents IOT instruction crash
-            if getattr(self, "_discovery_thread", None):
-                self._discovery_thread.stop()
-                self._discovery_thread.wait()
-            self.tray.hide()
-            event.accept()
+
+        # 2. Stop Discovery
+        if hasattr(self, '_discovery_thread') and self._discovery_thread:
+            self._discovery_thread.stop()
+            self._discovery_thread.wait(2000)
+
+        # 3. Stop API Server
+        if hasattr(self, '_api_thread') and self._api_thread:
+            self._api_thread.stop()
+            self._api_thread.wait(2000)
+
+        # 4. Stop Update Thread if running
+        try:
+            if hasattr(self, '_update_thread') and self._update_thread and self._update_thread.isRunning():
+                self._update_thread.terminate()
+                self._update_thread.wait(1000)
+        except RuntimeError:
+            pass
+
+        self.tray.hide()
+        event.accept()
 
     # ══════════════════════════════════════════
     # S006: Drag & Drop
@@ -1745,31 +2035,3 @@ class Dashboard(QMainWindow):
             logger.debug(f"[Dashboard] Dragged card not in all cards, skipping reorder")
 
         event.acceptProposedAction()
-
-    def closeEvent(self, event):
-        """Handle application shutdown: stop threads gracefully."""
-        print("[Dashboard] Shutting down...")
-        
-        # 1. Stop Watcher
-        if hasattr(self, 'watcher') and self.watcher:
-            self.watcher.stop()
-            
-        # 2. Stop Discovery
-        if hasattr(self, '_discovery_thread') and self._discovery_thread:
-            self._discovery_thread.stop()
-            self._discovery_thread.wait(2000) # wait up to 2s
-            
-        # 3. Stop API Server
-        if hasattr(self, '_api_thread') and self._api_thread:
-            self._api_thread.stop()
-            self._api_thread.wait(2000)
-            
-        # 4. Stop Update Thread if running
-        try:
-            if hasattr(self, '_update_thread') and self._update_thread and self._update_thread.isRunning():
-                self._update_thread.terminate()
-                self._update_thread.wait(1000)
-        except RuntimeError:
-            pass # Object already deleted
-
-        super().closeEvent(event)
