@@ -30,6 +30,20 @@ mkdir -p "$TAR_DIR"
 cp -r dist/dotghostboard-app/* "$TAR_DIR/"
 cp README.md "$TAR_DIR/" 2>/dev/null || true
 cp LICENSE "$TAR_DIR/" 2>/dev/null || true
+if [ -f "data/icons/icon_256.png" ]; then
+    cp data/icons/icon_256.png "$TAR_DIR/dotghostboard.png"
+fi
+
+cat > "$TAR_DIR/dotghostboard.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=DotGhostBoard
+Comment=Advanced clipboard manager for Linux — DotSuite
+Exec=dotghostboard.sh
+Icon=dotghostboard
+Categories=Utility;
+Terminal=false
+EOF
 
 # Launcher script inside tarball
 cat > "$TAR_DIR/dotghostboard.sh" << 'EOF'
