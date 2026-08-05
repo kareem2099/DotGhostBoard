@@ -379,25 +379,42 @@ jobs:
           \) -exec cp {} out/ \;
 
           cd out
-          sha256sum * > SHA256SUMS
+
+          echo "📋 Files before signing:"
+          ls -lh
+
+          # Generate checksums first (without .asc files)
+          sha256sum *.AppImage *.deb *.tar.gz *.pkg.tar.zst > SHA256SUMS 2>/dev/null || sha256sum * > SHA256SUMS
+
+          echo "🔑 GPG key present: $( [ -n "$GPG_PRIVATE_KEY" ] && echo YES || echo NO )"
+          echo "🔑 GPG passphrase present: $( [ -n "$GPG_PASSPHRASE" ] && echo YES || echo NO )"
 
           if [ -n "$GPG_PRIVATE_KEY" ]; then
-            echo "$GPG_PRIVATE_KEY" | gpg --import --batch --yes || true
+            echo "$GPG_PRIVATE_KEY" | gpg --import --batch --yes
+            gpg --list-secret-keys --keyid-format LONG
 
             KEY_ID="$GPG_KEY_ID"
             if [ -z "$KEY_ID" ]; then
-              KEY_ID=$(gpg --list-secret-keys --keyid-format LONG 2>/dev/null | grep -oP '(?<=sec   ed25519/)[A-Z0-9]+' | head -1)
+              KEY_ID=$(gpg --list-secret-keys --keyid-format LONG 2>/dev/null \
+                | grep -E '^sec' \
+                | grep -oP '[A-F0-9]{16}' \
+                | head -1)
             fi
+            echo "🔑 Using GPG Key ID: ${KEY_ID:-<default>}"
 
-            for f in *; do
-              if [ -f "$f" ]; then
-                gpg --batch --yes --pinentry-mode loopback \
-                  ${KEY_ID:+-u "$KEY_ID"} \
-                  --passphrase "$GPG_PASSPHRASE" \
-                  --detach-sign --armor \
-                  "$f" || true
-              fi
+            for f in *.AppImage *.deb *.tar.gz *.pkg.tar.zst SHA256SUMS; do
+              [ -f "$f" ] || continue
+              echo "✍️  Signing: $f"
+              gpg --batch --yes --pinentry-mode loopback \
+                ${KEY_ID:+-u "$KEY_ID"} \
+                --passphrase "$GPG_PASSPHRASE" \
+                --detach-sign --armor \
+                "$f" \
+                && echo "✅ Signed: $f → $f.asc" \
+                || echo "❌ Failed to sign: $f"
             done
+          else
+            echo "⚠️  GPG_PRIVATE_KEY is empty — skipping signing"
           fi
 
           echo "📦 Final release contents:"
