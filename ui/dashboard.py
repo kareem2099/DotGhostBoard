@@ -19,6 +19,17 @@ from core.watcher import ClipboardWatcher
 from core.crypto     import has_master_password
 from core.app_filter import AppFilter
 from core.sync_engine import SyncEngine
+from core.constants import (
+    PAGE_SIZE,
+    SEARCH_DEBOUNCE_MS,
+    REL_TIME_INTERVAL_MS,
+    PIN_TOAST_DURATION_MS,
+    SIDEBAR_WIDTH,
+    TOP_BAR_HEIGHT,
+    DEVICES_LIST_HEIGHT,
+    PIN_SUGGESTION_THRESHOLD,
+    AUTO_PIN_THRESHOLD,
+)
 from ui.widgets import ItemCard, StatsHeaderCard
 from ui.spotlight import SpotlightSearchDialog
 from ui.settings import SettingsDialog, load_settings, save_settings
@@ -60,7 +71,7 @@ class PinSuggestionToast(QFrame):
         layout.setSpacing(6)
 
         # Header
-        header = QLabel("📌 You've copied this 5 times — Pin it?")
+        header = QLabel(f"📌 You've copied this {PIN_SUGGESTION_THRESHOLD} times — Pin it?")
         header.setStyleSheet("color:#00ff41; font-weight:600; font-size:12px;")
         header.setWordWrap(True)
         layout.addWidget(header)
@@ -100,10 +111,10 @@ class PinSuggestionToast(QFrame):
         layout.addLayout(btn_row)
         self.adjustSize()
 
-        # Auto-dismiss after 6 s
+        # Auto-dismiss after PIN_TOAST_DURATION_MS
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(6000)
+        self._timer.setInterval(PIN_TOAST_DURATION_MS)
         self._timer.timeout.connect(self._dismiss)
         self._timer.start()
 
@@ -119,8 +130,6 @@ class PinSuggestionToast(QFrame):
 
 
 QSS_PATH = resource_path("ui", "ghost.qss")
-
-_PAGE_SIZE = 20   # Cards loaded per page
 
 class UpdateCheckerThread(QThread):
     update_found = pyqtSignal(dict, str) # update_info, asset_url
@@ -217,16 +226,16 @@ class Dashboard(QMainWindow):
         self.spotlight_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         self.spotlight_shortcut.activated.connect(self.show_spotlight)
 
-        # Periodic timer for relative timestamps & stats (60s)
+        # Periodic timer for relative timestamps & stats
         self._rel_time_timer = QTimer(self)
-        self._rel_time_timer.setInterval(60000)
+        self._rel_time_timer.setInterval(REL_TIME_INTERVAL_MS)
         self._rel_time_timer.timeout.connect(self._update_relative_times)
         self._rel_time_timer.start()
 
-        # Search debounce timer (200ms)
+        # Search debounce timer
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
-        self._search_timer.setInterval(200)
+        self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
         self._search_timer.timeout.connect(self._do_search)
         self._pending_search_query = ""
 
@@ -246,7 +255,7 @@ class Dashboard(QMainWindow):
         # ── W005: Collections Sidebar ──
         self.sidebar = QFrame()
         self.sidebar.setObjectName("Sidebar")
-        self.sidebar.setFixedWidth(160)
+        self.sidebar.setFixedWidth(SIDEBAR_WIDTH)
 
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(8, 12, 8, 8)
@@ -291,7 +300,7 @@ class Dashboard(QMainWindow):
 
         self.devices_list = QListWidget()
         self.devices_list.setObjectName("DevicesList")
-        self.devices_list.setFixedHeight(140)
+        self.devices_list.setFixedHeight(DEVICES_LIST_HEIGHT)
         self.devices_list.setToolTip("Double-click a device to pair")
         self.devices_list.itemDoubleClicked.connect(self._on_device_double_clicked)
         sidebar_layout.addWidget(self.devices_list)
@@ -307,7 +316,7 @@ class Dashboard(QMainWindow):
         # ── Top Bar ──
         top_bar = QFrame()
         top_bar.setObjectName("TopBar")
-        top_bar.setFixedHeight(56)
+        top_bar.setFixedHeight(TOP_BAR_HEIGHT)
         top_layout = QHBoxLayout(top_bar)
         top_layout.setContentsMargins(12, 8, 12, 8)
 
@@ -862,7 +871,7 @@ class Dashboard(QMainWindow):
             else:
                 remaining = 999999
 
-            batch_size = min(_PAGE_SIZE, remaining)
+            batch_size = min(PAGE_SIZE, remaining)
 
             if self._current_view_mode == "collection":
                 items = storage.get_items_by_collection(self.active_collection_id, limit=batch_size, offset=self._history_offset)
@@ -1296,22 +1305,22 @@ class Dashboard(QMainWindow):
         self.statusBar().showMessage(f"Copied! ⏘  (×{new_count})")
 
     def _check_pin_suggestion(self, item_id: int, count: int):
-        """Show pin toast at 5 copies, auto-pin at 10."""
+        """Show pin suggestion toast at PIN_SUGGESTION_THRESHOLD, auto-pin at AUTO_PIN_THRESHOLD."""
         item = storage.get_item_by_id(item_id)
         if not item:
             return
 
-        if count == 10 and not item.get("is_pinned"):
+        if count == AUTO_PIN_THRESHOLD and not item.get("is_pinned"):
             # Auto-pin silently
             storage.toggle_pin(item_id)
             card = self._cards.get(item_id)
             if card:
                 card.update_pin_state(True)
             self.statusBar().showMessage(
-                "📍 Auto-pinned! Copied ×10 times — keeping it safe."
+                f"📍 Auto-pinned! Copied ×{AUTO_PIN_THRESHOLD} times — keeping it safe."
             )
 
-        elif count == 5 and not item.get("is_pinned"):
+        elif count == PIN_SUGGESTION_THRESHOLD and not item.get("is_pinned"):
             self._show_pin_toast(item_id, item)
 
     def _show_pin_toast(self, item_id: int, item: dict):

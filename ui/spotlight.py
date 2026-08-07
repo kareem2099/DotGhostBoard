@@ -11,9 +11,11 @@ from PyQt6.QtWidgets import (
     QApplication, QGraphicsDropShadowEffect
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QTimer
-from PyQt6.QtGui import QColor, QFont, QKeyEvent
+from PyQt6.QtGui import QColor, QKeyEvent
 
 from core import storage
+from core.config import APP_VERSION
+from core.constants import SPOTLIGHT_RESULT_LIMIT, SPOTLIGHT_DEBOUNCE_MS, SPOTLIGHT_PREVIEW_MAX_LEN
 
 
 class SpotlightSearchDialog(QDialog):
@@ -39,10 +41,10 @@ class SpotlightSearchDialog(QDialog):
         self._items = []
         self._pending_query = ""
 
-        # 150ms search debounce timer
+        # Search debounce timer
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
-        self._search_timer.setInterval(150)
+        self._search_timer.setInterval(SPOTLIGHT_DEBOUNCE_MS)
         self._search_timer.timeout.connect(self._do_search)
 
         self._build_ui()
@@ -134,9 +136,13 @@ class SpotlightSearchDialog(QDialog):
         self.results_list.installEventFilter(self)
         inner_layout.addWidget(self.results_list)
 
-        # ── Footer Legend ──────────────────────────────────────
+        # ── Footer Legend ───────────────────────────────────────────────
         footer = QHBoxLayout()
-        hint = QLabel("⌨ <b>Enter</b> to copy & paste  •  <b>Esc</b> to close  •  <b>Spotlight v1.5.5</b>")
+        hint = QLabel(
+            f"⌨ <b>Enter</b> to copy &amp; paste  •  "
+            f"<b>Esc</b> to close  •  "
+            f"<b>Spotlight {APP_VERSION}</b>"
+        )
         hint.setStyleSheet("color: #64748b; font-size: 11px; background: transparent;")
         footer.addWidget(hint)
         footer.addStretch()
@@ -172,9 +178,9 @@ class SpotlightSearchDialog(QDialog):
     def _perform_search(self, query: str):
         self.results_list.clear()
         if not query:
-            items = storage.get_all_items(limit=15)
+            items = storage.get_all_items(limit=SPOTLIGHT_RESULT_LIMIT)
         else:
-            items = storage.search_items(query, limit=15)
+            items = storage.search_items(query, limit=SPOTLIGHT_RESULT_LIMIT)
 
         self._items = items
         for item in items:
@@ -189,8 +195,8 @@ class SpotlightSearchDialog(QDialog):
                 preview = item.get("preview") or item.get("content") or ""
 
             preview = preview.replace("\n", " ").strip()
-            if len(preview) > 60:
-                preview = preview[:60] + "…"
+            if len(preview) > SPOTLIGHT_PREVIEW_MAX_LEN:
+                preview = preview[:SPOTLIGHT_PREVIEW_MAX_LEN] + "…"
 
             copies = item.get("copy_count", 0) or 0
             copy_str = f"  (×{copies})" if copies > 1 else ""

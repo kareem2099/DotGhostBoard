@@ -6,6 +6,8 @@ v1.2.0: lazy image loading (S001), image viewer on click (S004),
         drag handle for pinned reorder (S006).
 v1.3.0: tag input + chip display (W002).
 v1.4.0: secret item overlay, lock/reveal toggle, on_session_locked (E003).
+v2.0.x: Phase-1 refactor — constants extracted, _build_ui() decomposed into
+        focused sub-methods (_build_top_row, _build_preview, _build_tags).
 """
 
 import os
@@ -14,13 +16,17 @@ from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSizePolicy, QApplication,
     QLineEdit, QWidget, QCompleter, QGraphicsOpacityEffect,
-    QGraphicsBlurEffect, QStackedWidget,
 )
-from PyQt6.QtGui import QPixmap, QDrag, QImage, QPainter, QPen, QColor
+from PyQt6.QtGui import QPixmap, QDrag, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QByteArray, QStringListModel
 from datetime import datetime
 
 import core.storage as storage
+from core.constants import (
+    PREVIEW_MAX_LEN,
+    THUMB_MAX_W,
+    THUMB_MAX_H,
+)
 
 # Debug logger for drag & drop
 logger = logging.getLogger(__name__)
@@ -275,6 +281,11 @@ class ItemCard(QFrame):
     """
     A single card representing a clipboard item.
     Sends signals to the Dashboard when the user interacts.
+
+    Layout (top → bottom):
+        _build_top_row()     — drag handle, badges, action buttons
+        _build_preview()     — text / image / video / secret overlay
+        _build_tags()        — tag chips + inline tag input
     """
 
     sig_copy        = pyqtSignal(int)
@@ -288,10 +299,6 @@ class ItemCard(QFrame):
     # E003: emitted when the card asks Dashboard for the active key
     sig_reveal_requested = pyqtSignal(int)   # (item_id)
 
-    PREVIEW_MAX_LEN = 120
-    THUMB_MAX_W     = 300
-    THUMB_MAX_H     = 180
-
     def __init__(self, item: dict, parent=None):
         super().__init__(parent)
         self.item_id   = item["id"]
@@ -301,7 +308,6 @@ class ItemCard(QFrame):
         self._copy_count = item.get("copy_count", 0) or 0
         self._created_at_iso = item.get("created_at", "")
         self._time_meta: QLabel | None = None
-
 
         self._file_path   = item.get("content", "")
         self._preview     = item.get("preview") or self._file_path
@@ -320,14 +326,22 @@ class ItemCard(QFrame):
         self._build_ui(item)
 
     # ──────────────────────────────────────────────────────────
-    # Build UI
+    # Build UI — orchestrator (delegates to sub-builders)
     # ──────────────────────────────────────────────────────────
     def _build_ui(self, item: dict):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(4)
 
-        # ── Top row ──────────────────────────────────────────
+        main_layout.addLayout(self._build_top_row(item))
+        self._build_preview(item, main_layout)
+        self._build_tags(main_layout)
+
+    # ──────────────────────────────────────────────────────────
+    # _build_top_row — drag handle + badges + action buttons
+    # ──────────────────────────────────────────────────────────
+    def _build_top_row(self, item: dict) -> QHBoxLayout:
+        """Build and return the horizontal top row layout."""
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
@@ -367,15 +381,14 @@ class ItemCard(QFrame):
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         badge.style().unpolish(badge)
         badge.style().polish(badge)
+        top_row.addWidget(badge)
 
         # Time meta
         self._time_meta = QLabel(_format_time(item.get("created_at", "")))
         self._time_meta.setObjectName("ItemMeta")
-
-        top_row.addWidget(badge)
         top_row.addWidget(self._time_meta)
 
-        # ── Copy count badge ─────────────────────────────────
+        # Copy count badge
         self._count_badge = QLabel()
         self._count_badge.setObjectName("CopyCountBadge")
         self._count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -385,7 +398,6 @@ class ItemCard(QFrame):
         self._count_badge.mousePressEvent = lambda e: self.sig_reset_count.emit(self.item_id)
         self._apply_count_badge_style(self._copy_count)
         top_row.addWidget(self._count_badge)
-
 
         top_row.addStretch()
 
@@ -401,6 +413,7 @@ class ItemCard(QFrame):
         else:
             self._secret_btn = None
 
+        # Action buttons — Pin, Copy, Delete
         self.pin_btn = QPushButton("📍" if self.is_pinned else "📌")
         self.pin_btn.setObjectName("PinBtn")
         self.pin_btn.setProperty("pinned", str(self.is_pinned).lower())
@@ -423,9 +436,14 @@ class ItemCard(QFrame):
         top_row.addWidget(self.pin_btn)
         top_row.addWidget(copy_btn)
         top_row.addWidget(del_btn)
-        main_layout.addLayout(top_row)
 
-        # ── Content area ──────────────────────────────────────
+        return top_row
+
+    # ──────────────────────────────────────────────────────────
+    # _build_preview — text / image / video / secret content
+    # ──────────────────────────────────────────────────────────
+    def _build_preview(self, item: dict, main_layout: QVBoxLayout) -> None:
+        """Add the content preview widget(s) to main_layout in-place."""
         if self.is_secret:
             # E003: two widgets, toggle visibility — no QStackedWidget
             # which causes unpredictable height expansion
@@ -448,7 +466,11 @@ class ItemCard(QFrame):
             if content_widget:
                 main_layout.addWidget(content_widget)
 
-        # ── W002: Tag input row ───────────────────────────────
+    # ──────────────────────────────────────────────────────────
+    # _build_tags — tag chips + inline tag input
+    # ──────────────────────────────────────────────────────────
+    def _build_tags(self, main_layout: QVBoxLayout) -> None:
+        """Add the W002 tag input row to main_layout in-place."""
         current_tags = storage.get_tags(self.item_id)
         self._tag_row = TagInputRow(self.item_id, current_tags)
         self._tag_row.sig_tag_added.connect(
@@ -506,8 +528,8 @@ class ItemCard(QFrame):
     def reveal_content(self, plaintext: str):
         """Called by Dashboard after decryption — show plaintext, hide overlay."""
         text = plaintext
-        if len(text) > self.PREVIEW_MAX_LEN:
-            text = text[:self.PREVIEW_MAX_LEN] + "…"
+        if len(text) > PREVIEW_MAX_LEN:
+            text = text[:PREVIEW_MAX_LEN] + "…"
         self._revealed_label.setText(text)
         self._overlay_widget.hide()
         self._revealed_label.show()
@@ -550,8 +572,8 @@ class ItemCard(QFrame):
 
         if item["type"] == "text":
             text = item["content"]
-            if len(text) > self.PREVIEW_MAX_LEN:
-                text = text[:self.PREVIEW_MAX_LEN] + "…"
+            if len(text) > PREVIEW_MAX_LEN:
+                text = text[:PREVIEW_MAX_LEN] + "…"
             label.setText(text)
             label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
@@ -630,8 +652,8 @@ class ItemCard(QFrame):
             orig = reader.size()
             if orig.isValid() and orig.width() > 0 and orig.height() > 0:
                 scale = min(
-                    self.THUMB_MAX_W / orig.width(),
-                    self.THUMB_MAX_H / orig.height(),
+                    THUMB_MAX_W / orig.width(),
+                    THUMB_MAX_H / orig.height(),
                 )
                 if scale < 1.0:
                     reader.setScaledSize(QSize(
