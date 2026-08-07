@@ -86,6 +86,7 @@ data/thumbnails/   # S002: Video/Image thumbnails folder
 
 todo_list(*).json
 roadmap(*).json
+roadmap*.md
 
 bug_fixes_v1.4.1.md
 

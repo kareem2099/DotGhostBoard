@@ -55,6 +55,36 @@ def _format_time(iso_str: str) -> str:
     except Exception:
         return ""
 
+def _copy_count_badge_state(count: int) -> tuple[str, str]:
+    """
+    Return ``(text, stylesheet)`` for a copy-count badge.
+
+    An empty text string signals that the badge should be hidden.
+
+    Presentation tiers (independent of business pin-thresholds):
+        0–1   → hidden
+        2–4   → ↩ teal   (mild interest)
+        5–9   → ♻ orange  (warm usage)
+        10+   → 🔥 hot    (high frequency)
+    """
+    if count < 2:
+        return "", ""
+
+    if count >= 10:
+        bg, fg, icon = "#ff6b35", "#0a0a0a", "🔥"
+    elif count >= 5:
+        bg, fg, icon = "#e8a020", "#0a0a0a", "♻"
+    else:
+        bg, fg, icon = "#2a4a4a", "#7ecfcf", "↩"
+
+    text  = f"{icon} ×{count}"
+    style = (
+        f"background: {bg}; color: {fg};"
+        "border-radius: 9px; padding: 0 7px;"
+        "font-size: 11px; font-weight: 600;"
+    )
+    return text, style
+
 
 # ──────────────────────────────────────────────────────────────
 # StatsHeaderCard — Dashboard state summary banner
@@ -857,31 +887,18 @@ class ItemCard(QFrame):
         if self._count_badge:
             self._apply_count_badge_style(count)
 
-    def _apply_count_badge_style(self, count: int):
-        """Set badge text and colour based on copy frequency tier."""
-        if count < 2:
+    def _apply_count_badge_style(self, count: int) -> None:
+        """Apply the current copy-frequency state to the badge widget."""
+        text, style = _copy_count_badge_state(count)
+
+        if not text:
             self._count_badge.setText("")
             self._count_badge.setVisible(False)
             return
 
+        self._count_badge.setText(text)
+        self._count_badge.setStyleSheet(style)
         self._count_badge.setVisible(True)
-
-        if count >= 10:
-            # 🔥 Hot — gold/red
-            bg, fg, icon = "#ff6b35", "#0a0a0a", "🔥"
-        elif count >= 5:
-            # Warm — orange  
-            bg, fg, icon = "#e8a020", "#0a0a0a", "♻"
-        else:
-            # Mild — muted teal
-            bg, fg, icon = "#2a4a4a", "#7ecfcf", "↩"
-
-        self._count_badge.setText(f"{icon} ×{count}")
-        self._count_badge.setStyleSheet(
-            f"background: {bg}; color: {fg};"
-            "border-radius: 9px; padding: 0 7px;"
-            "font-size: 11px; font-weight: 600;"
-        )
 
     def update_relative_time(self):
         """Refresh timestamp label to latest relative format."""
