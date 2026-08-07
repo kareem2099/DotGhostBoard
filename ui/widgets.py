@@ -283,9 +283,10 @@ class ItemCard(QFrame):
     Sends signals to the Dashboard when the user interacts.
 
     Layout (top → bottom):
-        _build_top_row()     — drag handle, badges, action buttons
-        _build_preview()     — text / image / video / secret overlay
-        _build_tags()        — tag chips + inline tag input
+        _build_top_row()          — drag handle, badges, metadata
+        _build_action_buttons()   — pin, copy, delete
+        _build_preview()          — text / image / video / secret overlay
+        _build_tags()             — tag chips + inline tag input
     """
 
     sig_copy        = pyqtSignal(int)
@@ -338,7 +339,7 @@ class ItemCard(QFrame):
         self._build_tags(main_layout)
 
     # ──────────────────────────────────────────────────────────
-    # _build_top_row — drag handle + badges + action buttons
+    # _build_top_row — drag handle + badges + metadata
     # ──────────────────────────────────────────────────────────
     def _build_top_row(self, item: dict) -> QHBoxLayout:
         """Build and return the horizontal top row layout."""
@@ -413,31 +414,54 @@ class ItemCard(QFrame):
         else:
             self._secret_btn = None
 
-        # Action buttons — Pin, Copy, Delete
+        top_row.addLayout(self._build_action_buttons())
+
+        return top_row
+
+    # ──────────────────────────────────────────────────────────
+    # _build_action_buttons — pin, copy, delete
+    # ──────────────────────────────────────────────────────────
+    def _build_action_buttons(self) -> QHBoxLayout:
+        """Build and return the Pin, Copy, and Delete action buttons.
+
+        Note: self.pin_btn is stored as an instance attribute because
+        update_pin_state() needs to mutate it after construction.
+        copy_btn and del_btn are kept as locals (not referenced later).
+        """
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(6)   # match top_row spacing — preserves visual layout
+
         self.pin_btn = QPushButton("📍" if self.is_pinned else "📌")
         self.pin_btn.setObjectName("PinBtn")
         self.pin_btn.setProperty("pinned", str(self.is_pinned).lower())
         self.pin_btn.setFixedSize(28, 28)
         self.pin_btn.setToolTip("Pin / Unpin")
-        self.pin_btn.clicked.connect(lambda: self.sig_pin.emit(self.item_id))
+        self.pin_btn.clicked.connect(
+            lambda: self.sig_pin.emit(self.item_id)
+        )
 
         copy_btn = QPushButton("⎘")
         copy_btn.setObjectName("CopyBtn")
         copy_btn.setFixedSize(28, 28)
         copy_btn.setToolTip("Copy to Clipboard")
-        copy_btn.clicked.connect(lambda: self.sig_copy.emit(self.item_id))
+        copy_btn.clicked.connect(
+            lambda: self.sig_copy.emit(self.item_id)
+        )
 
         del_btn = QPushButton("✕")
         del_btn.setObjectName("DeleteBtn")
         del_btn.setFixedSize(28, 28)
         del_btn.setToolTip("Delete (pinned items are protected)")
-        del_btn.clicked.connect(lambda: self.sig_delete.emit(self.item_id))
+        del_btn.clicked.connect(
+            lambda: self.sig_delete.emit(self.item_id)
+        )
 
-        top_row.addWidget(self.pin_btn)
-        top_row.addWidget(copy_btn)
-        top_row.addWidget(del_btn)
+        actions.addWidget(self.pin_btn)
+        actions.addWidget(copy_btn)
+        actions.addWidget(del_btn)
 
-        return top_row
+        return actions
 
     # ──────────────────────────────────────────────────────────
     # _build_preview — text / image / video / secret content
