@@ -92,6 +92,7 @@ bug_fixes_v1.4.1.md
 
 # ── Local Scripts ──
 scripts/setup_secrets.sh
+scripts/sign_and_upload.sh
 
 # ── Articles ──
 articles/
