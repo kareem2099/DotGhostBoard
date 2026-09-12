@@ -106,8 +106,9 @@ def main():
     # ── Startup flags ──────────────────────────────────────────────────────
     startup_flags = ("--startup", "--background", "--minimized", "--tray", "-m")
     is_startup_mode = any(arg in sys.argv for arg in startup_flags)
-    is_spotlight_mode = any(arg in sys.argv for arg in ("--spotlight", "-s"))
-    is_toggle_mode = any(arg in sys.argv for arg in ("--toggle", "-t"))
+    is_spotlight_mode = any(arg in sys.argv for arg in ("--spotlight", "-s", "spotlight"))
+    is_toggle_mode = any(arg in sys.argv for arg in ("--toggle", "-t", "toggle"))
+    is_show_mode = any(arg in sys.argv for arg in ("--show", "show"))
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

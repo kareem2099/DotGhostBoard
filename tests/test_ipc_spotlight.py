@@ -5,10 +5,15 @@ Tests for IPC message routing (show / spotlight / toggle), Eclipse lock security
 Spotlight overlay activation, and desktop shortcut configuration.
 """
 
+import os
 import sys
 import pytest
 from unittest.mock import MagicMock
 from PyQt6.QtWidgets import QApplication
+
+# Ensure headless/CI environments default to offscreen platform
+if "QT_QPA_PLATFORM" not in os.environ and ("DISPLAY" not in os.environ or os.environ.get("CI")):
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from core import storage
 from core.shortcuts import detect_desktop, _parse_gsettings_bindings
@@ -19,7 +24,7 @@ from ui.dashboard import Dashboard
 def app():
     instance = QApplication.instance()
     if not instance:
-        instance = QApplication(sys.argv)
+        instance = QApplication(["test"])
     return instance
 
 
@@ -235,3 +240,41 @@ def test_launch_command_appimage_and_spaces(monkeypatch, tmp_path):
         # Verify proper shell quoting because of spaces
         assert "'" in sc["command"] or '"' in sc["command"]
         assert sc["flag"] in sc["command"]
+
+
+def test_dotghost_cli_send_ipc_when_offline(tmp_path, monkeypatch, capsys):
+    """Verify dotghost CLI send_ipc handles offline and stale socket gracefully."""
+    from pathlib import Path
+    import shutil
+    from cli.dotghost import send_ipc
+
+    fake_runtime = Path("/tmp/dgb_tst_rt")
+    fake_runtime.mkdir(exist_ok=True)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(fake_runtime))
+    monkeypatch.setenv("DOTGHOST_HOME", str(tmp_path / "p"))
+
+    try:
+        # When socket does not exist
+        result = send_ipc("spotlight")
+        assert result is False
+        captured = capsys.readouterr()
+        assert "DotGhostBoard is not running" in captured.err
+
+        # When socket file exists but nobody is listening (stale socket)
+        import hashlib, os
+        profile = str(tmp_path / "p")
+        p_hash = hashlib.sha256(profile.encode("utf-8")).hexdigest()[:12]
+        uid = os.getuid() if hasattr(os, "getuid") else 0
+        stale_sock = fake_runtime / f"dotghostboard-{uid}-{p_hash}.sock"
+        stale_sock.touch()
+        assert stale_sock.exists()
+
+        result2 = send_ipc("toggle")
+        assert result2 is False
+        captured2 = capsys.readouterr()
+        assert "DotGhostBoard is not running" in captured2.err
+        # Verify stale socket was unlinked
+        assert not stale_sock.exists()
+    finally:
+        shutil.rmtree(fake_runtime, ignore_errors=True)
+

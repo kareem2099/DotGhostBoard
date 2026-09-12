@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-219%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-220%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -139,7 +139,7 @@ DotGhostBoard/
 │   ├── test_api.py              # REST API & Sync tests
 │   ├── test_autostart.py        # Autostart manager tests
 │   ├── test_eclipse.py          # Encryption & Security tests
-│   ├── test_ipc_spotlight.py    # IPC, Spotlight & Shortcuts tests (219 total passed)
+│   ├── test_ipc_spotlight.py    # IPC, Spotlight & Shortcuts tests (220 total passed)
 │   ├── test_media.py            # Media detection tests
 │   ├── test_runtime_dir.py      # Runtime directory tests
 │   └── test_storage.py          # Database CRUD tests
@@ -324,7 +324,7 @@ Expected output:
 tests/test_api.py .....                                                  [  2%]
 tests/test_autostart.py .................                                [ 10%]
 tests/test_eclipse.py .................................                  [ 25%]
-tests/test_ipc_spotlight.py .........                                    [ 29%]
+tests/test_ipc_spotlight.py ..........                                   [ 29%]
 tests/test_media.py ...........................                          [ 41%]
 tests/test_runtime_dir.py ........                                       [ 45%]
 tests/test_settings.py ............                                      [ 50%]
@@ -335,7 +335,7 @@ tests/test_thumbnailer.py .........                                      [ 91%]
 tests/test_updater_core.py ...........                                   [ 96%]
 tests/test_v155_polish.py .......                                        [100%]
 
-219 passed in 8.91s
+220 passed
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -358,7 +358,7 @@ tests/test_v155_polish.py .......                                        [100%]
 | v1.5.3 | Nexus Hotfix III | ✅ Released | Fix blank/white window in deb & AppImage (PyInstaller resource path) |
 | v1.5.4 | Nexus Hotfix IV | ✅ Released | Clipboard capture reliability fix (3-layer bug); Copy Count Badge; Auto-Pin Suggestion |
 | v1.5.5 | Nexus Polish & Spotlight | ✅ Released | Spotlight quick search overlay, relative time, copy count reset, image deduplication, search debounce |
-| v1.5.6 | Nexus Global Hotkeys & UI Polish | 🚀 Ready | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 219 tests |
+| v1.5.6 | Nexus Global Hotkeys & UI Polish | ✅ Released | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 220 tests |
 | v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)

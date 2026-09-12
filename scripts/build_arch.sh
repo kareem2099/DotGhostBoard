@@ -44,6 +44,10 @@ exec /opt/dotghostboard/dotghostboard-app "$@"
 EOF
 chmod 755 "$PKG_DIR/usr/bin/dotghostboard"
 
+# Create CLI companion in /usr/bin
+cp cli/dotghost.py "$PKG_DIR/usr/bin/dotghost"
+chmod 755 "$PKG_DIR/usr/bin/dotghost"
+
 # Create Desktop entry
 cat > "$PKG_DIR/usr/share/applications/dotghostboard.desktop" << 'EOF'
 [Desktop Entry]
@@ -74,6 +78,7 @@ packager = FreeRave <kareem209907@gmail.com>
 size = $(du -sk "$PKG_DIR" | cut -f1)000
 arch = ${ARCH}
 license = Apache-2.0
+depend = python
 depend = libxkbcommon
 depend = libglvnd
 depend = hicolor-icon-theme
@@ -114,7 +119,7 @@ pkgdesc="Advanced encrypted clipboard manager for Linux — DotSuite"
 arch=('x86_64')
 url="https://github.com/kareem2099/DotGhostBoard"
 license=('Apache-2.0')
-depends=('libxkbcommon' 'libglvnd' 'hicolor-icon-theme')
+depends=('python' 'libxkbcommon' 'libglvnd' 'hicolor-icon-theme')
 source=("https://github.com/kareem2099/DotGhostBoard/releases/download/v\${pkgver}/dotghostboard_\${pkgver}_amd64.tar.gz")
 sha256sums=('SKIP')
 

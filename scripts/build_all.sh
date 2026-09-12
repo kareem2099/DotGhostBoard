@@ -13,7 +13,7 @@ cd "$ROOT_DIR"
 source "$SCRIPT_DIR/lib/build_common.sh"
 
 VERSION="$(get_version)"
-GPG_KEY_ID="${GPG_KEY_ID:-D3EB5327471C8F22}"
+GPG_KEY_ID="${GPG_KEY_ID:-48E2D66B9B738A1D24DE5B2FD3EB5327471C8F22}"
 
 echo "========================================================"
 echo "👻 DotGhostBoard v${VERSION} — Master Build Pipeline"

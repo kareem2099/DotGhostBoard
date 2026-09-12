@@ -45,6 +45,11 @@ exec /opt/dotghostboard/dotghostboard-app "$@"
 EOF
 chmod 755 "$PKG_DIR/usr/bin/dotghostboard"
 
+# Create CLI companion in /usr/bin
+echo "🔗 Creating CLI companion launcher..."
+cp cli/dotghost.py "$PKG_DIR/usr/bin/dotghost"
+chmod 755 "$PKG_DIR/usr/bin/dotghost"
+
 # 4. Create desktop entry (menu)
 echo "🖥️ Creating desktop entry..."
 cat > "$PKG_DIR/usr/share/applications/dotghostboard.desktop" << EOF
@@ -72,7 +77,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0
+Depends: python3, libgl1, libxcb1, libxkbcommon0, libxcb-xinerama0, libxcb-cursor0
 Recommends: pkexec | policykit-1
 Maintainer: FreeRave <kareem209907@gmail.com>
 Description: Advanced clipboard manager for Linux (Nexus v${VERSION})

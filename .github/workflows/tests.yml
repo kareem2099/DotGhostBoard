@@ -31,6 +31,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y \
           libegl1 \
+          libgl1 \
+          libxkbcommon0 \
+          libxkbcommon-x11-0 \
+          libxcb1 \
           libxcb-xinerama0 \
           libxcb-icccm4 \
           libxcb-image0 \
@@ -51,4 +55,5 @@ jobs:
     - name: Run tests with pytest
       run: |
         export PYTHONPATH=$PYTHONPATH:.
+        export QT_QPA_PLATFORM=offscreen
         xvfb-run pytest tests/ -v

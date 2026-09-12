@@ -81,6 +81,13 @@ def send_ipc(command: str) -> bool:
         s.sendall(command.encode("utf-8"))
         s.close()
         return True
+    except (ConnectionRefusedError, FileNotFoundError):
+        print("Error: DotGhostBoard is not running.", file=sys.stderr)
+        try:
+            os.unlink(sock_path)
+        except OSError:
+            pass
+        return False
     except Exception as e:
         print(f"Error communicating with DotGhostBoard: {e}", file=sys.stderr)
         return False
@@ -95,10 +102,31 @@ def main():
         print("  dotghost pop          # Print latest clipboard content")
         sys.exit(1)
         
-    cmd = sys.argv[1].lower()
+    raw_cmd = sys.argv[1].lower()
+    cmd = raw_cmd.lstrip("-")
+    if cmd == "s":
+        cmd = "spotlight"
+    elif cmd == "t":
+        cmd = "toggle"
+
+    if cmd in ("help", "h"):
+        print("Usage: dotghost <spotlight|toggle|show|push|pop> [text...]")
+        print("  dotghost spotlight    # Open/toggle Spotlight Quick Search overlay")
+        print("  dotghost toggle       # Toggle Dashboard between show and hide")
+        print("  dotghost show         # Bring DotGhostBoard window to front")
+        print("  dotghost push \"text\"  # Push text to clipboard")
+        print("  dotghost pop          # Print latest clipboard content")
+        sys.exit(0)
 
     if cmd in ("spotlight", "show", "toggle"):
         success = send_ipc(cmd)
+        if success:
+            if cmd == "spotlight":
+                print("✓ Spotlight overlay activated")
+            elif cmd == "toggle":
+                print("✓ Dashboard visibility toggled")
+            elif cmd == "show":
+                print("✓ Dashboard window raised")
         sys.exit(0 if success else 1)
     
     settings = get_settings()
