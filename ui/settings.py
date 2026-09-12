@@ -121,7 +121,7 @@ class TagManagerDialog(QDialog):
 
         # ── Title ──
         title = QLabel("🏷  Tag Manager")
-        title.setStyleSheet("font-size:15px; font-weight:bold; color:#00ff41;")
+        title.setStyleSheet("font-size:15px; font-weight:bold; color:#e2e5e6;")
         layout.addWidget(title)
 
         subtitle = QLabel("Rename or delete tags globally across all items.")
@@ -149,8 +149,9 @@ class TagManagerDialog(QDialog):
                 border-radius: 4px;
             }
             QListWidget::item:selected {
-                background: #00ff4122;
-                color: #00ff41;
+                background: #18251d;
+                color: #77dd98;
+                border: 1px solid #31513b;
             }
             QListWidget::item:hover:!selected {
                 background: #1a1a1a;
@@ -353,8 +354,8 @@ class AppFilterEditor(QWidget):
             }
             QListWidget::item { padding: 4px 8px; }
             QListWidget::item:selected {
-                background: #ff990022;
-                color: #ff9900;
+                background: #211d16;
+                color: #d1a85d;
             }
         """)
         for app in app_list:
@@ -387,8 +388,8 @@ class AppFilterEditor(QWidget):
 
         # ── Detection hint ──
         hint = QLabel(
-            "💡  Find your app name:  "
-            "<code style='color:#00ff41; font-size:10px;'>"
+            "Find your app name:  "
+            "<code style='color:#8dd5a2; font-size:10px;'>"
             "cat /proc/$(xdotool getactivewindow getwindowpid)/comm"
             "</code>"
         )
@@ -433,13 +434,16 @@ class AppFilterEditor(QWidget):
 
 class SettingsDialog(QDialog):
     """
-    Modal settings dialog with two tabs:
-      • General  — history limits, theme, clear-on-exit, tag manager
+    Modal settings dialog with four tabs:
+      • General  — history limits, theme, autostart, updates, tag manager
       • Eclipse  — master password, auto-lock, stealth, app filter
+      • API      — local REST API and device identity
+      • About    — app, author, license, system and project information
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("SettingsDialog")
         self.setWindowTitle("⚙  DotGhostBoard — Settings")
         self.setModal(True)
         self.setMinimumWidth(460)
@@ -459,8 +463,9 @@ class SettingsDialog(QDialog):
         root.setSpacing(14)
         # ── Title ──
         title = QLabel("⚙  Settings")
+        title.setObjectName("SettingsTitle")
         title.setStyleSheet(
-            "font-size:15px; font-weight:bold; color:#00ff41;"
+            "font-size:15px; font-weight:bold; color:#e2e5e6;"
         )
         root.addWidget(title)
 
@@ -481,20 +486,16 @@ class SettingsDialog(QDialog):
         btn_row.setSpacing(8)
 
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("SettingsCancelBtn")
         cancel_btn.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         cancel_btn.clicked.connect(self.reject)
 
         save_btn = QPushButton("Save")
-        save_btn.setObjectName("SaveBtn")
+        save_btn.setObjectName("SettingsSaveBtn")
         save_btn.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        save_btn.setStyleSheet(
-            "QPushButton#SaveBtn { background:#00ff4122; color:#00ff41;"
-            " border:1px solid #00ff41; }"
-            "QPushButton#SaveBtn:hover { background:#00ff4144; }"
         )
         save_btn.setDefault(True)
         save_btn.clicked.connect(self._save_and_close)
@@ -548,6 +549,18 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Privacy:", self._clear_on_exit)
 
+        # Launch on startup (Autostart)
+        from core.autostart import get_autostart_state
+        current_autostart = get_autostart_state()
+        self._autostart_chk = QCheckBox("Launch on system startup (start in tray)")
+        self._autostart_chk.setChecked(current_autostart.enabled)
+        self._autostart_chk.setToolTip(
+            "Automatically launches DotGhostBoard minimized in the system tray when you log in.\n"
+            "Supports all distribution formats (DEB, AppImage, Arch Linux, Portable)."
+        )
+        self._autostart_chk.toggled.connect(self._on_autostart_toggled)
+        form.addRow("Autostart:", self._autostart_chk)
+
         # Auto Update
         self._auto_update = QCheckBox("Check for updates on startup")
         self._auto_update.setChecked(bool(self._settings.get("auto_update_check", True)))
@@ -599,16 +612,63 @@ class SettingsDialog(QDialog):
         layout.addLayout(tags_row)
 
         # ── Hotkey hint ──
+        # ── Hotkey hint & configurator ──
         hint_frame = QFrame()
         hint_frame.setObjectName("HintFrame")
         hint_layout = QVBoxLayout(hint_frame)
-        hint_layout.setContentsMargins(10, 8, 10, 8)
-        hint_title = QLabel("Global Hotkey")
-        hint_title.setStyleSheet("color:#555; font-size:11px;")
-        hint_label = QLabel("Ctrl + Alt + V   →   Show / Hide window")
-        hint_label.setStyleSheet("color:#00ff41; font-size:12px;")
+        hint_layout.setContentsMargins(12, 10, 12, 10)
+        hint_layout.setSpacing(6)
+
+        hint_title = QLabel("Global Hotkeys")
+        hint_title.setStyleSheet("color:#6c767d; font-size:11px; font-weight:600;")
+        hint_label1 = QLabel("Ctrl + Alt + V       →   Toggle Dashboard (Show/Hide)")
+        hint_label1.setStyleSheet("color:#8dd5a2; font-size:12px; font-family:monospace;")
+        hint_label2 = QLabel("Ctrl + Alt + Space   →   Spotlight Quick Search")
+        hint_label2.setStyleSheet("color:#8dd5a2; font-size:12px; font-family:monospace;")
+
+        btn_row = QHBoxLayout()
+        cfg_shortcuts_btn = QPushButton("Configure Global Shortcuts")
+        cfg_shortcuts_btn.setObjectName("ConfigShortcutsBtn")
+        cfg_shortcuts_btn.setFixedHeight(28)
+        cfg_shortcuts_btn.setStyleSheet("""
+            QPushButton#ConfigShortcutsBtn {
+                background: #18251d;
+                color: #77dd98;
+                border: 1px solid #31513b;
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QPushButton#ConfigShortcutsBtn:hover {
+                background: #1f3326;
+                color: #92e6ae;
+                border: 1px solid #3d694b;
+            }
+        """)
+
+        shortcut_status = QLabel("")
+        shortcut_status.setStyleSheet("color:#8dd5a2; font-size:11px;")
+
+        def _on_configure_shortcuts():
+            from core.shortcuts import setup_shortcuts
+            ok, msg = setup_shortcuts()
+            if ok:
+                shortcut_status.setStyleSheet("color:#77dd98; font-size:11px;")
+                shortcut_status.setText("✓ Configured")
+            else:
+                shortcut_status.setStyleSheet("color:#e06c75; font-size:11px;")
+                shortcut_status.setText("⚠ Check settings")
+
+        cfg_shortcuts_btn.clicked.connect(_on_configure_shortcuts)
+        btn_row.addWidget(cfg_shortcuts_btn)
+        btn_row.addWidget(shortcut_status)
+        btn_row.addStretch()
+
         hint_layout.addWidget(hint_title)
-        hint_layout.addWidget(hint_label)
+        hint_layout.addWidget(hint_label1)
+        hint_layout.addWidget(hint_label2)
+        hint_layout.addLayout(btn_row)
         layout.addWidget(hint_frame)
 
         layout.addStretch()
@@ -641,7 +701,7 @@ class SettingsDialog(QDialog):
             else "⚪  No master password configured"
         )
         self._pw_status_lbl.setStyleSheet(
-            "color:#00ff41;" if has_pw else "color:#555;"
+            "color:#71c98d;" if has_pw else "color:#555;"
         )
         layout.addWidget(self._pw_status_lbl)
 
@@ -862,7 +922,7 @@ class SettingsDialog(QDialog):
             else "⚪  No master password configured"
         )
         self._pw_status_lbl.setStyleSheet(
-            "color:#00ff41;" if has_pw else "color:#555;"
+            "color:#71c98d;" if has_pw else "color:#555;"
         )
         self._set_pw_btn.setText(
             "🔑  Change Password…" if has_pw else "🔑  Set Password…"
@@ -875,7 +935,7 @@ class SettingsDialog(QDialog):
     def _section_label(text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setStyleSheet(
-            "color:#00ff41; font-size:13px; font-weight:bold; "
+            "color:#72d991; font-size:13px; font-weight:bold; "
             "padding-bottom:2px;"
         )
         return lbl
@@ -1046,7 +1106,7 @@ class SettingsDialog(QDialog):
         lic_layout.setContentsMargins(12, 10, 12, 10)
 
         lic_title = QLabel("Apache License 2.0")
-        lic_title.setStyleSheet("color: #00ff41; font-weight: bold; font-size: 12px;")
+        lic_title.setStyleSheet("color: #72d991; font-weight: bold; font-size: 12px;")
 
         lic_text = QLabel(
             "Licensed under the Apache License, Version 2.0 (the \"License\");\n"
@@ -1082,7 +1142,7 @@ class SettingsDialog(QDialog):
 
         def _sys_val(text: str) -> QLabel:
             lbl = QLabel(text)
-            lbl.setStyleSheet("color: #00ff41; font-family: monospace; font-size: 11px;")
+            lbl.setStyleSheet("color: #72d991; font-family: monospace; font-size: 11px;")
             return lbl
 
         def _sys_key(text: str) -> QLabel:
@@ -1210,6 +1270,30 @@ class SettingsDialog(QDialog):
         if main_dashboard:
             main_dashboard.check_for_updates()
             QMessageBox.information(self, "Update Check", "Checking for updates in the background...\nIf an update is found, a gift icon 🎁 will appear in the dashboard top bar.")
+
+    def _on_autostart_toggled(self, checked: bool):
+        from core.autostart import enable_autostart, disable_autostart
+        if checked:
+            res = enable_autostart()
+        else:
+            res = disable_autostart()
+
+        if checked and not res.enabled:
+            QMessageBox.warning(
+                self, "Autostart Error",
+                f"Could not enable autostart:\n{res.message}"
+            )
+            self._autostart_chk.blockSignals(True)
+            self._autostart_chk.setChecked(False)
+            self._autostart_chk.blockSignals(False)
+        elif not checked and res.enabled:
+            QMessageBox.warning(
+                self, "Autostart Error",
+                f"Could not disable autostart:\n{res.message}"
+            )
+            self._autostart_chk.blockSignals(True)
+            self._autostart_chk.setChecked(True)
+            self._autostart_chk.blockSignals(False)
 
     # ── Save ──────────────────────────────────────────────────────────────────
 

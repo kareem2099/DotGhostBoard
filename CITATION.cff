@@ -1,12 +1,13 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
+
 authors:
-- alias: "FreeRave"
-  family-names: "Kareem"
-  given-names: ""
+  - alias: "FreeRave"
+    family-names: "Kareem"
+
 title: "DotGhostBoard: Advanced encrypted clipboard manager for Linux"
-version: 1.5.5
-date-released: 2026-04-16
+version: 1.5.6
+date-released: 2026-09-13
 url: "https://github.com/kareem2099/DotGhostBoard"
 repository-code: "https://github.com/kareem2099/DotGhostBoard"
 license: Apache-2.0

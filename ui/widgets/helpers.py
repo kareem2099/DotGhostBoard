@@ -34,29 +34,34 @@ def _format_time(iso_str: str) -> str:
 def _copy_count_badge_state(count: int) -> tuple[str, str]:
     """
     Return ``(text, stylesheet)`` for a copy-count badge.
-
     An empty text string signals that the badge should be hidden.
-
-    Presentation tiers (independent of business pin-thresholds):
-        0–1   → hidden
-        2–4   → ↩ teal   (mild interest)
-        5–9   → ♻ orange  (warm usage)
-        10+   → 🔥 hot    (high frequency)
     """
     if count < 2:
         return "", ""
 
     if count >= 10:
-        bg, fg, icon = "#ff6b35", "#0a0a0a", "🔥"
+        bg = "#2d2417"
+        fg = "#d9aa55"
+        border = "#4b3920"
     elif count >= 5:
-        bg, fg, icon = "#e8a020", "#0a0a0a", "♻"
+        bg = "#22251f"
+        fg = "#a9b87c"
+        border = "#343a2c"
     else:
-        bg, fg, icon = "#2a4a4a", "#7ecfcf", "↩"
+        bg = "#1c2225"
+        fg = "#819096"
+        border = "#2b3337"
 
-    text  = f"{icon} ×{count}"
+    text = f"×{count}"
+
     style = (
-        f"background: {bg}; color: {fg};"
-        "border-radius: 9px; padding: 0 7px;"
-        "font-size: 11px; font-weight: 600;"
+        f"background: {bg};"
+        f"color: {fg};"
+        f"border: 1px solid {border};"
+        "border-radius: 8px;"
+        "padding: 0 7px;"
+        "font-size: 10px;"
+        "font-weight: 600;"
     )
+
     return text, style

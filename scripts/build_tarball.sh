@@ -1,61 +1,48 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════
 # DotGhostBoard — Portable Tarball Builder (.tar.gz)
 # ═══════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+source "$SCRIPT_DIR/lib/build_common.sh"
 
 APP_NAME="dotghostboard"
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.5")
+VERSION="$(get_version)"
 TAR_DIR="${APP_NAME}-${VERSION}-portable"
 TAR_FILE="${APP_NAME}_${VERSION}_amd64.tar.gz"
 
 echo "🧹 Cleaning previous tarball builds..."
 rm -rf "$TAR_DIR" "$TAR_FILE"
 
-if [ ! -d "dist/dotghostboard-app" ]; then
-    echo "🚀 Compiling with PyInstaller..."
-    pip install PyQt6 Pillow cryptography pyinstaller --break-system-packages --quiet || true
-    pyinstaller --noconsole --onedir \
-        --add-data "data:data" \
-        --add-data "ui/ghost.qss:ui" \
-        --hidden-import "PyQt6.sip" \
-        --hidden-import "cryptography" \
-        --collect-all "cryptography" \
-        --name dotghostboard-app main.py
+# Ensure executable binary exists or build it
+BINARY="dist/dotghostboard-app/dotghostboard-app"
+if [ ! -x "$BINARY" ]; then
+    echo "📦 Compiled binary not found or not executable, invoking build_binary.sh..."
+    bash "$SCRIPT_DIR/build_binary.sh"
 fi
 
 echo "📦 Creating portable tarball structure..."
 mkdir -p "$TAR_DIR"
-cp -r dist/dotghostboard-app/* "$TAR_DIR/"
+cp -a dist/dotghostboard-app/. "$TAR_DIR/"
 cp README.md "$TAR_DIR/" 2>/dev/null || true
 cp LICENSE "$TAR_DIR/" 2>/dev/null || true
 if [ -f "data/icons/icon_256.png" ]; then
     cp data/icons/icon_256.png "$TAR_DIR/dotghostboard.png"
 fi
 
-cat > "$TAR_DIR/dotghostboard.desktop" << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=DotGhostBoard
-Comment=Advanced clipboard manager for Linux — DotSuite
-Exec=dotghostboard.sh
-Icon=dotghostboard
-Categories=Utility;
-Terminal=false
-EOF
-
-# Launcher script inside tarball
+# Launcher script inside tarball (clean, self-contained execution)
 cat > "$TAR_DIR/dotghostboard.sh" << 'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-export PATH="${HERE}:${PATH}"
-export LD_LIBRARY_PATH="${HERE}:${LD_LIBRARY_PATH}"
-export QT_QPA_PLATFORM=xcb
-cd "${HERE}"
+cd "$HERE"
 exec ./dotghostboard-app "$@"
 EOF
-chmod +x "$TAR_DIR/dotghostboard.sh"
+chmod 755 "$TAR_DIR/dotghostboard.sh"
 
 echo "🔨 Creating .tar.gz archive..."
 tar -czf "$TAR_FILE" "$TAR_DIR"

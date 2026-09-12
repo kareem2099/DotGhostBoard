@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dotghostboard"
-version = "1.5.5"
+version = "1.5.6"
 description = "Advanced clipboard manager for Linux — DotSuite"
 readme = "README.md"
-license = {text = "LICENSE"}
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 authors = [
     {name = "FreeRave", email = "kareem209907@gmail.com"},
@@ -21,6 +21,8 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
 ]
 dependencies = [
@@ -45,12 +47,19 @@ Issues = "https://github.com/kareem2099/DotGhostBoard/issues"
 
 [project.scripts]
 dotghostboard = "main:main"
+dotghost = "cli.dotghost:main"
 
 [tool.setuptools]
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "ui*", "data*"]
+include = ["core*", "ui*", "data*", "cli*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.qss", "*.json", "*.png", "*.svg"]
+"*" = [
+    "*.qss",
+    "*.json",
+    "*.png",
+    "*.svg",
+    "*.gif",
+]

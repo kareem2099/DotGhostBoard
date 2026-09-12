@@ -99,6 +99,7 @@ articles/
 
 # ── Release Build Artifacts & Packages ──
 *.deb
+*.rpm
 *.tar.gz
 *.pkg.tar.zst
 *.pkg.tar.gz
@@ -106,3 +107,7 @@ articles/
 *.asc
 SHA256SUMS*
 PKGBUILD
+
+# ── Package Build Directories ──
+dotghostboard_*/
+dotghostboard-*/

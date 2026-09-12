@@ -1,0 +1,1 @@
+"""DotGhostBoard CLI companion package."""

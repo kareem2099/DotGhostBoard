@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════
 #  DotGhostBoard — install.sh
-#  Automatically does 3 things:
-#    1. Keyboard shortcut  (Ctrl+Alt+V)  on XFCE
-#    2. Autostart on boot  (~/.config/autostart/)
-#    3. .desktop file      (appears in App Launcher)
+#  Configures:
+#    1. Global shortcuts:
+#       Ctrl+Alt+V     → Toggle Dashboard
+#       Ctrl+Alt+Space → Spotlight
+#    2. Autostart on graphical login
+#    3. Desktop launcher
+#    4. dotghost CLI companion
 # ═══════════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
 
 # ── Paths ─────────────────────────────────────────────
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$PROJECT_DIR/venv/bin/python3"
 MAIN="$PROJECT_DIR/main.py"
-ICON="$PROJECT_DIR/data/icons/icon.png"
+ICON="$PROJECT_DIR/data/icons/icon_256.png"
 
-AUTOSTART_DIR="$HOME/.config/autostart"
 DESKTOP_DIR="$HOME/.local/share/applications"
 
 # ── Check if venv exists ────────────────────────────────────
@@ -35,70 +37,33 @@ if [ ! -f "$ICON" ]; then
 fi
 
 # ─────────────────────────────────────────────────────────
-# 1. Keyboard Shortcut on XFCE
+# 1. Keyboard Shortcuts (Dashboard & Spotlight)
 # ─────────────────────────────────────────────────────────
-echo "⌨  Setting up Ctrl+Alt+V shortcut..."
-
-COMMAND="$PYTHON $MAIN"
-
-# Using xfconf-query (official method for XFCE)
-if command -v xfconf-query &>/dev/null; then
-    xfconf-query \
-        --channel xfce4-keyboard-shortcuts \
-        --property "/commands/custom/<Primary><Alt>v" \
-        --create \
-        --type string \
-        --set "$COMMAND" 2>/dev/null && \
-        echo "   ✓ Shortcut added via xfconf-query" || {
-        echo "   ⚠ Could not set shortcut automatically."
-        echo ""
-        echo "   ➜ Add it manually:"
-        echo "     Settings → Keyboard → Application Shortcuts → Add"
-        echo "     Command : $COMMAND"
-        echo "     Shortcut: Ctrl + Alt + V"
-        echo ""
-    }
+echo "⌨  Setting up Global Shortcuts..."
+if "$PYTHON" "$PROJECT_DIR/scripts/setup_shortcuts.py"; then
+    echo "   ✓ Global shortcuts configured"
 else
-    echo "   ⚠ xfconf-query not found — add the shortcut manually:"
-    echo ""
-    echo "   ➜ Settings → Keyboard → Application Shortcuts → Add"
-    echo "     Command : $COMMAND"
-    echo "     Shortcut: Ctrl + Alt + V"
-    echo ""
+    echo "   ⚠ Could not configure global shortcuts automatically."
+    echo "     You can configure them later from:"
+    echo "     DotGhostBoard → Settings → General → Global Hotkeys"
 fi
 
 # ─────────────────────────────────────────────────────────
-# 2. Autostart on Boot
+# 2. Autostart on graphical login (Delegated to core.autostart)
 # ─────────────────────────────────────────────────────────
 echo "🚀 Setting up autostart..."
-
-mkdir -p "$AUTOSTART_DIR"
-
-cat > "$AUTOSTART_DIR/DotGhostBoard.desktop" << EOF
-[Desktop Entry]
-Type=Application
-Name=DotGhostBoard
-Comment=Clipboard Manager — DotSuite
-Exec=$PYTHON $MAIN
-Icon=$ICON
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-X-XFCE-Autostart-Override=true
-StartupNotify=false
-Terminal=false
-EOF
-
-echo "   ✓ Autostart entry created: $AUTOSTART_DIR/DotGhostBoard.desktop"
+"$PYTHON" "$PROJECT_DIR/scripts/setup_autostart.py"
+echo "   ✓ Autostart configured through core.autostart"
 
 # ─────────────────────────────────────────────────────────
 # 3. .desktop file (App Launcher)
 # ─────────────────────────────────────────────────────────
-echo " Creating app launcher entry..."
+echo "🖥️ Creating app launcher entry..."
 
 mkdir -p "$DESKTOP_DIR"
+rm -f "$DESKTOP_DIR/DotGhostBoard.desktop"
 
-cat > "$DESKTOP_DIR/DotGhostBoard.desktop" << EOF
+cat > "$DESKTOP_DIR/dotghostboard.desktop" << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
@@ -119,7 +84,7 @@ if command -v update-desktop-database &>/dev/null; then
         echo "   ✓ Desktop database updated"
 fi
 
-echo "   ✓ App launcher entry created"
+echo "   ✓ App launcher entry created: $DESKTOP_DIR/dotghostboard.desktop"
 
 # ─────────────────────────────────────────────────────────
 # 4. CLI Companion
@@ -144,7 +109,8 @@ fi
 echo ""
 echo " DotGhostBoard installed successfully!"
 echo ""
-echo "   Shortcut  : Ctrl + Alt + V"
+echo "   Dashboard : Ctrl + Alt + V"
+echo "   Spotlight : Ctrl + Alt + Space"
 echo "   Autostart : on login"
 echo "   App menu  : search 'DotGhostBoard'"
 echo ""

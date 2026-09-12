@@ -56,17 +56,17 @@ class SpotlightSearchDialog(QDialog):
         container.setObjectName("SpotlightContainer")
         container.setStyleSheet("""
             QFrame#SpotlightContainer {
-                background-color: #12121c;
-                border: 1.5px solid #00e5ff;
-                border-radius: 12px;
+                background-color: #111314;
+                border: 1px solid #303438;
+                border-radius: 14px;
             }
         """)
 
         # Drop shadow
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(28)
-        shadow.setColor(QColor(0, 229, 255, 60))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(36)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 8)
         container.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self)
@@ -83,20 +83,20 @@ class SpotlightSearchDialog(QDialog):
         search_icon.setStyleSheet("font-size: 16px; background: transparent;")
 
         self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Spotlight Search clips… (Up/Down to navigate, Enter to copy)")
+        self.input_field.setPlaceholderText("Search clipboard history…")
         self.input_field.setStyleSheet("""
             QLineEdit {
-                background: #1a1a28;
-                color: #e2e8f0;
-                border: 1px solid #2d3748;
-                border-radius: 8px;
-                padding: 10px 14px;
+                background: #181a1c;
+                color: #e1e4e6;
+                border: 1px solid #2b2f32;
+                border-radius: 9px;
+                padding: 11px 14px;
                 font-size: 14px;
-                selection-background-color: #00e5ff;
-                selection-color: #0a0a0f;
             }
+
             QLineEdit:focus {
-                border: 1px solid #00e5ff;
+                border: 1px solid #3d7650;
+                background: #1a1d1e;
             }
         """)
         self.input_field.textChanged.connect(self._on_search_changed)
@@ -110,26 +110,28 @@ class SpotlightSearchDialog(QDialog):
         self.results_list = QListWidget()
         self.results_list.setStyleSheet("""
             QListWidget {
-                background: #161622;
-                border: 1px solid #262636;
-                border-radius: 8px;
+                background: #141617;
+                border: 1px solid #25292c;
+                border-radius: 9px;
                 outline: none;
-                padding: 4px;
+                padding: 5px;
             }
+
             QListWidget::item {
-                background: transparent;
-                color: #cbd5e1;
-                border-radius: 6px;
-                padding: 8px 12px;
+                color: #b9bec1;
+                border-radius: 7px;
+                padding: 9px 12px;
                 margin-bottom: 2px;
             }
+
             QListWidget::item:selected {
-                background: #252538;
-                color: #00e5ff;
-                border: 1px solid #00e5ff;
+                background: #18251d;
+                color: #77dd98;
+                border: 1px solid #31513b;
             }
-            QListWidget::item:hover {
-                background: #1c1c2e;
+
+            QListWidget::item:hover:!selected {
+                background: #1b1e20;
             }
         """)
         self.results_list.itemActivated.connect(self._on_item_activated)

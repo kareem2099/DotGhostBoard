@@ -84,8 +84,8 @@ class ItemCard(QFrame):
     # ──────────────────────────────────────────────────────────
     def _build_ui(self, item: dict):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 8, 10, 8)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(14, 10, 14, 10)
+        main_layout.setSpacing(7)
 
         main_layout.addLayout(self._build_top_row(item))
         self._build_preview(item, main_layout)
@@ -97,7 +97,7 @@ class ItemCard(QFrame):
     def _build_top_row(self, item: dict) -> QHBoxLayout:
         """Build and return the horizontal top row layout."""
         top_row = QHBoxLayout()
-        top_row.setSpacing(6)
+        top_row.setSpacing(7)
 
         # W006: selection checkmark overlay
         self._check_overlay = QLabel("✓")
@@ -183,12 +183,12 @@ class ItemCard(QFrame):
         """
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
-        actions.setSpacing(6)   # match top_row spacing — preserves visual layout
+        actions.setSpacing(4)
 
         self.pin_btn = QPushButton("📍" if self.is_pinned else "📌")
         self.pin_btn.setObjectName("PinBtn")
         self.pin_btn.setProperty("pinned", str(self.is_pinned).lower())
-        self.pin_btn.setFixedSize(28, 28)
+        self.pin_btn.setFixedSize(26, 26)
         self.pin_btn.setToolTip("Pin / Unpin")
         self.pin_btn.clicked.connect(
             lambda: self.sig_pin.emit(self.item_id)
@@ -196,7 +196,7 @@ class ItemCard(QFrame):
 
         copy_btn = QPushButton("⎘")
         copy_btn.setObjectName("CopyBtn")
-        copy_btn.setFixedSize(28, 28)
+        copy_btn.setFixedSize(26, 26)
         copy_btn.setToolTip("Copy to Clipboard")
         copy_btn.clicked.connect(
             lambda: self.sig_copy.emit(self.item_id)
@@ -204,7 +204,7 @@ class ItemCard(QFrame):
 
         del_btn = QPushButton("✕")
         del_btn.setObjectName("DeleteBtn")
-        del_btn.setFixedSize(28, 28)
+        del_btn.setFixedSize(26, 26)
         del_btn.setToolTip("Delete (pinned items are protected)")
         del_btn.clicked.connect(
             lambda: self.sig_delete.emit(self.item_id)

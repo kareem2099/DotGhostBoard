@@ -60,8 +60,8 @@ class PinSuggestionToast(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("""
             QFrame#PinToast {
-                background: #1a2a1a;
-                border: 1px solid #00ff4166;
+                background: #151b17;
+                border: 1px solid #31513b;
                 border-radius: 10px;
             }
         """)
@@ -72,7 +72,7 @@ class PinSuggestionToast(QFrame):
 
         # Header
         header = QLabel(f"📌 You've copied this {PIN_SUGGESTION_THRESHOLD} times — Pin it?")
-        header.setStyleSheet("color:#00ff41; font-weight:600; font-size:12px;")
+        header.setStyleSheet("color:#77dd98; font-weight:600; font-size:12px;")
         header.setWordWrap(True)
         layout.addWidget(header)
 
@@ -91,20 +91,29 @@ class PinSuggestionToast(QFrame):
         dismiss_btn = QPushButton("Dismiss")
         dismiss_btn.setFixedHeight(26)
         dismiss_btn.setStyleSheet(
-            "QPushButton { background:#222; color:#666; border:1px solid #333;"
+            "QPushButton { background:#1a1c1e; color:#7e868a; border:1px solid #292d30;"
             "border-radius:5px; padding:0 12px; font-size:11px; }"
-            "QPushButton:hover { color:#aaa; border-color:#555; }"
+            "QPushButton:hover { color:#d2d6d8; border-color:#363b3f; background:#222528; }"
         )
         dismiss_btn.clicked.connect(self._dismiss)
         btn_row.addWidget(dismiss_btn)
 
         pin_btn = QPushButton("📌  Pin It")
         pin_btn.setFixedHeight(26)
-        pin_btn.setStyleSheet(
-            "QPushButton { background:#004d15; color:#00ff41; border:1px solid #00ff4166;"
-            "border-radius:5px; padding:0 14px; font-size:11px; font-weight:600; }"
-            "QPushButton:hover { background:#006620; }"
-        )
+        pin_btn.setStyleSheet("""
+            QPushButton {
+                background:#2bbf5c;
+                color:#08100b;
+                border:none;
+                border-radius:5px;
+                padding:0 14px;
+                font-size:11px;
+                font-weight:700;
+            }
+            QPushButton:hover {
+                background:#35cf68;
+            }
+        """)
         pin_btn.clicked.connect(self._on_pin)
         btn_row.addWidget(pin_btn)
 
@@ -145,12 +154,17 @@ class UpdateCheckerThread(QThread):
                 self.update_found.emit(update_info, asset_url)
 
 class Dashboard(QMainWindow):
-    def __init__(self):
+    def __init__(self, startup_locked: bool = False, active_key: bytes | None = None):
         super().__init__()
         self.setWindowTitle("DotGhostBoard")
         self.resize(520, 680)
         self.setMinimumWidth(400)
         self.setWindowIcon(self._make_tray_icon())
+
+        self._startup_locked: bool = startup_locked
+        self._active_key: bytes | None = active_key
+        self._is_monitoring_paused: bool = False
+        self._tray_retry_count: int = 0
 
         # ── map of item cards {item_id: ItemCard} ──
         self._cards: dict[int, ItemCard] = {}
@@ -195,7 +209,6 @@ class Dashboard(QMainWindow):
         self._active_pairing_dialogs = {}
 
         # ── Eclipse state ──
-        self._active_key: bytes | None = None  # set after successful unlock
         self._auto_lock_timer = QTimer(self)
         self._auto_lock_timer.setSingleShot(True)
         self._auto_lock_timer.timeout.connect(self._lock)
@@ -206,7 +219,8 @@ class Dashboard(QMainWindow):
         if self._settings.get("auto_update_check", True):
             self.check_for_updates()
             
-        self._reset_auto_lock()  # start timer if configured
+        if self._active_key is not None:
+            self._reset_auto_lock()  # start timer if active key is present
 
         # App filter (updated from settings)
         self._app_filter = AppFilter(
@@ -222,9 +236,9 @@ class Dashboard(QMainWindow):
         self.spotlight_dialog = SpotlightSearchDialog(self)
         self.spotlight_dialog.sig_item_selected.connect(self._on_spotlight_item_selected)
 
-        # Hotkeys (Ctrl+Shift+F for Spotlight Search)
-        self.spotlight_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
-        self.spotlight_shortcut.activated.connect(self.show_spotlight)
+        # In-window shortcut (Ctrl+F to focus search)
+        self.find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self.find_shortcut.activated.connect(self.search_box.setFocus)
 
         # Periodic timer for relative timestamps & stats
         self._rel_time_timer = QTimer(self)
@@ -333,12 +347,13 @@ class Dashboard(QMainWindow):
         settings_btn.clicked.connect(self._open_settings)
 
         self.clear_btn = QPushButton("Clear History")
+        self.clear_btn.setObjectName("ClearHistoryBtn")
         self.clear_btn.setFixedHeight(28)
         self.clear_btn.setToolTip("Delete all un-pinned items")
         self.clear_btn.clicked.connect(self._clear_history)
 
         self.lock_btn = QPushButton("🔒")
-        self.lock_btn.setObjectName("LockBtn")
+        self.lock_btn.setObjectName("SessionLockBtn")
         self.lock_btn.setFixedSize(28, 28)
         self.lock_btn.setToolTip("Lock session  (Eclipse)")
         self.lock_btn.clicked.connect(self._lock)
@@ -346,9 +361,14 @@ class Dashboard(QMainWindow):
         self.lock_btn.setVisible(has_master_password())
 
         self.update_btn = QPushButton("🎁 New Update!")
-        self.update_btn.setStyleSheet(
-            "background: #00ff4122; color: #00ff41; border: 1px solid #00ff41; padding: 0 10px; border-radius: 4px; font-weight: bold;"
-        )
+        self.update_btn.setStyleSheet("""
+            background: #18251d;
+            color: #77dd98;
+            border: 1px solid #31513b;
+            padding: 0 10px;
+            border-radius: 5px;
+            font-weight: 600;
+        """)
         self.update_btn.setFixedHeight(28)
         self.update_btn.clicked.connect(self._show_updater_dialog)
         self.update_btn.hide()
@@ -379,7 +399,9 @@ class Dashboard(QMainWindow):
         search_layout.setContentsMargins(0, 0, 0, 0)
 
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("🔍  Search… or type #tag to filter by tag")
+        self.search_box.setObjectName("SearchBox")
+        self.search_box.setFixedHeight(40)
+        self.search_box.setPlaceholderText("Search clips, tags, or collections…")
         self.search_box.textChanged.connect(self._on_search)
 
         search_layout.addWidget(self.search_box)
@@ -395,10 +417,10 @@ class Dashboard(QMainWindow):
         hint_layout.setSpacing(16)
 
         hint_text = QLabel(
-            "💡  Multi-select:  "
-            "<span style='color:#00ff41'>Ctrl+Click</span> to select  •  "
-            "<span style='color:#00ff41'>Shift+Click</span> to range  •  "
-            "<span style='color:#00ff41'>Esc</span> to clear"
+            "Multi-select  ·  "
+            "<span style='color:#8ac99d'>Ctrl+Click</span> select  ·  "
+            "<span style='color:#8ac99d'>Shift+Click</span> range  ·  "
+            "<span style='color:#8ac99d'>Esc</span> clear"
         )
         hint_text.setObjectName("HintText")
         hint_text.setTextFormat(Qt.TextFormat.RichText)
@@ -487,9 +509,15 @@ class Dashboard(QMainWindow):
         main_hbox.addWidget(main_area)
 
         # ── Status bar ──
-        self.statusBar().setStyleSheet(
-            "background:#111; color:#00ff41; font-size:11px;"
-        )
+        self.statusBar().setStyleSheet("""
+            QStatusBar {
+                background: #0c0d0e;
+                color: #697177;
+                border-top: 1px solid #1d2022;
+                font-size: 10px;
+                padding-left: 6px;
+            }
+        """)
         self.statusBar().showMessage("Watching clipboard…")
 
         # Allow the scroll area to receive key events via the dashboard
@@ -542,38 +570,119 @@ class Dashboard(QMainWindow):
     def _setup_tray(self):
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(self._make_tray_icon())
-        self.tray.setToolTip("DotGhostBoard")
+        self._update_tray_menu_and_tooltip()
+        self.tray.activated.connect(self._on_tray_click)
+
+        self._tray_retry_count = 0
+        self._ensure_tray_visible()
+
+    def _ensure_tray_visible(self):
+        """Resiliently show the tray icon, polling with backoff if the watcher isn't ready."""
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray.show()
+        else:
+            if self._tray_retry_count < 10:
+                self._tray_retry_count += 1
+                delay = min(500 * self._tray_retry_count, 3000)
+                QTimer.singleShot(delay, self._ensure_tray_visible)
+
+    def _update_tray_menu_and_tooltip(self):
+        if not hasattr(self, "tray") or self.tray is None:
+            return
+        from core.crypto import has_master_password
+        is_locked = self._is_locked()
+
+        if is_locked:
+            self.tray.setToolTip("DotGhostBoard — 🔒 Locked (Click to unlock)")
+        elif self._is_monitoring_paused:
+            self.tray.setToolTip("DotGhostBoard — ⏸ Monitoring paused")
+        else:
+            self.tray.setToolTip("DotGhostBoard — Monitoring clipboard")
 
         menu = QMenu()
-        show_action = QAction("Show", self)
-        quit_action = QAction("Quit", self)
+        show_action = QAction("👻 Open DotGhostBoard", self)
         show_action.triggered.connect(self.show_and_raise)
-        quit_action.triggered.connect(QApplication.quit)
-        lock_action = QAction("🔒 Lock", self)
-        lock_action.triggered.connect(self._lock)
         menu.addAction(show_action)
+
+        if not is_locked:
+            if self._is_monitoring_paused:
+                toggle_monitor_action = QAction("▶ Resume Monitoring", self)
+                toggle_monitor_action.triggered.connect(self._resume_monitoring)
+            else:
+                toggle_monitor_action = QAction("⏸ Pause Monitoring", self)
+                toggle_monitor_action.triggered.connect(self._pause_monitoring)
+            menu.addAction(toggle_monitor_action)
+
+            settings_action = QAction("⚙ Settings", self)
+            settings_action.triggered.connect(self._open_settings)
+            menu.addAction(settings_action)
+
         menu.addSeparator()
-        menu.addAction(lock_action)
-        menu.addSeparator()
+
+        if has_master_password():
+            if is_locked:
+                lock_action = QAction("🔓 Unlock DotGhostBoard", self)
+                lock_action.triggered.connect(self._show_lock_screen)
+            else:
+                lock_action = QAction("🔒 Lock", self)
+                lock_action.triggered.connect(self._lock)
+            menu.addAction(lock_action)
+            menu.addSeparator()
+
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(QApplication.quit)
         menu.addAction(quit_action)
 
         self.tray.setContextMenu(menu)
-        self.tray.activated.connect(self._on_tray_click)
-        self.tray.show()
+
+    def _pause_monitoring(self):
+        self._is_monitoring_paused = True
+        if hasattr(self, "watcher") and self.watcher:
+            self.watcher.stop()
+        self._update_tray_menu_and_tooltip()
+        self.statusBar().showMessage("⏸ Clipboard monitoring paused")
+
+    def _resume_monitoring(self):
+        if self._is_locked():
+            self._is_monitoring_paused = True
+            self._update_tray_menu_and_tooltip()
+            self.statusBar().showMessage("🔒 Unlock DotGhostBoard before resuming clipboard monitoring")
+            return
+
+        self._is_monitoring_paused = False
+        if hasattr(self, "watcher") and self.watcher:
+            self.watcher.start()
+        self._update_tray_menu_and_tooltip()
+        self.statusBar().showMessage("▶ Clipboard monitoring active")
 
     def _on_tray_click(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.show_and_raise()
+            self.toggle_visibility()
 
     def show_and_raise(self):
+        from core.crypto import has_master_password
+        if (self._startup_locked or self._active_key is None) and has_master_password():
+            self._show_lock_screen()
+            return
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def toggle_visibility(self):
+        """Toggle dashboard between visible and hidden."""
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show_and_raise()
 
     # ══════════════════════════════════════════
     # Settings
     # ══════════════════════════════════════════
     def _open_settings(self):
+        if self._is_locked():
+            self._show_lock_screen()
+            if self._is_locked():
+                return
         dlg = SettingsDialog(self)
         if dlg.exec():
             old_limit = self._settings.get("max_history", 200)
@@ -621,6 +730,11 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
     # Watcher
     # ══════════════════════════════════════════
+    def _is_locked(self) -> bool:
+        """Check whether the dashboard is currently in a locked state."""
+        from core.crypto import has_master_password
+        return bool(self._startup_locked or (has_master_password() and self._active_key is None))
+
     def _start_watcher(self):
         self.watcher = ClipboardWatcher()
         self.watcher.new_text_captured.connect(self._on_new_text)
@@ -628,16 +742,16 @@ class Dashboard(QMainWindow):
         self.watcher.new_video_captured.connect(self._on_new_video)
         # S002: when video thumbnail is ready, update the card
         self.watcher.thumb_ready.connect(self._on_thumb_ready)
-        # Eclipse: pass app filter to watcher
-        # (requires watcher.py to accept an optional app_filter argument)
-        # self.watcher.set_app_filter(self._app_filter)
-        # See watcher_eclipse_patch for ClipboardWatcher changes.
-        self.watcher.start()
+        # If locked on system boot, watcher waits until unlocked
+        if not self._is_locked():
+            self.watcher.start()
 
     # ══════════════════════════════════════════
     # Sync Engine
     # ══════════════════════════════════════════
     def _init_sync_engine(self):
+        if self._is_locked():
+            return
         node_id = self._settings.get("node_id", "")
         port    = self._settings.get("api_port", 9090)
         if node_id:
@@ -647,6 +761,8 @@ class Dashboard(QMainWindow):
     # API Server
     # ══════════════════════════════════════════
     def _start_api_server(self):
+        if self._is_locked():
+            return
         if self._settings.get("api_enabled", False):
             port = self._settings.get("api_port", 9090)
             token = self._settings.get("api_token", "")
@@ -696,6 +812,8 @@ class Dashboard(QMainWindow):
     # Network Discovery
     # ══════════════════════════════════════════
     def _start_discovery(self):
+        if self._is_locked():
+            return
         port = self._settings.get("api_port", 9090)
         device_name = self._settings.get("device_name", "Unknown Ghost")
         node_id = self._settings.get("node_id", "ghost_node")
@@ -1629,18 +1747,27 @@ class Dashboard(QMainWindow):
     def _refresh_stats(self):
         s = storage.get_stats()
         self.stats_label.setText(
-            f"Total: {s['total']}  |  📌 {s['pinned']}  |  "
-            f"T: {s['texts']}  I: {s['images']}"
+            f"{s['total']} items  ·  {s['pinned']} pinned"
         )
         if hasattr(self, "stats_header") and self.stats_header:
             self.stats_header.refresh_stats()
 
     def show_spotlight(self):
-        """Show Spotlight Quick Search Overlay."""
-        if hasattr(self, "spotlight_dialog") and self.spotlight_dialog:
-            self.spotlight_dialog.show()
-            self.spotlight_dialog.raise_()
-            self.spotlight_dialog.activateWindow()
+        """Show or toggle Spotlight Quick Search Overlay."""
+        if self._is_locked():
+            if not self._show_lock_screen(show_dashboard=False):
+                return
+
+        if not hasattr(self, "spotlight_dialog") or not self.spotlight_dialog:
+            return
+
+        if self.spotlight_dialog.isVisible():
+            self.spotlight_dialog.hide()
+            return
+
+        self.spotlight_dialog.show()
+        self.spotlight_dialog.raise_()
+        self.spotlight_dialog.activateWindow()
 
     def _on_spotlight_item_selected(self, item: dict):
         """User selected an item in Spotlight overlay → copy to clipboard."""
@@ -1735,13 +1862,33 @@ class Dashboard(QMainWindow):
     # ══════════════════════════════════════════
 
     def set_active_key(self, key: bytes | None) -> None:
-        """Called from main.py after startup unlock, or cleared on lock."""
+        """Called from main.py or after unlock, or cleared on lock."""
         self._active_key = key
+        if key is not None:
+            self._startup_locked = False
+            if hasattr(self, "watcher") and self.watcher and not self._is_monitoring_paused:
+                self.watcher.start()
+            if getattr(self, "_api_thread", None) is None:
+                self._start_api_server()
+            if getattr(self, "_discovery_thread", None) is None:
+                self._start_discovery()
+            if getattr(self, "_sync_engine", None) is None:
+                self._init_sync_engine()
+        self._update_tray_menu_and_tooltip()
 
     def _lock(self) -> None:
         """Lock the session: clear key, hide window, show lock screen."""
         self._active_key = None
         self._auto_lock_timer.stop()
+        if hasattr(self, "watcher") and self.watcher:
+            self.watcher.stop()
+        if hasattr(self, "_api_thread") and self._api_thread:
+            self._api_thread.stop()
+            self._api_thread = None
+        if hasattr(self, "_discovery_thread") and self._discovery_thread:
+            self._discovery_thread.stop()
+            self._discovery_thread = None
+        self._update_tray_menu_and_tooltip()
 
         # Blank out any revealed secret content in cards
         for card in self._cards.values():
@@ -1750,14 +1897,24 @@ class Dashboard(QMainWindow):
         self.hide()
         self._show_lock_screen()
 
-    def _show_lock_screen(self) -> None:
-        """Show LockScreen dialog; restore window on success."""
+    def _show_lock_screen(self, *, show_dashboard: bool = True) -> bool:
+        """Show LockScreen dialog; restore window on success if requested."""
         dlg = LockScreen(setup=False)
-        if dlg.exec() == LockScreen.DialogCode.Accepted:
-            self._active_key = dlg.get_key()
-            self._reset_auto_lock()
-            self.show_and_raise()
+        if dlg.exec() != LockScreen.DialogCode.Accepted:
+            return False
+
+        self._startup_locked = False
+        self.set_active_key(dlg.get_key())
+        self._reset_auto_lock()
+        self._update_tray_menu_and_tooltip()
+
+        if show_dashboard:
+            self.show()
+            self.raise_()
+            self.activateWindow()
             self.statusBar().showMessage("🔓 Unlocked")
+
+        return True
 
     def _reset_auto_lock(self) -> None:
         """Restart the inactivity timer.  Called on any user interaction."""

@@ -125,56 +125,65 @@ class LockScreen(QDialog):
     def _apply_style(self) -> None:
         self.setStyleSheet("""
             QDialog {
-                background: #0d0d0d;
-                border: 1px solid #00ff41;
-                border-radius: 8px;
+                background: #101213;
+                border: 1px solid #303438;
+                border-radius: 12px;
             }
+
             #LockTitle {
-                color: #00ff41;
+                color: #e6e9ea;
                 font-size: 18px;
-                font-weight: bold;
-                font-family: monospace;
-                letter-spacing: 1px;
+                font-weight: 700;
             }
+
             #LockSubtitle {
-                color: #888888;
-                font-size: 13px;
+                color: #70787d;
+                font-size: 12px;
             }
+
             #LockDivider {
-                background: #222;
+                background: #24282b;
                 max-height: 1px;
                 border: none;
             }
+
             #LockInput {
-                background: #141414;
-                color: #00ff41;
-                border: 1px solid #2a2a2a;
-                border-radius: 6px;
-                padding: 8px 14px;
-                font-size: 14px;
-                font-family: monospace;
+                background: #181a1c;
+                color: #e4e7e8;
+                border: 1px solid #303438;
+                border-radius: 8px;
+                padding: 8px 13px;
+                font-size: 13px;
             }
+
             #LockInput:focus {
-                border: 1px solid #00ff41;
-                background: #181818;
+                border: 1px solid #3f7e52;
+                background: #1a1d1e;
             }
+
             #LockError {
-                color: #ff4444;
-                font-size: 12px;
+                color: #e26f6f;
+                font-size: 11px;
                 min-height: 18px;
             }
+
             #LockBtn {
-                background: #00ff41;
-                color: #0d0d0d;
+                background: #2bbf5c;
+                color: #08100b;
                 border: none;
-                border-radius: 6px;
-                padding: 0 32px;
-                font-weight: bold;
-                font-size: 14px;
-                min-width: 160px;
+                border-radius: 7px;
+                padding: 0 30px;
+                font-weight: 700;
+                min-width: 150px;
             }
-            #LockBtn:hover  { background: #00e63a; }
-            #LockBtn:pressed{ background: #00cc33; }
+
+            #LockBtn:hover {
+                background: #35cf68;
+            }
+
+            #LockBtn:pressed {
+                background: #24a94f;
+            }
         """)
 
     # ── Logic ─────────────────────────────────────────────────────────────────
@@ -236,7 +245,7 @@ class LockScreen(QDialog):
         # Shake the input for visual feedback
         self.pw_input.setStyleSheet(
             self.pw_input.styleSheet() +
-            "#LockInput { border: 1px solid #ff4444; }"
+            "#LockInput { border: 1px solid #e26f6f; }"
         )
         QTimer.singleShot(600, self._clear_shake)
 

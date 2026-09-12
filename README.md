@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.5-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.6-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-184%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-219%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -34,7 +34,9 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Real-time search** — Filter your clipboard history instantly
 - **Clear history** — Wipe unpinned items in one click (pinned items always stay)
 - **System tray** — Lives quietly in your tray, always available
-- **IPC shortcut** — `Ctrl+Alt+V` shows the window from anywhere via local socket
+- **Global Shortcuts** — `Ctrl+Alt+V` toggles the dashboard from anywhere; `Ctrl+Alt+Space` opens the floating Spotlight search overlay (GNOME & XFCE native)
+- **Spotlight Quick Search** — Floating, instant clipboard search overlay (`Ctrl+Alt+Space`); search, navigate with arrows, copy, and close instantly with zero window flicker; protected by Eclipse Master Password
+- **In-Dashboard Search** — `Ctrl+F` instantly focuses and selects the search bar within the main dashboard
 - **App icon** — Auto-generated neon ghost icon via `scripts/generate_icon.py`
 - **Dark Neon UI** — Custom QSS theme built for dark desktops
 - **Settings panel** — ⚙ Max history limit, privacy clear-on-exit, theme toggle
@@ -79,11 +81,12 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 
 - **E2EE Local Network Sync (Nexus)** — End-to-end encrypted clipboard synchronization across your local network. AES-256-GCM protection with X25519 (ECDH) handshakes.
 - **mDNS Auto-Discovery** — Zero-config discovery of peers on the same WiFi.
-- **REST API** — Programmatic access to history and pushing through a local localhost server.
+- **REST API** — Token-protected local-network API for history, item pushing, and pairing workflows.
 - **CLI Companion** — `dotghost push` and `dotghost pop` from your terminal for seamless shell workflow.
 - **Secure Device Pairing** — PIN-protected handshakes to ensure unauthorized devices can't intercept your sync data.
 - **Copy Count Badge** — Each card shows a live pill badge (`×2`, `×5`, `×10+`) tracking how many times an item has been copied. Color escalates from teal → orange → 🔥 as the count grows.
 - **Auto-Pin Suggestion** — At `×5` copies a non-blocking toast appears suggesting you pin the item. At `×10` the item is **auto-pinned silently** so frequently-used text is always protected from deletion.
+- **Modern Typography & Aesthetic** — Clean sans-serif UI typography (`Inter` / `Noto Sans`), muted dark-slate theme, refined card padding, compact 26×26 action buttons, and customizable shortcuts button in Settings.
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with desktop environment dock and app launcher.
@@ -96,12 +99,13 @@ DotGhostBoard integrates seamlessly with desktop environment dock and app launch
 
 ```
 DotGhostBoard/
-├── main.py                      # Entry point + IPC local server
-├── ghost.db                     # SQLite database (auto-created)
+├── main.py                      # Entry point + IPC local server (--toggle, --spotlight)
 ├── core/
 │   ├── watcher.py               # Clipboard monitor (QTimer-based)
-│   ├── storage.py               # Database CRUD layer
+│   ├── storage.py               # Database CRUD layer (~/.config/dotghostboard/ghost.db)
 │   ├── crypto.py                # AES-256 encryption engine (Eclipse)
+│   ├── shortcuts.py             # Global desktop shortcut manager (GNOME/XFCE)
+│   ├── autostart.py             # Modular XDG autostart desktop entry manager
 │   ├── sync_engine.py           # E2EE background push worker (Nexus)
 │   ├── network_discovery.py     # Zeroconf mDNS peer discovery (Nexus)
 │   ├── api_server.py            # Local REST API & Handshake handler (Nexus)
@@ -111,29 +115,34 @@ DotGhostBoard/
 │   └── media.py                 # Image/video handler
 ├── ui/
 │   ├── dashboard.py             # Main window + keyboard nav + settings wiring
-│   ├── widgets.py               # Item card widget (double-click, focus)
-│   ├── settings.py              # Settings dialog with About tab
+│   ├── widgets/                 # Modular widget package (ItemCard, StatsHeader, TagChips)
+│   ├── spotlight.py             # Floating Spotlight quick search overlay
+│   ├── settings.py              # Settings dialog with Shortcuts & About tabs
 │   ├── pairing_dialog.py        # Device pairing UI (Nexus)
 │   ├── lock_screen.py           # Master password lock screen (Eclipse)
 │   ├── updater_dialog.py        # GUI for GitHub updates
-│   └── ghost.qss                # Dark neon stylesheet
+│   └── ghost.qss                # Modern dark neon stylesheet
 ├── cli/
-│   └── dotghost.py              # Command-line companion (Nexus)
+│   └── dotghost.py              # Command-line companion (push, pop, spotlight, toggle)
 ├── data/
 │   ├── icons/                   # Generated app icons + ghost.svg source
-│   ├── captures/                # Saved images (.png)
+│   ├── captures/                # Sample captures (.png)
 │   ├── assets/                  # GIFs, screenshots, demo media
-│   └── settings.json            # User settings
+│   └── settings.json            # Bundled default settings template
 ├── scripts/
 │   ├── generate_icon.py         # Draws ghost icon at 16/32/48/64/128/256px
 │   ├── install.sh               # Autostart + shortcut + CLI symlinker
+│   ├── setup_shortcuts.py       # Desktop shortcut configurator (GNOME/XFCE)
 │   ├── build_appimage.sh        # AppImage builder
 │   └── setup_autostart.py       # Standalone Python autostart installer
 ├── tests/
-│   ├── test_api.py              # REST API & Sync tests (178 total passed)
+│   ├── test_api.py              # REST API & Sync tests
+│   ├── test_autostart.py        # Autostart manager tests
 │   ├── test_eclipse.py          # Encryption & Security tests
-│   ├── test_storage.py          # Database CRUD tests
-│   └── test_media.py            # Media detection tests
+│   ├── test_ipc_spotlight.py    # IPC, Spotlight & Shortcuts tests (219 total passed)
+│   ├── test_media.py            # Media detection tests
+│   ├── test_runtime_dir.py      # Runtime directory tests
+│   └── test_storage.py          # Database CRUD tests
 ├── roadmap(v1.x).md
 ├── CHANGELOG.md
 ├── requirements.txt
@@ -157,12 +166,10 @@ DotGhostBoard/
 
 ## 📥 Download
 
-**Download for your platform:**
-
-- 🐧 [AppImage (Linux)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
-- 📦 [DEB (Ubuntu/Debian)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
-- 🪟 [EXE (Windows)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
-- 🍎 [DMG (macOS)](https://github.com/kareem2099/DotGhostBoard/releases/latest)
+- 🐧 **[AppImage](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Portable Linux build
+- 📦 **[DEB](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Debian / Ubuntu / Kali
+- 📦 **[Arch package](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — `.pkg.tar.zst`
+- 🗜️ **[Portable tarball](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Extract & run anywhere
 
 ---
 
@@ -200,7 +207,10 @@ python3 main.py
 
 ### Option C — pip install (PyPI)
 
+> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v1.5.6.
+
 ```bash
+# Planned for PyPI release
 pip install dotghostboard
 dotghostboard
 ```
@@ -214,7 +224,7 @@ chmod +x DotGhostBoard-*.AppImage
 ./DotGhostBoard-*.AppImage
 ```
 
-No installation needed — runs on ANY Linux distro.
+No installation required. Runs on compatible 64-bit Linux distributions.
 
 ### Option E — Full install (autostart + shortcut + icon)
 
@@ -223,7 +233,10 @@ chmod +x scripts/install.sh
 ./scripts/install.sh
 ```
 
-This sets up autostart on login and registers the `Ctrl+Alt+V` shortcut via `xfconf-query`.
+This configures autostart, the desktop launcher, CLI companion, and global shortcuts on supported GNOME/XFCE desktops:
+
+- `Ctrl+Alt+V` — Toggle Dashboard
+- `Ctrl+Alt+Space` — Spotlight Quick Search
 
 ### Option F — Build AppImage from source
 
@@ -239,13 +252,10 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.3_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.6_amd64.deb
 
-# Install with dpkg
-sudo dpkg -i dotghostboard_*.deb
-
-# Fix any missing dependencies (if needed)
-sudo apt-get install -f
+# Install via apt
+sudo apt install ./dotghostboard_1.5.6_amd64.deb
 
 # Run
 dotghostboard
@@ -288,15 +298,16 @@ sudo apt remove dotghostboard
 | Action | How |
 |--------|-----|
 | Copy anything | Just use `Ctrl+C` anywhere — DotGhostBoard captures it automatically |
-| Show window | Press `Ctrl+Alt+V` from anywhere |
+| Toggle window | Press `Ctrl+Alt+V` from anywhere to show or hide the dashboard |
+| Spotlight search | Press `Ctrl+Alt+Space` from anywhere for instant floating quick search |
+| Focus search | Press `Ctrl+F` inside the dashboard to search history |
 | Pin an item | Click 📌 on any card |
 | Unpin an item | Click 📍 on a pinned card |
 | Copy back | Click ⎘ on any card — or **double-click** the card |
 | Delete an item | Click ✕ — pinned items are protected |
-| Search | Type in the search bar at the top |
 | Keyboard navigation | Press `↑` / `↓` to move focus; `Enter` or `Space` to copy; `Esc` to clear |
 | Clear history | Click "Clear History" — pinned items are never deleted |
-| Settings | Click ⚙ in the top bar — adjust history limit, privacy options |
+| Settings | Click ⚙ in the top bar — adjust history limit, global shortcuts, privacy |
 | Minimize | Click X — the app stays alive in the system tray |
 | Quit | Right-click the tray icon → Quit |
 
@@ -310,16 +321,21 @@ python3 -m pytest
 
 Expected output:
 ```
-tests/test_api.py .....                                    [  3%]
-tests/test_eclipse.py .................................    [ 21%]
-tests/test_media.py ...........................            [ 37%]
-tests/test_settings.py ............                       [ 44%]
-tests/test_storage.py ................................    [ 62%]
-tests/test_storage_v130.py ................................................. [ 90%]
-tests/test_thumbnailer.py .........                       [ 95%]
-tests/test_updater_core.py ...........                    [100%]
+tests/test_api.py .....                                                  [  2%]
+tests/test_autostart.py .................                                [ 10%]
+tests/test_eclipse.py .................................                  [ 25%]
+tests/test_ipc_spotlight.py .........                                    [ 29%]
+tests/test_media.py ...........................                          [ 41%]
+tests/test_runtime_dir.py ........                                       [ 45%]
+tests/test_settings.py ............                                      [ 50%]
+tests/test_storage.py ................................                   [ 65%]
+tests/test_storage_v130.py ............................................. [ 85%]
+....                                                                     [ 87%]
+tests/test_thumbnailer.py .........                                      [ 91%]
+tests/test_updater_core.py ...........                                   [ 96%]
+tests/test_v155_polish.py .......                                        [100%]
 
-178 passed in 9.07s
+219 passed in 8.91s
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -342,6 +358,7 @@ tests/test_updater_core.py ...........                    [100%]
 | v1.5.3 | Nexus Hotfix III | ✅ Released | Fix blank/white window in deb & AppImage (PyInstaller resource path) |
 | v1.5.4 | Nexus Hotfix IV | ✅ Released | Clipboard capture reliability fix (3-layer bug); Copy Count Badge; Auto-Pin Suggestion |
 | v1.5.5 | Nexus Polish & Spotlight | ✅ Released | Spotlight quick search overlay, relative time, copy count reset, image deduplication, search debounce |
+| v1.5.6 | Nexus Global Hotkeys & UI Polish | 🚀 Ready | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 219 tests |
 | v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)

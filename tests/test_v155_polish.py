@@ -11,7 +11,7 @@ import pytest
 from datetime import datetime, timedelta
 
 from core import storage
-from ui.widgets import _format_time
+from ui.widgets import _format_time, _copy_count_badge_state
 
 
 def test_reset_copy_count(tmp_path):
@@ -60,6 +60,29 @@ def test_relative_time_formatting():
 
     days_ago_iso = (datetime.now() - timedelta(days=2)).isoformat()
     assert _format_time(days_ago_iso) == "2d ago"
+
+
+def test_copy_count_badge_state():
+    # Less than 2 should be hidden
+    assert _copy_count_badge_state(0) == ("", "")
+    assert _copy_count_badge_state(1) == ("", "")
+
+    # 2-4: subtle slate
+    text, style = _copy_count_badge_state(3)
+    assert text == "×3"
+    assert "#1c2225" in style
+    assert "🔥" not in text
+
+    # 5-9: warm green/olive
+    text, style = _copy_count_badge_state(7)
+    assert text == "×7"
+    assert "#22251f" in style
+
+    # 10+: amber/gold
+    text, style = _copy_count_badge_state(12)
+    assert text == "×12"
+    assert "#2d2417" in style
+    assert "🔥" not in text
 
 
 def test_watcher_self_paste_no_recapture():

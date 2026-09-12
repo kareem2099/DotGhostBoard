@@ -17,13 +17,58 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.6] — 2026-09-13 — *Nexus Global Hotkeys & UI Polish*
+
+Per-user global desktop shortcuts (`Ctrl+Alt+V`, `Ctrl+Alt+Space`), decoupled floating Spotlight search overlay, Eclipse Lock security protection for quick search, major visual styling & typography overhaul, modular UI widgets architecture, and comprehensive test suite expansion to 219 passing tests.
+
+### Added
+
+- **Per-User Global Desktop Shortcuts (`core/shortcuts.py`)** — Added native desktop shortcuts for the logged-in user on GNOME (`gsettings`) and XFCE (`xfconf-query`):
+  - `Ctrl+Alt+V`: Toggles DotGhostBoard main window visibility (show / hide) from any application.
+  - `Ctrl+Alt+Space`: Opens the standalone floating Spotlight quick search overlay from any application.
+  - Features intelligent desktop environment detection (`detect_desktop`), secure zero-`eval` parsing of GSettings lists (`ast.literal_eval`), multi-target command launcher resolving AppImage (`$APPIMAGE`), PyInstaller binary, and source virtualenv with `shlex.join()`.
+- **Decoupled Spotlight Quick Search (`ui/spotlight.py`, `ui/dashboard.py`)** — Standalone floating search overlay accessible globally without opening or raising the main window. Features screen centering, real-time debounced search, keyboard navigation (`Up`/`Down`/`Enter`), and instant clipboard copy.
+- **Single-Instance IPC Messaging (`main.py`)** — Extended local UNIX socket IPC server to support `--spotlight` (`-s`) and `--toggle` (`-t`) arguments, routing commands directly to the running instance without restarting or launching duplicate instances.
+- **CLI Companion Subcommands (`cli/dotghost.py`)** — Added `dotghost spotlight` and `dotghost toggle` commands for terminal-driven workflows and custom window manager keybindings.
+- **In-App Global Shortcut Configuration (`ui/settings.py`)** — Added `[ Configure Global Shortcuts ]` button in Settings → General with live desktop feedback banner and keybind legend for `.deb`, AppImage, and source installs.
+- **In-Dashboard Search Shortcut (`ui/dashboard.py`)** — Added `Ctrl+F` shortcut inside Dashboard to quickly focus and select the search query input.
+- **Modular UI Widgets Package (`ui/widgets/`)** — Split monolithic `widgets.py` into focused, maintainable modules (`item_card.py`, `stats_header.py`, `tag_chip.py`, `tag_input.py`, and `helpers.py`).
+- **Comprehensive Test Suite Expansion (`tests/`)** — Added `tests/test_ipc_spotlight.py`, `tests/test_autostart.py`, and `tests/test_runtime_dir.py`, expanding the test suite to 219 passing tests.
+
+### Security & Privacy
+
+- **Eclipse Lock Protection for Spotlight (`ui/dashboard.py`)** — `show_spotlight()` strictly enforces Master Password authentication when Eclipse mode is locked. If unlocked via Spotlight, only Spotlight is presented—the main dashboard remains hidden and protected behind the lock screen.
+- **Automatic Background Worker Re-arming** — Unlocking Eclipse on instances launched with `--startup` now automatically initializes the clipboard watcher, local REST API, mDNS peer discovery, and sync engine.
+- **Safe GSettings Parsing** — Replaced insecure string evaluations with `ast.literal_eval` and safe `@as []` prefix stripping in shortcut detection.
+
+### Changed & Polished
+
+- **Modern Typography & Aesthetic Overhaul (`ui/ghost.qss`)**:
+  - Replaced global monospace font with clean, modern sans-serif typography (`Inter`, `Noto Sans`, `Segoe UI`) across all headers, buttons, inputs, and dialogs. Monospace is preserved exclusively for item text, code blocks, and command-line snippets.
+  - Refined slate & muted dark-green palette (`#0f1411`, `#151c17`, `#1d2820`, `#2bbf5c`, `#77dd98`) with subtle borders and smooth hover states.
+  - Standardized `ItemCard` padding (14px / 10px) and compacted action buttons to 26×26px for enhanced information density.
+  - Re-themed `PinSuggestionToast` and `New Update!` notification banner with the new muted palette.
+  - Converted Settings dialog styling to reusable QSS classes (`SettingsDialog`, `SettingsTitle`, `SettingsSaveBtn`, `SettingsCancelBtn`).
+- **Resolved Shortcut Collision** — Removed conflicting `Ctrl+Shift+F` window shortcut to prevent collision with IDEs and code editors (e.g., VS Code Global Search).
+- **Resilient Installer Script (`scripts/install.sh`)** — Made shortcut setup non-fatal, allowing clean installations on custom or minimal desktop environments without aborting the install pipeline.
+- **Profile Isolation (`cli/dotghost.py`)** — CLI now honors `DOTGHOST_HOME` environment variable for isolated profiles and testing.
+
+### Fixed
+
+- **Desktop Detection False Positives** — Fixed issue where XFCE environments with `gsettings` installed were mistakenly identified as GNOME.
+- **Path Escaping with Spaces** — Fixed launch command generation using `shlex.join()` so executable paths containing spaces work reliably.
+- **XFCE Keybind Idempotency** — Prevented duplicate or conflicting shortcut entries in `xfconf-query`.
+- **System Tray Window Toggle** — Fixed tray icon click handler to toggle window visibility cleanly between active and minimized/hidden states.
+
+---
+
 ## [1.5.5] — 2026-08-05 — *Nexus Polish & Spotlight*
 
 UI state intelligence, quick Spotlight search overlay, relative time formatting, copy count reset, image deduplication, and search input debouncing.
 
 ### Added
 
-- **Spotlight Quick Search Overlay** (`ui/spotlight.py`) — Frameless floating search popup accessible globally via `Ctrl+Shift+F`. Provides real-time search, keyboard navigation (`Up`/`Down`/`Enter`), and instant copy/paste. Encrypted secret items are masked with `🔒 Secret Item (Encrypted)` preview for privacy.
+- **Spotlight Quick Search Overlay** (`ui/spotlight.py`) — Frameless floating search popup accessible from the Dashboard via `Ctrl+Shift+F`. Provides real-time search, keyboard navigation (`Up`/`Down`/`Enter`), and instant copy/paste. Encrypted secret items are masked with `🔒 Secret Item (Encrypted)` preview for privacy.
 - **Master Password Prompt for Secret Copying** (`ui/dashboard.py` — `_on_copy`) — Prompting for Master Password using `LockScreen` before copying secret items, decrypting content in-memory for pasting without saving plaintext back to DB or re-capturing as unencrypted cards.
 - **Image SHA-256 Deduplication** (`core/storage.py` — `_get_file_hash`, `add_item`) — Identical image captures/screenshots are deduplicated via SHA-256 checksums, automatically moving the existing image card to top and incrementing `copy_count` while purging duplicate temporary files.
 - **Search Input Debouncing** (`ui/dashboard.py`, `ui/spotlight.py`) — Added 200ms (Dashboard) and 150ms (Spotlight) `QTimer` search input debounce to prevent unnecessary SQL execution and UI rebuilds during rapid typing.

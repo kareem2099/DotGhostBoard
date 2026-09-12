@@ -1,12 +1,18 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════
 # DotGhostBoard — Arch Linux Package Builder (.pkg.tar.zst)
 # ═══════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+source "$SCRIPT_DIR/lib/build_common.sh"
 
 APP_NAME="dotghostboard"
-VERSION=$(grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md | head -1 || echo "1.5.5")
+VERSION="$(get_version)"
 ARCH="x86_64"
 REL="1"
 PKG_DIR="${APP_NAME}-${VERSION}-${REL}-${ARCH}"
@@ -15,16 +21,11 @@ PKG_FILE="${APP_NAME}-${VERSION}-${REL}-${ARCH}.pkg.tar.zst"
 echo "🧹 Cleaning previous Arch builds..."
 rm -rf "$PKG_DIR" "$PKG_FILE" PKGBUILD
 
-if [ ! -d "dist/dotghostboard-app" ]; then
-    echo "🚀 Compiling with PyInstaller..."
-    pip install PyQt6 Pillow cryptography pyinstaller --break-system-packages --quiet || true
-    pyinstaller --noconsole --onedir \
-        --add-data "data:data" \
-        --add-data "ui/ghost.qss:ui" \
-        --hidden-import "PyQt6.sip" \
-        --hidden-import "cryptography" \
-        --collect-all "cryptography" \
-        --name dotghostboard-app main.py
+# Ensure executable binary exists or build it
+BINARY="dist/dotghostboard-app/dotghostboard-app"
+if [ ! -x "$BINARY" ]; then
+    echo "📦 Compiled binary not found or not executable, invoking build_binary.sh..."
+    bash "$SCRIPT_DIR/build_binary.sh"
 fi
 
 echo "🏗️ Creating Arch Linux package directory structure..."
@@ -34,14 +35,14 @@ mkdir -p "$PKG_DIR/usr/share/applications"
 mkdir -p "$PKG_DIR/usr/share/icons/hicolor/256x256/apps"
 
 # Copy binary files
-cp -r dist/dotghostboard-app/* "$PKG_DIR/opt/dotghostboard/"
+cp -a dist/dotghostboard-app/. "$PKG_DIR/opt/dotghostboard/"
 
-# Create launcher binary in /usr/bin
+# Create launcher binary in /usr/bin with exec
 cat > "$PKG_DIR/usr/bin/dotghostboard" << 'EOF'
 #!/bin/bash
-/opt/dotghostboard/dotghostboard-app "$@"
+exec /opt/dotghostboard/dotghostboard-app "$@"
 EOF
-chmod +x "$PKG_DIR/usr/bin/dotghostboard"
+chmod 755 "$PKG_DIR/usr/bin/dotghostboard"
 
 # Create Desktop entry
 cat > "$PKG_DIR/usr/share/applications/dotghostboard.desktop" << 'EOF'
