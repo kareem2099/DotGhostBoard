@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════
-# DotGhostBoard — Local DEB Builder (v1.5.6 Nexus)
+# DotGhostBoard — Local DEB Builder (v1.5.7 Nexus)
 # ═══════════════════════════════════════════════════════
 
 set -euo pipefail

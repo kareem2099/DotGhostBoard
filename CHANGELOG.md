@@ -17,6 +17,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.7] — 2026-09-13 — *Nexus Hotfix V*
+
+Critical packaging and CI headless stability hotfix: ensures `dotghost` CLI runtime dependencies are met across Debian and Arch, resolves Qt6/xcb CI headless crashes, and refines release automation pipelines.
+
+### Fixed & Improved
+
+- **CI / Headless Stability (`.github/workflows/tests.yml`, `tests/test_ipc_spotlight.py`)** — Fixed PyQt6 / xcb fatal abort (`SIGABRT / exit code 134`) on headless runners by installing `libgl1`, `libxkbcommon0`, `libxkbcommon-x11-0`, and `libxcb1`, while defaulting test executions in headless/CI environments to `QT_QPA_PLATFORM=offscreen`.
+- **Packaging Dependencies (`scripts/build_deb.sh`, `scripts/build_arch.sh`)** — Added explicit `python3` dependency to `.deb` package (`DEBIAN/control`) and `python` to Arch package (`.PKGINFO` and `PKGBUILD`) to guarantee the `/usr/bin/dotghost` Python CLI companion has a system interpreter available.
+- **CLI Companion Polish (`cli/dotghost.py`)** — Added `--help` / `-h` command-line flags, standardized terminal confirmation prints, and automatic detection/cleanup of stale UNIX socket endpoints.
+- **Release Automation Alignment (`scripts/sign_and_upload.sh`)** — Unified release asset filenames and patterns (`*.pkg.tar.*`) to precisely match builder artifacts and SHA256 checksums.
+
+---
+
 ## [1.5.6] — 2026-09-13 — *Nexus Global Hotkeys & UI Polish*
 
 Per-user global desktop shortcuts (`Ctrl+Alt+V`, `Ctrl+Alt+Space`), decoupled floating Spotlight search overlay, Eclipse Lock security protection for quick search, major visual styling & typography overhaul, modular UI widgets architecture, and comprehensive test suite expansion to 219 passing tests.

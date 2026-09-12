@@ -2,7 +2,7 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.6-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.5.7-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
@@ -207,7 +207,7 @@ python3 main.py
 
 ### Option C — pip install (PyPI)
 
-> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v1.5.6.
+> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v1.5.7.
 
 ```bash
 # Planned for PyPI release
@@ -252,10 +252,10 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.6_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.7_amd64.deb
 
 # Install via apt
-sudo apt install ./dotghostboard_1.5.6_amd64.deb
+sudo apt install ./dotghostboard_1.5.7_amd64.deb
 
 # Run
 dotghostboard
@@ -359,6 +359,7 @@ tests/test_v155_polish.py .......                                        [100%]
 | v1.5.4 | Nexus Hotfix IV | ✅ Released | Clipboard capture reliability fix (3-layer bug); Copy Count Badge; Auto-Pin Suggestion |
 | v1.5.5 | Nexus Polish & Spotlight | ✅ Released | Spotlight quick search overlay, relative time, copy count reset, image deduplication, search debounce |
 | v1.5.6 | Nexus Global Hotkeys & UI Polish | ✅ Released | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 220 tests |
+| v1.5.7 | Nexus Hotfix V | ✅ Released | CI headless stability, packaging Python dependencies, CLI enhancements, 220 tests |
 | v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
