@@ -529,18 +529,64 @@ def decrypt_all_secret_items(key: bytes) -> int:
     """
     Permanently decrypt ALL secret items.
     Used when the user removes their master password.
-    Returns the number of items decrypted, or -1 if key is wrong.
+    Two-phase atomic approach: verifies all items decrypt in-memory before mutating DB.
+    Returns the number of items decrypted, or -1 if key is wrong or any item is corrupted.
     """
     secrets = get_secret_items()
     if not secrets:
         return 0
-    count = 0
+
+    decrypted: dict[int, str] = {}
+
+    # Phase 1: verify everything before mutating DB
     for item in secrets:
-        if decrypt_item_permanent(item["id"], key):
-            count += 1
-        else:
-            return -1  # Wrong key — abort
-    return count
+        plain = decrypt_item(item["id"], key)
+        if plain is None:
+            return -1  # Wrong key or corrupted item — abort without DB mutation
+        decrypted[item["id"]] = plain
+
+    # Phase 2: commit all changes atomically under one transaction
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        for item_id, plain in decrypted.items():
+            conn.execute(
+                """
+                UPDATE clipboard_items
+                SET content = ?, is_secret = 0, updated_at = ?
+                WHERE id = ?
+                """,
+                (plain, now, item_id),
+            )
+
+    return len(decrypted)
+
+
+def reencrypt_all_secret_items(old_key: bytes, new_key: bytes) -> int:
+    """
+    Re-encrypt all secret items from old_key to new_key.
+    Returns the count of re-encrypted items, or -1 if any item fails decryption.
+    """
+    from core.crypto import encrypt as _encrypt
+    secrets = get_secret_items()
+    if not secrets:
+        return 0
+
+    decrypted_map: dict[int, str] = {}
+    for item in secrets:
+        plain = decrypt_item(item["id"], old_key)
+        if plain is None:
+            return -1  # Abort on decryption failure
+        decrypted_map[item["id"]] = plain
+
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        for item_id, plain in decrypted_map.items():
+            new_ciphertext = _encrypt(plain, new_key)
+            conn.execute(
+                "UPDATE clipboard_items SET content = ?, updated_at = ? WHERE id = ?",
+                (new_ciphertext, now, item_id),
+            )
+    return len(decrypted_map)
 
 
 def clean_old_captures(keep: int = 100) -> int:

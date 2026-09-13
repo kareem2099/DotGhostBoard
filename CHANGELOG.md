@@ -27,8 +27,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `pipeline.py`: Pure decision engine enforcing validation, app filtering, paranoia zero-logging short-circuiting, and secret detection hooks without any Qt or UI coupling.
   - `backend.py`: Standardized `ClipboardBackend` protocol enabling future pluggable backends (e.g. Wayland `wlr-data-control`).
   - `backends/qt_backend.py`: Extracted Qt clipboard polling into a dedicated backend.
-  - `core/watcher.py`: Re-architected `ClipboardWatcher` to route all incoming captures through `ClipboardPipeline` before persisting.
-  - Added unit test suite (`tests/test_clipboard_pipeline.py`) bringing total test count to 239 passing tests.
+  - `core/watcher.py`: Re-architected `ClipboardWatcher` as an Orchestrator delegating to `ClipboardBackend` and `ClipboardPipeline`, featuring safe hot-swapping lifecycle.
+  - Added test suites (`tests/test_clipboard_pipeline.py`, `tests/test_watcher_backend_integration.py`).
+- **Service & Security Boundaries (`core/services/`, `core/security/`)** — Established pure, GUI-independent service layers ahead of UI decomposition:
+  - `core/crypto.py`: Added HKDF-SHA256 cryptographic domain separation (`derive_vault_key(password)`), best-effort memory scrubbing (`secure_zero()`), and strict POSIX permissions (`0700` for config directory, `0600` for salt and verifier files).
+  - `core/security/detector.py`: Sub-millisecond `SecretDetector` engine with heuristics for private keys (SSH/PEM), GitHub tokens, AWS keys, Slack tokens, and JWTs, natively integrated with `ClipboardPipeline`.
+  - `core/security/vault/`: Physical database isolation for The Vault (`vault.db`) with `VAULT_SCHEMA_VERSION = 1` and downgrade rejection. Implemented envelope encryption using a Data Encryption Key (DEK) wrapped by a Key Encryption Key (KEK), enabling instant password rotation without re-encrypting vault items.
+  - `core/services/history_service.py` (`ClipService`): Encapsulates clipboard item queries, pagination, search, tag manipulation (`list[str]`), pin toggling, copy thresholds (`PIN_SUGGESTION_THRESHOLD = 5`, `AUTO_PIN_THRESHOLD = 10`), cleanups, and export.
+  - `core/services/collection_service.py`: Encapsulates collection management, validation, and item categorization.
+  - `core/services/security_service.py`: Central security orchestrator handling master password lifecycle, atomic password rotation (`change_master_password`) re-encrypting `ghost.db` clips while re-wrapping the Vault DEK, and safe password removal (`remove_master_password`) protecting against orphaned vault secrets and decrypting Eclipse items.
+  - `core/services/sync_service.py`: Network and peer trust coordinator for LAN synchronization (`get_all_trusted_peers()`, instant constructor initialization).
+  - Added comprehensive test suites (`tests/test_crypto_domain.py`, `tests/test_secret_detector.py`, `tests/test_vault.py`, `tests/test_services.py`), bringing test suite to 276 passing tests with complete failure-path coverage (corrupt salt rejection, atomic bulk decrypt, existing-password setup guard, and missing DEK fail-closed invariants).
 
 ### Planned for v2.0.0 (Cerberus)
 - **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
