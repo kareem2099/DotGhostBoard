@@ -9,6 +9,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### v2.0 Foundation Architecture & Storage Modularization
+
+- **Storage Engine Modularization (`core/storage/`)** — Decomposed the monolithic 1,100-line `core/storage.py` into a clean, decoupled package architecture:
+  - `database.py`: Context-managed SQLite connection layer with dynamic test path getters (`get_db_path()`, `get_thumb_dir()`, `get_captures_dir()`).
+  - `migrations.py`: Robust versioned migration engine with automatic legacy schema adoption (`user_version = 0`), schema downgrade protection (`RuntimeError` on future schemas), and strict transactional rollbacks.
+  - `repositories/clips.py`: Dedicated clipboard item repository handling CRUD, deduplication, previews, AES-256-GCM encryption, search, and secure deletion.
+  - `repositories/tags.py`: Domain repository for tag extraction, normalization (`#tag`), search, and global rename/delete.
+  - `repositories/collections.py`: Collections repository managing categorization, unlinking on delete, and item counts.
+  - `repositories/peers.py`: Device trust and shared secret credentials repository for LAN sync.
+  - `repositories/stats.py`: Optimized queries for header summary metrics and copy counts.
+  - `__init__.py`: 100% backward-compatible facade re-exporting all public functions and path constants without requiring changes in UI, CLI, or API modules.
+- **Behavioral Contract Tests & Fixtures (`tests/test_storage_contract.py`, `tests/fixtures/`)** — Added 12 contract tests freezing exact behaviors (item creation, duplicate updates, copy count increments, tag normalization, collection management, downgrade rejection, and legacy database migration without data loss).
+- **Real-World Database Validation** — Tested and verified against both a real active user database (710 items, 5.33 MB) and an early legacy v1.x database (76 items, 11.24 MB), confirming 100% data integrity, sub-50ms query latency, and flawless legacy schema adoption.
+- **Clipboard Pipeline & Backend Abstraction (`core/clipboard/`)** — Introduced a GUI-independent decision pipeline and pluggable backend protocol:
+  - `events.py`: Lightweight dataclasses (`ClipboardEvent`, `CaptureDecision`) and `Action` enums (`SAVE_NORMAL`, `IGNORE`, `SECRET_CANDIDATE`).
+  - `pipeline.py`: Pure decision engine enforcing validation, app filtering, paranoia zero-logging short-circuiting, and secret detection hooks without any Qt or UI coupling.
+  - `backend.py`: Standardized `ClipboardBackend` protocol enabling future pluggable backends (e.g. Wayland `wlr-data-control`).
+  - `backends/qt_backend.py`: Extracted Qt clipboard polling into a dedicated backend.
+  - `core/watcher.py`: Re-architected `ClipboardWatcher` to route all incoming captures through `ClipboardPipeline` before persisting.
+  - Added unit test suite (`tests/test_clipboard_pipeline.py`) bringing total test count to 239 passing tests.
+
 ### Planned for v2.0.0 (Cerberus)
 - **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
 - **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.

@@ -1,16 +1,20 @@
 """
 core/watcher.py
 ───────────────
-Monitors the system clipboard every 500ms.
+Orchestrates clipboard monitoring by coordinating a ClipboardBackend,
+a ClipboardPipeline (policy engine), and persistence/thumbnailing.
 Emits Qt signals to the dashboard on new text, image, or video captures.
-Waterfall logic: Image (Pixels) -> URLs (File Manager) -> Text (Path Check).
 """
 
-import os
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QThread
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QImage
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from core import storage, media
+from core.clipboard import (
+    ClipboardPipeline,
+    ClipboardEvent,
+    Action,
+    ClipboardBackend,
+    QtClipboardBackend,
+)
 
 
 # ──────────────────────────────────────────────────────────
@@ -38,145 +42,111 @@ class _ThumbWorker(QThread):
 # ──────────────────────────────────────────────────────────
 class ClipboardWatcher(QObject):
     """
-    Monitors the clipboard every 500ms.
-    Emits signals to the Dashboard when new content is detected.
+    Orchestrator for clipboard events:
+    Receives events from ClipboardBackend, validates through ClipboardPipeline,
+    persists accepted clips, and signals the UI.
     """
 
     new_text_captured  = pyqtSignal(int, str)   # (id, text)
     new_image_captured = pyqtSignal(int, str)   # (id, file_path)
     new_video_captured = pyqtSignal(int, str)   # (id, video_path)
     thumb_ready        = pyqtSignal(int, str)   # (id, thumb_path)
+    secret_candidate_detected = pyqtSignal(object) # ClipboardEvent candidate
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        pipeline: ClipboardPipeline | None = None,
+        backend: ClipboardBackend | None = None,
+    ):
         super().__init__(parent)
-        self._clipboard      = QApplication.clipboard()
-        self._last_content   = None          # last seen content signature/signature
-        self._is_self_paste  = False         # ignore our own paste events
+        self._pipeline = pipeline or ClipboardPipeline()
+        self._backend = backend or QtClipboardBackend(self)
+        self._backend.set_on_event(self._on_clipboard_event)
         self._thumb_workers: list = []       # keep refs so GC doesn't kill threads
+        self._running: bool = False
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(500)
-        self._timer.timeout.connect(self._check_clipboard)
+    @property
+    def pipeline(self) -> ClipboardPipeline:
+        return self._pipeline
+
+    def set_pipeline(self, pipeline: ClipboardPipeline) -> None:
+        self._pipeline = pipeline
+
+    @property
+    def backend(self) -> ClipboardBackend:
+        return self._backend
+
+    def set_backend(self, backend: ClipboardBackend) -> None:
+        was_running = self._running
+        if was_running:
+            self._backend.stop()
+
+        self._backend = backend
+        self._backend.set_on_event(self._on_clipboard_event)
+
+        if was_running:
+            self._backend.start()
+
+    @property
+    def _is_self_paste(self) -> bool:
+        """Backward-compatible access for tests inspecting self paste flag."""
+        return getattr(self._backend, "_is_self_paste", False)
+
+    @_is_self_paste.setter
+    def _is_self_paste(self, value: bool) -> None:
+        if hasattr(self._backend, "_is_self_paste"):
+            self._backend._is_self_paste = value
 
     # ─────────────────────────────────────────
     def start(self):
+        if self._running:
+            return
         storage.init_db()
-        self._timer.start()
+        self._backend.start()
+        self._running = True
 
     def stop(self):
-        self._timer.stop()
+        if not self._running:
+            return
+        self._backend.stop()
+        self._running = False
 
     def mark_self_paste(self):
-        """Call before pasting from within the app to avoid re-capture."""
-        self._is_self_paste = True
+        """Notify backend to avoid capturing the app's own paste action."""
+        self._backend.mark_self_paste()
+
+    def paste_item_to_clipboard(self, item: dict):
+        """Restore item back to system clipboard via backend."""
+        self._backend.paste_item(item)
 
     # ─────────────────────────────────────────
-    def _check_clipboard(self):
-        try:
-            mime = self._clipboard.mimeData()
-            if mime is None:
-                return
+    def _on_clipboard_event(self, event: ClipboardEvent) -> None:
+        """Single processing funnel for all clipboard events."""
+        decision = self._pipeline.process(event)
 
-            if self._is_self_paste:
-                self._is_self_paste = False
-                # Record pasted content in _last_content so the watcher
-                # ignores it on subsequent poll ticks and doesn't re-capture
-                # decrypted secret text as a new unencrypted card.
-                if mime.hasText():
-                    self._last_content = mime.text().strip()
-                elif mime.hasUrls():
-                    urls = mime.urls()
-                    if urls:
-                        self._last_content = urls[0].toLocalFile()
-                elif mime.hasImage():
-                    qimage = self._clipboard.image()
-                    if not qimage.isNull():
-                        self._last_content = f"{qimage.width()}x{qimage.height()}_{qimage.sizeInBytes()}"
-                return
+        if decision.action == Action.IGNORE:
+            return
 
-            # ──────────────────────────────────────────────────────────
-            # 1. Image Data (Screenshots / Pixels)
-            # ──────────────────────────────────────────────────────────
-            if mime.hasImage():
-                qimage = self._clipboard.image()
-                if not qimage.isNull():
-                    img_sig = f"{qimage.width()}x{qimage.height()}_{qimage.sizeInBytes()}"
-                    if img_sig != self._last_content:
-                        self._last_content = img_sig
-                        file_path = media.save_image_from_qimage(qimage)
-                        if file_path:
-                            item_id = storage.add_item("image", file_path, preview=file_path)
-                            self.new_image_captured.emit(item_id, file_path)
-                    return  # Image pixel data is high priority
+        if decision.action == Action.SECRET_CANDIDATE:
+            self.secret_candidate_detected.emit(decision.payload)
+            return
 
-            # ──────────────────────────────────────────────────────────
-            # 2. Files/URLs (Copies from File Manager like Thunar)
-            # ──────────────────────────────────────────────────────────
-            if mime.hasUrls():
-                urls = mime.urls()
-                if urls:
-                    local_path = urls[0].toLocalFile()
-                    if local_path and os.path.isfile(local_path):
-                        if local_path == self._last_content:
-                            return
-                        self._last_content = local_path
-                        
-                        img_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
-                        vid_exts = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv")
-                        
-                        low_path = local_path.lower()
-                        if low_path.endswith(img_exts):
-                            item_id = storage.add_item("image", local_path, preview=local_path)
-                            self.new_image_captured.emit(item_id, local_path)
-                            return
-                        elif low_path.endswith(vid_exts):
-                            item_id = storage.add_item("video", local_path)
-                            self.new_video_captured.emit(item_id, local_path)
-                            media.log_video_path(local_path)
-                            self._start_thumb_worker(local_path, item_id)
-                            return
-                        # If it's a file but not media, treat path as text below
+        # Action.SAVE_NORMAL
+        item_id = storage.add_item(
+            event.content_type,
+            event.content,
+            preview=event.preview,
+        )
 
-            # ──────────────────────────────────────────────────────────
-            # 3. Text content (Plain text or Manual path strings)
-            # ──────────────────────────────────────────────────────────
-            if mime.hasText():
-                text = mime.text().strip()
-                if not text:
-                    return
-
-                # Only skip if the clipboard poll sees the exact same
-                # content as the previous poll (no new copy action).
-                # This prevents flooding the DB on every 500ms tick, but
-                # allows re-copying the same word intentionally.
-                if text == self._last_content:
-                    return
-                self._last_content = text
-
-                # Quick path check (some apps copy path as text, not URL)
-                clean_path = text.replace("file://", "").strip()
-                if os.path.isfile(clean_path):
-                    img_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
-                    vid_exts = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv")
-                    low_p = clean_path.lower()
-                    
-                    if low_p.endswith(img_exts):
-                        item_id = storage.add_item("image", clean_path, preview=clean_path)
-                        self.new_image_captured.emit(item_id, clean_path)
-                        return
-                    elif low_p.endswith(vid_exts):
-                        item_id = storage.add_item("video", clean_path)
-                        self.new_video_captured.emit(item_id, clean_path)
-                        self._start_thumb_worker(clean_path, item_id)
-                        return
-
-                # Normal text
-                item_id = storage.add_item("text", text)
-                self.new_text_captured.emit(item_id, text)
-                return
-
-        except Exception as e:
-            print(f"[Watcher] Error: {e}")
+        if event.content_type == "text":
+            self.new_text_captured.emit(item_id, event.content)
+        elif event.content_type == "image":
+            self.new_image_captured.emit(item_id, event.content)
+        elif event.content_type == "video":
+            self.new_video_captured.emit(item_id, event.content)
+            media.log_video_path(event.content)
+            self._start_thumb_worker(event.content, item_id)
 
     # ─────────────────────────────────────────
     # S002: Video thumbnail
@@ -184,28 +154,13 @@ class ClipboardWatcher(QObject):
     def _start_thumb_worker(self, video_path: str, item_id: int):
         worker = _ThumbWorker(video_path, item_id)
         worker.done.connect(self._on_thumb_done)
-        worker.finished.connect(lambda: self._thumb_workers.remove(worker)
-                                if worker in self._thumb_workers else None)
+        worker.finished.connect(
+            lambda: self._thumb_workers.remove(worker)
+            if worker in self._thumb_workers else None
+        )
         self._thumb_workers.append(worker)
         worker.start()
 
     def _on_thumb_done(self, item_id: int, thumb_path: str):
         storage.update_preview(item_id, thumb_path)
         self.thumb_ready.emit(item_id, thumb_path)
-
-    # ─────────────────────────────────────────
-    # S005: Paste item back to clipboard
-    # ─────────────────────────────────────────
-    def paste_item_to_clipboard(self, item: dict):
-        """Restore item to clipboard."""
-        self._is_self_paste = True
-        if item["type"] == "text":
-            self._clipboard.setText(item["content"])
-        elif item["type"] == "image":
-            image = QImage(item["content"])
-            if not image.isNull():
-                self._clipboard.setImage(image)
-            else:
-                self._clipboard.setText(item["content"])
-        elif item["type"] == "video":
-            self._clipboard.setText(item["content"])
