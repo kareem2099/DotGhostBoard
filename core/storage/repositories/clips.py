@@ -625,9 +625,15 @@ def clean_old_captures(keep: int = 100) -> int:
                 os.remove(thumb)
             except OSError:
                 pass
-        # Remove DB row
-        with _db() as conn:
-            conn.execute("DELETE FROM clipboard_items WHERE id = ?", (row["id"],))
         deleted += 1
+
+    # Bulk-delete all rows in a single transaction
+    if to_delete:
+        ids = [row["id"] for row in to_delete]
+        placeholders = ",".join("?" * len(ids))
+        with _db() as conn:
+            conn.execute(
+                f"DELETE FROM clipboard_items WHERE id IN ({placeholders})", ids
+            )
 
     return deleted

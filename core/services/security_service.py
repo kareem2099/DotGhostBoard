@@ -171,6 +171,20 @@ class SecurityService:
         self.touch()
         return True
 
+    def set_session_key(self, key: bytes) -> None:
+        """
+        Set an externally-derived Eclipse key and mark the session as unlocked.
+        Used by SecurityController when a key is obtained outside the normal
+        password-unlock flow (e.g., restored from LockScreen dialog).
+
+        Caller is responsible for ensuring `key` is a valid AES-256 key (32 bytes).
+        """
+        if self._active_key is not None:
+            secure_zero(self._active_key)
+        self._active_key = bytearray(key)
+        self._is_locked = False
+        self.touch()
+
     def lock(self) -> None:
         """Lock session, scrub keys in-memory, and lock Vault."""
         if self._active_key is not None:

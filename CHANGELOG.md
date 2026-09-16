@@ -9,43 +9,72 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### v2.0 Foundation Architecture & Storage Modularization
+---
 
-- **Storage Engine Modularization (`core/storage/`)** — Decomposed the monolithic 1,100-line `core/storage.py` into a clean, decoupled package architecture:
-  - `database.py`: Context-managed SQLite connection layer with dynamic test path getters (`get_db_path()`, `get_thumb_dir()`, `get_captures_dir()`).
-  - `migrations.py`: Robust versioned migration engine with automatic legacy schema adoption (`user_version = 0`), schema downgrade protection (`RuntimeError` on future schemas), and strict transactional rollbacks.
-  - `repositories/clips.py`: Dedicated clipboard item repository handling CRUD, deduplication, previews, AES-256-GCM encryption, search, and secure deletion.
-  - `repositories/tags.py`: Domain repository for tag extraction, normalization (`#tag`), search, and global rename/delete.
-  - `repositories/collections.py`: Collections repository managing categorization, unlinking on delete, and item counts.
-  - `repositories/peers.py`: Device trust and shared secret credentials repository for LAN sync.
-  - `repositories/stats.py`: Optimized queries for header summary metrics and copy counts.
-  - `__init__.py`: 100% backward-compatible facade re-exporting all public functions and path constants without requiring changes in UI, CLI, or API modules.
-- **Behavioral Contract Tests & Fixtures (`tests/test_storage_contract.py`, `tests/fixtures/`)** — Added 12 contract tests freezing exact behaviors (item creation, duplicate updates, copy count increments, tag normalization, collection management, downgrade rejection, and legacy database migration without data loss).
-- **Real-World Database Validation** — Tested and verified against both a real active user database (710 items, 5.33 MB) and an early legacy v1.x database (76 items, 11.24 MB), confirming 100% data integrity, sub-50ms query latency, and flawless legacy schema adoption.
-- **Clipboard Pipeline & Backend Abstraction (`core/clipboard/`)** — Introduced a GUI-independent decision pipeline and pluggable backend protocol:
-  - `events.py`: Lightweight dataclasses (`ClipboardEvent`, `CaptureDecision`) and `Action` enums (`SAVE_NORMAL`, `IGNORE`, `SECRET_CANDIDATE`).
-  - `pipeline.py`: Pure decision engine enforcing validation, app filtering, paranoia zero-logging short-circuiting, and secret detection hooks without any Qt or UI coupling.
-  - `backend.py`: Standardized `ClipboardBackend` protocol enabling future pluggable backends (e.g. Wayland `wlr-data-control`).
-  - `backends/qt_backend.py`: Extracted Qt clipboard polling into a dedicated backend.
-  - `core/watcher.py`: Re-architected `ClipboardWatcher` as an Orchestrator delegating to `ClipboardBackend` and `ClipboardPipeline`, featuring safe hot-swapping lifecycle.
-  - Added test suites (`tests/test_clipboard_pipeline.py`, `tests/test_watcher_backend_integration.py`).
-- **Service & Security Boundaries (`core/services/`, `core/security/`)** — Established pure, GUI-independent service layers ahead of UI decomposition:
-  - `core/crypto.py`: Added HKDF-SHA256 cryptographic domain separation (`derive_vault_key(password)`), best-effort memory scrubbing (`secure_zero()`), and strict POSIX permissions (`0700` for config directory, `0600` for salt and verifier files).
-  - `core/security/detector.py`: Sub-millisecond `SecretDetector` engine with heuristics for private keys (SSH/PEM), GitHub tokens, AWS keys, Slack tokens, and JWTs, natively integrated with `ClipboardPipeline`.
-  - `core/security/vault/`: Physical database isolation for The Vault (`vault.db`) with `VAULT_SCHEMA_VERSION = 1` and downgrade rejection. Implemented envelope encryption using a Data Encryption Key (DEK) wrapped by a Key Encryption Key (KEK), enabling instant password rotation without re-encrypting vault items.
-  - `core/services/history_service.py` (`ClipService`): Encapsulates clipboard item queries, pagination, search, tag manipulation (`list[str]`), pin toggling, copy thresholds (`PIN_SUGGESTION_THRESHOLD = 5`, `AUTO_PIN_THRESHOLD = 10`), cleanups, and export.
-  - `core/services/collection_service.py`: Encapsulates collection management, validation, and item categorization.
-  - `core/services/security_service.py`: Central security orchestrator handling master password lifecycle, atomic password rotation (`change_master_password`) re-encrypting `ghost.db` clips while re-wrapping the Vault DEK, and safe password removal (`remove_master_password`) protecting against orphaned vault secrets and decrypting Eclipse items.
-  - `core/services/sync_service.py`: Network and peer trust coordinator for LAN synchronization (`get_all_trusted_peers()`, instant constructor initialization).
-  - Added comprehensive test suites (`tests/test_crypto_domain.py`, `tests/test_secret_detector.py`, `tests/test_vault.py`, `tests/test_services.py`), bringing test suite to 276 passing tests with complete failure-path coverage (corrupt salt rejection, atomic bulk decrypt, existing-password setup guard, and missing DEK fail-closed invariants).
+## [1.6.0] — 2026-09-16 — *Phantom*
 
-### Planned for v2.0.0 (Cerberus)
-- **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
-- **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.
-- **Zero-Logging Mode (Paranoia)** — Ephemeral state that completely drops clipboard saves to the DB while active.
-- **Auto-Clear** — Automatically wipes the OS clipboard 30 seconds after copying from the Vault.
+> **Codename:** Phantom — Full v2.x Architecture Foundation
+>
+> This release completes the modular refactoring of DotGhostBoard's entire core and UI layer.
+> Zero user-facing behavior changes. 306/306 tests passing.
+
+### Architecture — v2.x Foundation (Phases 1–4)
+
+#### Phase 1–3: Core Decomposition
+
+- **Storage Engine Modularization (`core/storage/`)** — Decomposed the monolithic 1,100-line `core/storage.py` into a clean, decoupled package:
+  - `database.py`: Context-managed SQLite connection layer with dynamic test path getters.
+  - `migrations.py`: Versioned migration engine with legacy schema adoption, downgrade protection, and transactional rollbacks.
+  - `repositories/clips.py`: CRUD, image deduplication, AES-256-GCM encryption, secure deletion, bulk operations.
+  - `repositories/tags.py`: Tag extraction, normalization (`#tag`), global rename/delete.
+  - `repositories/collections.py`: Categorization, item counts, unlink on delete.
+  - `repositories/peers.py`: Trusted device credentials for LAN sync.
+  - `repositories/stats.py`: Optimized metrics queries.
+  - `__init__.py`: 100% backward-compatible facade — zero caller changes required.
+- **Clipboard Pipeline & Backend Abstraction (`core/clipboard/`)** — GUI-independent decision pipeline with pluggable backends:
+  - `events.py`: Frozen dataclasses (`ClipboardEvent`, `CaptureDecision`) and `Action` enum (`SAVE_NORMAL`, `IGNORE`, `SECRET_CANDIDATE`).
+  - `pipeline.py`: Pure policy engine (validation → app filter → paranoia → secret detection → accept).
+  - `backend.py`: `ClipboardBackend` Protocol — ready for Wayland (`wlr-data-control`) backends.
+  - `backends/qt_backend.py`: Extracted Qt polling backend with hot-swap lifecycle.
+  - `core/watcher.py`: Re-architected as Orchestrator delegating to Backend + Pipeline.
+- **Service Layer (`core/services/`)** — Qt-free business logic boundaries:
+  - `history_service.py` (`ClipService`): Pagination, search, tag manipulation, pin toggling, copy thresholds (`PIN_SUGGESTION_THRESHOLD = 5`, `AUTO_PIN_THRESHOLD = 10`), cleanup, export.
+  - `collection_service.py`: Collection management, validation, item categorization.
+  - `security_service.py`: Master password lifecycle, atomic password rotation (re-encrypts Eclipse items + re-wraps Vault DEK), safe removal guard.
+  - `sync_service.py`: Peer trust coordination and broadcast delegation.
+- **Security Domain (`core/security/`, `core/crypto.py`):**
+  - HKDF-SHA256 domain-separated key derivation (`derive_key` vs `derive_vault_key`).
+  - `secure_zero()` for best-effort in-memory key scrubbing.
+  - `SecretDetector`: Sub-millisecond regex heuristics for SSH keys, GitHub tokens, AWS keys, JWTs, and high-entropy strings.
+  - `vault/`: Physical database isolation (`vault.db`) with DEK/KEK envelope encryption enabling instant password rotation without re-encrypting vault items.
+
+#### Phase 4: Dashboard Decomposition
+
+- **Four Behavioral `QObject` Controllers (`ui/controllers/`)** — Decomposed the 2,353-line `Dashboard` God Class into focused, injection-based controllers:
+  - `CollectionController`: Sidebar management, drag-and-drop targeting, collection CRUD dialogs, active filter state.
+  - `SecurityController`: Session lock/unlock lifecycle, secret copy resolution, card-level Eclipse encrypt/decrypt — no direct widget manipulation.
+  - `SyncController`: Peer list UI, pairing dialog invocation, device status styling, outbound broadcast.
+  - `HistoryController`: Card lifecycle, infinite scroll pagination, debounced search & tag filtering, pin/copy/delete slots, signal wiring via `_connect_card_signals()`.
+- **`PinSuggestionToast`** extracted into `ui/widgets/pin_toast.py`.
+- **Dashboard reduced by 818 lines** (2,353 → 1,535 lines). Zero direct `storage.*` or `crypto.*` calls remain in `ui/dashboard.py`.
+- **Strict signal boundaries enforced:**
+  - Clipboard sync fires **only** from `watcher.new_text_captured` → `sync_controller.broadcast_text`. Manual copy never triggers sync.
+  - Secret copy: `history_controller.secret_copy_requested` → `security_controller.handle_secret_copy` → `copy_payload_ready` → paste.
+
+### Bug Fixes & Internal Quality
+
+- **Encapsulation fix** (`SecurityService.set_session_key()`): `SecurityController` now uses a proper public API instead of directly mutating `_active_key` / `_is_locked` private attributes.
+- **N-query fix** (`CollectionService.get_collection()`): Direct `get_collection_by_id()` DB lookup instead of fetching all collections and filtering in Python.
+- **N+1 connection fix** (`clean_old_captures()`): Consolidated per-row `DELETE` statements into a single `DELETE WHERE id IN (...)` bulk transaction.
+- **DRY fix** (`HistoryController._connect_card_signals()`): Extracted duplicated 9-line signal-wiring block into a shared helper used by both `add_card()` and `refresh_item()`.
+
+### Test Coverage
+
+- Test suite expanded from 220 → **306 passing tests** across 25 test modules.
+- New test modules: `test_clipboard_pipeline`, `test_watcher_backend_integration`, `test_collection_controller`, `test_security_controller`, `test_sync_controller`, `test_history_controller`, `test_dashboard_coordination`, `test_crypto_domain`, `test_secret_detector`, `test_vault`, `test_services`, `test_storage_contract`.
 
 ---
+
 
 ## [1.5.7] — 2026-09-13 — *Nexus Hotfix V*
 

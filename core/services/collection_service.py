@@ -22,10 +22,8 @@ class CollectionService:
 
     def get_collection(self, coll_id: int) -> Optional[dict]:
         """Find a collection by id."""
-        for c in self.get_collections():
-            if c["id"] == coll_id:
-                return c
-        return None
+        return self._storage.get_collection_by_id(coll_id)
+
 
     def create_collection(self, name: str) -> Optional[int]:
         """
