@@ -32,16 +32,29 @@ _NONCE_SIZE   = 12                       # GCM standard nonce (96-bit)
 
 def _load_or_create_salt() -> bytes:
     """Load existing per-install salt, or generate and persist a new one."""
-    os.makedirs(_CFG_DIR, exist_ok=True)
+    os.makedirs(_CFG_DIR, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(_CFG_DIR, 0o700)
+    except OSError:
+        pass
+
     if os.path.exists(_SALT_FILE):
         with open(_SALT_FILE, "rb") as f:
             data = f.read()
-        if len(data) == 32:
-            return data
-    # Generate fresh 256-bit salt
+        if len(data) != 32:
+            raise RuntimeError(
+                "Eclipse salt is corrupted; refusing to regenerate it."
+            )
+        return data
+
+    # Generate fresh 256-bit salt only if file does not exist
     salt = os.urandom(32)
     with open(_SALT_FILE, "wb") as f:
         f.write(salt)
+    try:
+        os.chmod(_SALT_FILE, 0o600)
+    except OSError:
+        pass
     return salt
 
 
@@ -62,6 +75,34 @@ def derive_key(password: str) -> bytes:
         iterations=_KDF_ITER,
     )
     return kdf.derive(password.encode("utf-8"))
+
+
+def derive_vault_key(password: str) -> bytes:
+    """
+    Derive a domain-separated 256-bit AES key for The Vault (v2.x) from *password*.
+
+    Uses HKDF-SHA256 with info context b"dotghostboard:vault:v2" over the base key.
+    This guarantees that the Vault encryption key is cryptographically independent
+    from the Eclipse encryption key (ghost.db), even when using the same master password.
+    """
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    base_key = derive_key(password)
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"dotghostboard:vault:v2",
+    )
+    return hkdf.derive(base_key)
+
+
+def secure_zero(buf: bytearray) -> None:
+    """
+    Best-effort scrubbing of mutable in-memory bytearray buffers.
+    """
+    if isinstance(buf, bytearray):
+        for i in range(len(buf)):
+            buf[i] = 0
 
 
 # ── AES-256-GCM ───────────────────────────────────────────────────────────────
@@ -119,9 +160,13 @@ def save_master_password(password: str) -> None:
         raise ValueError("Master password must be at least 6 characters.")
     key   = derive_key(password)
     token = encrypt(_VERIFY_TOKEN, key)
-    os.makedirs(_CFG_DIR, exist_ok=True)
+    os.makedirs(_CFG_DIR, mode=0o700, exist_ok=True)
     with open(_VERIFY_FILE, "w", encoding="ascii") as f:
         f.write(token)
+    try:
+        os.chmod(_VERIFY_FILE, 0o600)
+    except OSError:
+        pass
 
 
 def verify_password(password: str) -> bool:

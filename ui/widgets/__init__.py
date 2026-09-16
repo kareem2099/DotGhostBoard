@@ -10,6 +10,7 @@ from .item_card import ItemCard
 from .stats_header import StatsHeaderCard
 from .tag_chip import TagChip
 from .tag_input import TagInputRow
+from .pin_toast import PinSuggestionToast
 from .helpers import _format_time, _copy_count_badge_state
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "StatsHeaderCard",
     "TagChip",
     "TagInputRow",
+    "PinSuggestionToast",
     "_format_time",
     "_copy_count_badge_state",
 ]

@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v1.5.7-238636?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Nexus-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v1.6.0-238636?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Phantom-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-220%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-306%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -99,29 +99,64 @@ DotGhostBoard integrates seamlessly with desktop environment dock and app launch
 
 ```
 DotGhostBoard/
-├── main.py                      # Entry point + IPC local server (--toggle, --spotlight)
+├── main.py                          # Entry point + IPC local server (--toggle, --spotlight)
 ├── core/
-│   ├── watcher.py               # Clipboard monitor (QTimer-based)
-│   ├── storage.py               # Database CRUD layer (~/.config/dotghostboard/ghost.db)
-│   ├── crypto.py                # AES-256 encryption engine (Eclipse)
-│   ├── shortcuts.py             # Global desktop shortcut manager (GNOME/XFCE)
-│   ├── autostart.py             # Modular XDG autostart desktop entry manager
-│   ├── sync_engine.py           # E2EE background push worker (Nexus)
-│   ├── network_discovery.py     # Zeroconf mDNS peer discovery (Nexus)
-│   ├── api_server.py            # Local REST API & Handshake handler (Nexus)
-│   ├── pairing.py               # PIN-based ECDH handshake logic (Nexus)
-│   ├── updater.py               # GitHub auto-updater engine (v1.4.1)
-│   ├── app_filter.py            # App whitelist/blacklist (Eclipse)
-│   └── media.py                 # Image/video handler
+│   ├── constants.py                 # App-wide constants (PAGE_SIZE, thresholds)
+│   ├── config.py                    # Runtime configuration helpers
+│   ├── paths.py                     # XDG path resolution
+│   ├── crypto.py                    # AES-256-GCM + HKDF domain-separated key derivation
+│   ├── watcher.py                   # Clipboard Orchestrator → Backend + Pipeline
+│   ├── shortcuts.py                 # Global desktop shortcut manager (GNOME/XFCE)
+│   ├── autostart.py                 # Modular XDG autostart desktop entry manager
+│   ├── sync_engine.py               # E2EE background push worker (Nexus)
+│   ├── network_discovery.py         # Zeroconf mDNS peer discovery (Nexus)
+│   ├── api_server.py                # Local REST API & Handshake handler (Nexus)
+│   ├── pairing.py                   # PIN-based ECDH handshake logic (Nexus)
+│   ├── updater.py                   # GitHub auto-updater engine
+│   ├── app_filter.py                # App whitelist/blacklist (Eclipse)
+│   ├── media.py                     # Image/video handler
+│   ├── clipboard/                   # Clipboard pipeline & backend abstraction
+│   │   ├── events.py                # ClipboardEvent, CaptureDecision, Action enum
+│   │   ├── pipeline.py              # Pure policy engine (no Qt dependency)
+│   │   ├── backend.py               # ClipboardBackend Protocol
+│   │   └── backends/qt_backend.py   # Qt polling backend
+│   ├── security/                    # Security domain layer
+│   │   ├── detector.py              # SecretDetector (regex heuristics)
+│   │   └── vault/                   # Vault: isolated vault.db + DEK envelope encryption
+│   ├── services/                    # Business logic layer (Qt-free)
+│   │   ├── history_service.py       # Clipboard item queries, pins, tags, copy thresholds
+│   │   ├── collection_service.py    # Collection management & categorization
+│   │   ├── security_service.py      # Session lock, password lifecycle, Eclipse encryption
+│   │   └── sync_service.py          # Peer trust & LAN sync orchestration
+│   └── storage/                     # Persistence layer
+│       ├── database.py              # Context-managed SQLite connection
+│       ├── migrations.py            # Versioned schema migrations
+│       ├── __init__.py              # Backward-compatible facade
+│       └── repositories/
+│           ├── clips.py             # Clipboard item CRUD, encryption, search
+│           ├── tags.py              # Tag normalization & global rename/delete
+│           ├── collections.py       # Collection categorization
+│           ├── peers.py             # Trusted device credentials
+│           └── stats.py             # Header metrics & copy counts
 ├── ui/
-│   ├── dashboard.py             # Main window + keyboard nav + settings wiring
-│   ├── widgets/                 # Modular widget package (ItemCard, StatsHeader, TagChips)
-│   ├── spotlight.py             # Floating Spotlight quick search overlay
-│   ├── settings.py              # Settings dialog with Shortcuts & About tabs
-│   ├── pairing_dialog.py        # Device pairing UI (Nexus)
-│   ├── lock_screen.py           # Master password lock screen (Eclipse)
-│   ├── updater_dialog.py        # GUI for GitHub updates
-│   └── ghost.qss                # Modern dark neon stylesheet
+│   ├── dashboard.py                 # Window shell + signal bus (Orchestrator)
+│   ├── controllers/                 # Behavioral QObject controllers
+│   │   ├── history_controller.py    # Card lifecycle, pagination, search, pin/copy/delete
+│   │   ├── collection_controller.py # Sidebar, drag-drop, collection CRUD
+│   │   ├── security_controller.py   # Lock/unlock, secret copy, Eclipse encrypt/decrypt
+│   │   └── sync_controller.py       # Peer pairing, device list, broadcast
+│   ├── widgets/                     # Modular widget package
+│   │   ├── item_card.py             # Full clipboard card widget
+│   │   ├── stats_header.py          # Header stats bar
+│   │   ├── pin_toast.py             # Non-blocking pin suggestion toast
+│   │   ├── tag_chip.py              # Tag chip widget
+│   │   └── tag_input.py             # Inline tag autocomplete input
+│   ├── spotlight.py                 # Floating Spotlight quick search overlay
+│   ├── settings.py                  # Settings dialog
+│   ├── lock_screen.py               # Session lock screen
+│   ├── pairing_dialog.py            # Device pairing UI (Nexus)
+│   ├── updater_dialog.py            # GUI for GitHub updates
+│   └── ghost.qss                    # Dark Neon theme stylesheet
 ├── cli/
 │   └── dotghost.py              # Command-line companion (push, pop, spotlight, toggle)
 ├── data/

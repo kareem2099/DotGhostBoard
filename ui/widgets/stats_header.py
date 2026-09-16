@@ -76,3 +76,21 @@ class StatsHeaderCard(QFrame):
             self.lbl_pinned.setText(f"📍 Pinned: {total_pinned}")
         except Exception as e:
             logger.error(f"Error refreshing stats header: {e}")
+
+    def update_stats(self, stats=None):
+        """Update header displays with provided stats dict or fetch fresh."""
+        if stats and isinstance(stats, dict) and "total_today" in stats:
+            total_today = stats.get("total_today", 0)
+            top_preview = stats.get("top_copied_preview", "")
+            top_count = stats.get("top_copied_count", 0)
+            total_pinned = stats.get("total_pinned", 0)
+
+            self.lbl_today.setText(f"📋 Today: {total_today}")
+            if top_preview and top_count > 0:
+                self.lbl_top.setText(f"🔥 Top: {top_preview} (×{top_count})")
+            else:
+                self.lbl_top.setText("🔥 Top: None")
+
+            self.lbl_pinned.setText(f"📍 Pinned: {total_pinned}")
+        else:
+            self.refresh_stats()

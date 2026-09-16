@@ -3,8 +3,8 @@
 import os
 import sys
 
-APP_VERSION = "v1.5.7"
-APP_CODENAME = "Nexus"
+APP_VERSION = "v1.6.0"
+APP_CODENAME = "Phantom"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"
 GITHUB_API_LATEST_RELEASE = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"

@@ -9,13 +9,72 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Planned for v2.0.0 (Cerberus)
-- **The Password Vault** — An isolated, encrypted side-panel protected by a separate Master Password. Stored purely in a dedicated `vault.db`.
-- **Smart Secret Detection** — Pattern-based heuristic intelligence that detects API Keys (AWS, JWT, GitHub), high-entropy strings, and automatically prompts to move them to the Vault before they hit the main database.
-- **Zero-Logging Mode (Paranoia)** — Ephemeral state that completely drops clipboard saves to the DB while active.
-- **Auto-Clear** — Automatically wipes the OS clipboard 30 seconds after copying from the Vault.
+---
+
+## [1.6.0] — 2026-09-16 — *Phantom*
+
+> **Codename:** Phantom — Full v2.x Architecture Foundation
+>
+> This release completes the modular refactoring of DotGhostBoard's entire core and UI layer.
+> Zero user-facing behavior changes. 306/306 tests passing.
+
+### Architecture — v2.x Foundation (Phases 1–4)
+
+#### Phase 1–3: Core Decomposition
+
+- **Storage Engine Modularization (`core/storage/`)** — Decomposed the monolithic 1,100-line `core/storage.py` into a clean, decoupled package:
+  - `database.py`: Context-managed SQLite connection layer with dynamic test path getters.
+  - `migrations.py`: Versioned migration engine with legacy schema adoption, downgrade protection, and transactional rollbacks.
+  - `repositories/clips.py`: CRUD, image deduplication, AES-256-GCM encryption, secure deletion, bulk operations.
+  - `repositories/tags.py`: Tag extraction, normalization (`#tag`), global rename/delete.
+  - `repositories/collections.py`: Categorization, item counts, unlink on delete.
+  - `repositories/peers.py`: Trusted device credentials for LAN sync.
+  - `repositories/stats.py`: Optimized metrics queries.
+  - `__init__.py`: 100% backward-compatible facade — zero caller changes required.
+- **Clipboard Pipeline & Backend Abstraction (`core/clipboard/`)** — GUI-independent decision pipeline with pluggable backends:
+  - `events.py`: Frozen dataclasses (`ClipboardEvent`, `CaptureDecision`) and `Action` enum (`SAVE_NORMAL`, `IGNORE`, `SECRET_CANDIDATE`).
+  - `pipeline.py`: Pure policy engine (validation → app filter → paranoia → secret detection → accept).
+  - `backend.py`: `ClipboardBackend` Protocol — ready for Wayland (`wlr-data-control`) backends.
+  - `backends/qt_backend.py`: Extracted Qt polling backend with hot-swap lifecycle.
+  - `core/watcher.py`: Re-architected as Orchestrator delegating to Backend + Pipeline.
+- **Service Layer (`core/services/`)** — Qt-free business logic boundaries:
+  - `history_service.py` (`ClipService`): Pagination, search, tag manipulation, pin toggling, copy thresholds (`PIN_SUGGESTION_THRESHOLD = 5`, `AUTO_PIN_THRESHOLD = 10`), cleanup, export.
+  - `collection_service.py`: Collection management, validation, item categorization.
+  - `security_service.py`: Master password lifecycle, atomic password rotation (re-encrypts Eclipse items + re-wraps Vault DEK), safe removal guard.
+  - `sync_service.py`: Peer trust coordination and broadcast delegation.
+- **Security Domain (`core/security/`, `core/crypto.py`):**
+  - HKDF-SHA256 domain-separated key derivation (`derive_key` vs `derive_vault_key`).
+  - `secure_zero()` for best-effort in-memory key scrubbing.
+  - `SecretDetector`: Sub-millisecond regex heuristics for SSH keys, GitHub tokens, AWS keys, JWTs, and high-entropy strings.
+  - `vault/`: Physical database isolation (`vault.db`) with DEK/KEK envelope encryption enabling instant password rotation without re-encrypting vault items.
+
+#### Phase 4: Dashboard Decomposition
+
+- **Four Behavioral `QObject` Controllers (`ui/controllers/`)** — Decomposed the 2,353-line `Dashboard` God Class into focused, injection-based controllers:
+  - `CollectionController`: Sidebar management, drag-and-drop targeting, collection CRUD dialogs, active filter state.
+  - `SecurityController`: Session lock/unlock lifecycle, secret copy resolution, card-level Eclipse encrypt/decrypt — no direct widget manipulation.
+  - `SyncController`: Peer list UI, pairing dialog invocation, device status styling, outbound broadcast.
+  - `HistoryController`: Card lifecycle, infinite scroll pagination, debounced search & tag filtering, pin/copy/delete slots, signal wiring via `_connect_card_signals()`.
+- **`PinSuggestionToast`** extracted into `ui/widgets/pin_toast.py`.
+- **Dashboard reduced by 818 lines** (2,353 → 1,535 lines). Zero direct `storage.*` or `crypto.*` calls remain in `ui/dashboard.py`.
+- **Strict signal boundaries enforced:**
+  - Clipboard sync fires **only** from `watcher.new_text_captured` → `sync_controller.broadcast_text`. Manual copy never triggers sync.
+  - Secret copy: `history_controller.secret_copy_requested` → `security_controller.handle_secret_copy` → `copy_payload_ready` → paste.
+
+### Bug Fixes & Internal Quality
+
+- **Encapsulation fix** (`SecurityService.set_session_key()`): `SecurityController` now uses a proper public API instead of directly mutating `_active_key` / `_is_locked` private attributes.
+- **N-query fix** (`CollectionService.get_collection()`): Direct `get_collection_by_id()` DB lookup instead of fetching all collections and filtering in Python.
+- **N+1 connection fix** (`clean_old_captures()`): Consolidated per-row `DELETE` statements into a single `DELETE WHERE id IN (...)` bulk transaction.
+- **DRY fix** (`HistoryController._connect_card_signals()`): Extracted duplicated 9-line signal-wiring block into a shared helper used by both `add_card()` and `refresh_item()`.
+
+### Test Coverage
+
+- Test suite expanded from 220 → **306 passing tests** across 25 test modules.
+- New test modules: `test_clipboard_pipeline`, `test_watcher_backend_integration`, `test_collection_controller`, `test_security_controller`, `test_sync_controller`, `test_history_controller`, `test_dashboard_coordination`, `test_crypto_domain`, `test_secret_detector`, `test_vault`, `test_services`, `test_storage_contract`.
 
 ---
+
 
 ## [1.5.7] — 2026-09-13 — *Nexus Hotfix V*
 
