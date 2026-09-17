@@ -29,6 +29,7 @@ _DEFAULTS: dict = {
     "theme":                      "dark",
     "clear_on_exit":              False,
     "multiselect_hint_dismissed": False,
+    "update_channel":             "stable",   # Stable / Beta / Alpha
     # Eclipse
     "master_lock_enabled":        False,
     "auto_lock_minutes":          0,

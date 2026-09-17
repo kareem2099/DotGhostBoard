@@ -22,13 +22,11 @@ echo ""
 
 echo "🧹 Cleaning previous release artifacts..."
 rm -f \
-    "dotghostboard_${VERSION}_amd64.deb" \
-    "dotghostboard_${VERSION}_amd64.tar.gz" \
-    "dotghostboard-${VERSION}-1-x86_64.pkg.tar.zst" \
-    "dotghostboard-${VERSION}-1-x86_64.pkg.tar.gz" \
-    "DotGhostBoard-${VERSION}-x86_64.AppImage" \
-    "DotGhostBoard-v${VERSION}-x86_64.AppImage"
-rm -f SHA256SUMS SHA256SUMS.asc
+    dotghostboard_*_amd64.deb dotghostboard_*_amd64.deb.asc \
+    dotghostboard_*_amd64.tar.gz dotghostboard_*_amd64.tar.gz.asc \
+    dotghostboard-*-x86_64.pkg.tar.* dotghostboard-*-x86_64.pkg.tar.*.asc \
+    DotGhostBoard-*-x86_64.AppImage DotGhostBoard-*-x86_64.AppImage.asc \
+    SHA256SUMS SHA256SUMS.asc
 
 # 0. Build shared compiled binary ONCE
 echo "🚀 [0/4] Compiling shared binary..."

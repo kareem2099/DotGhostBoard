@@ -26,9 +26,9 @@ import re
 try:
     with open("core/config.py", encoding="utf-8") as f:
         text = f.read()
-    m = re.search(r'APP_VERSION\s*=\s*["\']v?([0-9]+\.[0-9]+\.[0-9]+)', text)
+    m = re.search(r'APP_VERSION\s*=\s*["\']v?([^"\']+)["\']', text)
     if m:
-        print(m.group(1))
+        print(m.group(1).strip())
 except Exception:
     pass
 PY
@@ -43,9 +43,9 @@ import re
 try:
     with open("pyproject.toml", encoding="utf-8") as f:
         text = f.read()
-    m = re.search(r'version\s*=\s*["\']([0-9]+\.[0-9]+\.[0-9]+)', text)
+    m = re.search(r'version\s*=\s*["\']([^"\']+)["\']', text)
     if m:
-        print(m.group(1))
+        print(m.group(1).strip())
 except Exception:
     pass
 PY
@@ -53,7 +53,7 @@ PY
     fi
 
     if [ -z "$version" ] && [ -f "README.md" ]; then
-        version=$( (grep -oP 'version-v\K[0-9]+\.[0-9]+\.[0-9]+' README.md 2>/dev/null || true) | head -1 )
+        version=$( (grep -oP 'version-v\K[0-9a-zA-Z._-]+' README.md 2>/dev/null || true) | head -1 )
     fi
 
     if [ -z "$version" ]; then

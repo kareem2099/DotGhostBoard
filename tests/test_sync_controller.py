@@ -107,3 +107,44 @@ def test_handle_peer_unpaired(qapp, fake_sync_service):
     controller.handle_peer_unpaired("node-xyz")
     assert "📱 Peer-X" in list_widget.item(0).text()
     assert unpaired == ["node-xyz"]
+
+
+def test_init_sync_engine_configures_service(qapp, fake_sync_service):
+    list_widget = QListWidget()
+    controller = SyncController(
+        service=fake_sync_service,
+        devices_list=list_widget,
+        settings={"node_id": "ghost_node_1", "api_port": 9999},
+    )
+    controller.init_sync_engine(is_locked=False)
+    fake_sync_service.configure.assert_called_once_with("ghost_node_1", 9999)
+
+
+def test_api_new_text_emits_signal_and_broadcasts(qapp, fake_sync_service):
+    list_widget = QListWidget()
+    controller = SyncController(
+        service=fake_sync_service,
+        devices_list=list_widget,
+        settings={"node_id": "node"},
+    )
+    received = []
+    controller.api_text_received.connect(lambda iid, text: received.append((iid, text)))
+
+    controller._on_api_new_text(42, "hello sync")
+    assert received == [(42, "hello sync")]
+    fake_sync_service.push_text.assert_called_once_with("hello sync")
+
+
+def test_sync_received_emits_signal(qapp, fake_sync_service):
+    list_widget = QListWidget()
+    controller = SyncController(
+        service=fake_sync_service,
+        devices_list=list_widget,
+        settings={"node_id": "node"},
+    )
+    received = []
+    controller.sync_received_signal.connect(lambda iid, text: received.append((iid, text)))
+
+    controller._on_sync_received(99, "peer text")
+    assert received == [(99, "peer text")]
+

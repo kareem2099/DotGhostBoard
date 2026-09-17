@@ -68,9 +68,10 @@ fi
 
 # Generate Arch .PKGINFO metadata
 BUILDDATE=$(date -u +%s)
+ARCH_PKGVER="${VERSION//-/.}"
 cat > "$PKG_DIR/.PKGINFO" << EOF
 pkgname = ${APP_NAME}
-pkgver = ${VERSION}-${REL}
+pkgver = ${ARCH_PKGVER}-${REL}
 pkgdesc = Advanced encrypted clipboard manager for Linux (Nexus v${VERSION})
 url = https://github.com/kareem2099/DotGhostBoard
 builddate = ${BUILDDATE}

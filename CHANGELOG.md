@@ -7,7 +7,45 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [2.0.0-beta.2] — 2026-09-18 — *Cerberus*
+
+> **Codename:** Cerberus — Phase 5 & 6 Architecture Refactoring & Multi-Channel Updates
+>
+> This pre-release completes the full decomposition of `ui/settings.py` and `ui/dashboard.py` (down to ≤ 500 lines) with dedicated UI components and controllers, introduces the multi-channel update system (Stable, Beta, Alpha), and achieves 389/389 passing tests.
+
+### Added — Multi-Channel Update System
+
+- **Channel-Aware Release Engine (`core/updater.py`)**:
+  - Implemented update channel selection (`stable`, `beta`, `alpha`) in **Settings → General**.
+  - Filter GitHub releases by channel: Stable users receive stable releases only; Beta users receive stable, beta, and RC builds; Alpha users receive bleeding-edge releases.
+  - Robust version normalization supporting PEP 440 and hyphenated pre-release tags (`v2.0.0-beta.2` ↔ `v2.0.0b2`).
+  - Seamless propagation from Settings UI → Dashboard → `UpdateController` → `UpdateCheckerThread` → `core.updater`.
+
+### Architecture — v2.0.0 Cerberus (Phase 6: Dashboard Final Decomposition)
+
+- **Phase 6A: Decomposed Dashboard UI Layout into Isolated Components (`ui/components/`)**:
+  - `ui/components/sidebar.py`: `SidebarWidget` (160px width, collections list, 140px devices list, collection create signal, collapsed mode).
+  - `ui/components/topbar.py`: `TopBarWidget` (56px height, logo, update notification button, real-time stats label, Eclipse session lock button, settings button, clear history button, responsive compact mode).
+  - `ui/components/cards_view.py`: `CardsView` (QScrollArea container, card widget placement, visibility filtering, and Drag & Drop visual feedback emitting `card_reordered(dragged_id, target_card_id)` with zero DB calls).
+  - `ui/components/bulk_toolbar.py`: `BulkToolbar` (coordinating `HintStrip` and `BulkBar` frames directly without layout parent reparenting conflicts, managing selection threshold ≥2 and emitting semantic action signals `pin_all_requested`, `delete_all_requested`, `export_requested`, `add_tag_requested`, `cancel_requested`, `hint_dismissed`).
+  - `ui/components/tray_manager.py`: `DashboardTrayManager` (QSystemTrayIcon lifecycle, neon ghost icon rendering, retry visibility loop, dynamic context menu, tooltips based on lock/pause state).
+  - `ui/components/__init__.py`: Clean re-exports for all 5 UI components.
+- **Phase 6B: Bulk Actions & Selection State Extraction (`HistoryController`)**:
+  - Moved multi-select selection state (`selected_ids`, `_last_clicked_id`), bulk actions (`bulk_pin`, `bulk_delete`, `bulk_export`, `bulk_add_tag`, `clear_selection`, `clear_unpinned_history`), keyboard navigation (`handle_key_press`, `set_card_focus`), card reordering (`on_card_reordered`), and limit enforcement (`enforce_history_limit`, `clean_old_captures`) into `HistoryController`.
+  - Preserved original interaction contract: normal click sets keyboard focus without selection, Ctrl+click toggles selection, and Shift+click selects range based on visual card layout order (`_visible_cards()`).
+- **Phase 6C: Network Sync & Pairing Orchestration (`SyncController`)**:
+  - Moved `APIServerThread`, `DotGhostDiscovery`, `SyncEngine` configuration, and `PairingDialog` lifecycle into `SyncController`.
+  - Emits clean semantic signals `api_text_received` and `sync_received_signal`.
+- **Phase 6D: Update Lifecycle Extraction (`UpdateController`)**:
+  - Created `ui/controllers/update_controller.py` containing `UpdateCheckerThread` and `UpdateController(QObject)`.
+  - Manages GitHub release checking, notification badges, and updater dialogs independently.
+- **Phase 6E & 6F: Auto-Lock & Session Orchestration (`SecurityController`) & Compatibility Shims**:
+  - Moved auto-lock timer, idle timeout tracking, and `auto_lock_triggered` signal into `SecurityController` (with clean single-trigger delegation avoiding double-locking).
+  - Streamlined `ui/dashboard.py` down from 1,536 lines to **493 lines** (achieving the target **≤ 500 lines**).
+  - Preserved 100% backward compatibility for all 25+ public attributes/properties and legacy monkeypatch targets (`_start_api_server`, `_start_discovery`, `check_for_updates`, `sidebar`, `collections_list`, `devices_list`, `clear_btn`, `lock_btn`, `update_btn`, `stats_label`, `scroll`, `cards_container`, `cards_layout`, `_hint_strip`, `_bulk_bar`, `_bulk_count_lbl`, `tray`, `_cards`, `active_collection_id`, `_active_key`, `_selected_ids`, `_auto_lock_timer`, etc.).
+- **Testing & Verification**:
+  - Added `tests/test_dashboard_components.py` (23 unit tests), `tests/test_sync_controller.py` (8 unit tests), `tests/test_update_controller.py` (3 unit tests), and expanded `tests/test_history_controller.py` (including normal click focus verification) and `tests/test_security_controller.py` (including single auto-lock trigger verification).
+  - Full test suite expanded from 322 to **357 passed tests** with 0 regressions.
 
 ### Architecture — v2.0.0 Cerberus (Phase 5: Settings Decomposition)
 

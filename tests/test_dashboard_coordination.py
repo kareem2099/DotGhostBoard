@@ -12,8 +12,26 @@ from ui.dashboard import Dashboard
 
 
 @pytest.fixture
-def mock_dashboard(monkeypatch, qapp):
-    # Disable background network / timers during testing
+def mock_dashboard(monkeypatch, qapp, tmp_path):
+    from core import storage
+    db_file = str(tmp_path / "test_dashboard_coordination.db")
+    monkeypatch.setattr(storage, "DB_PATH", db_file)
+    storage.init_db()
+
+    # Isolate settings so clear_on_exit and other user preferences do not affect tests
+    monkeypatch.setattr("ui.settings.load_settings", lambda: {
+        "max_history": 500,
+        "max_captures": 100,
+        "theme": "dark",
+        "clear_on_exit": False,
+        "multiselect_hint_dismissed": True,
+        "auto_lock_minutes": 0,
+        "stealth_mode": False,
+        "app_filter_mode": "blacklist",
+        "app_filter_list": [],
+    })
+
+    # Disable background network / timers / discovery during testing
     monkeypatch.setattr("ui.dashboard.Dashboard._start_watcher", lambda self: None)
     monkeypatch.setattr("ui.dashboard.Dashboard._start_api_server", lambda self: None)
     monkeypatch.setattr("ui.dashboard.Dashboard._start_discovery", lambda self: None)
@@ -21,8 +39,20 @@ def mock_dashboard(monkeypatch, qapp):
     monkeypatch.setattr("ui.dashboard.Dashboard.check_for_updates", lambda self: None)
     monkeypatch.setattr("ui.dashboard.Dashboard._setup_tray", lambda self: None)
 
+    # Also disable network services in SyncController (e.g. when lock state changes)
+    monkeypatch.setattr("ui.controllers.sync_controller.SyncController.start_all", lambda self, *a, **k: None)
+    monkeypatch.setattr("ui.controllers.sync_controller.SyncController.start_discovery", lambda self, *a, **k: None)
+    monkeypatch.setattr("ui.controllers.sync_controller.SyncController.start_api_server", lambda self, *a, **k: None)
+    monkeypatch.setattr("ui.controllers.sync_controller.SyncController.init_sync_engine", lambda self, *a, **k: None)
+
     dash = Dashboard(startup_locked=False, active_key=b"1" * 32)
-    return dash
+    yield dash
+
+    # Teardown
+    if hasattr(dash, "sync_controller"):
+        dash.sync_controller.stop_all(100)
+    dash.close()
+    dash.deleteLater()
 
 
 def test_controllers_attached(mock_dashboard):
@@ -46,7 +76,10 @@ def test_collection_changed_reloads_history(mock_dashboard):
     assert getattr(mock_dashboard, "_reloaded_flag", False) is True
 
 
-def test_secret_copy_never_bypasses_security_controller(mock_dashboard):
+def test_secret_copy_never_bypasses_security_controller(mock_dashboard, monkeypatch):
+    # Prevent real modal dialog execution during test
+    monkeypatch.setattr(mock_dashboard.security_controller, "prompt_unlock", lambda: False)
+
     # Lock session so secret copy fails without prompt
     mock_dashboard.security_controller.lock()
 

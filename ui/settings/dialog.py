@@ -165,6 +165,7 @@ class SettingsDialog(QDialog):
         self._settings["clear_on_exit"]     = self._clear_on_exit.isChecked()
         self._settings["theme"]             = "dark"
         self._settings["auto_update_check"] = self._auto_update.isChecked()
+        self._settings["update_channel"]    = self._update_channel.currentData()
 
         # Eclipse
         self._settings["auto_lock_minutes"] = self._auto_lock_spin.value()
