@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-306%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-322%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -152,7 +152,12 @@ DotGhostBoard/
 │   │   ├── tag_chip.py              # Tag chip widget
 │   │   └── tag_input.py             # Inline tag autocomplete input
 │   ├── spotlight.py                 # Floating Spotlight quick search overlay
-│   ├── settings.py                  # Settings dialog
+│   ├── settings/                    # Settings package (decomposed)
+│   │   ├── __init__.py              # Backward-compatible facade
+│   │   ├── _io.py                   # Settings I/O and defaults
+│   │   ├── dialog.py                # SettingsDialog orchestrator shell
+│   │   └── pages/                   # Tab builders (General, Security, API, About)
+│   ├── tag_manager.py               # Standalone TagManagerDialog
 │   ├── lock_screen.py               # Session lock screen
 │   ├── pairing_dialog.py            # Device pairing UI (Nexus)
 │   ├── updater_dialog.py            # GUI for GitHub updates
@@ -395,7 +400,8 @@ tests/test_v155_polish.py .......                                        [100%]
 | v1.5.5 | Nexus Polish & Spotlight | ✅ Released | Spotlight quick search overlay, relative time, copy count reset, image deduplication, search debounce |
 | v1.5.6 | Nexus Global Hotkeys & UI Polish | ✅ Released | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 220 tests |
 | v1.5.7 | Nexus Hotfix V | ✅ Released | CI headless stability, packaging Python dependencies, CLI enhancements, 220 tests |
-| v2.0.0 | Cerberus | 🔭 Planned | The Password Vault, Smart Secret Detection, Paranoia Mode |
+| v1.6.0 | Phantom | ✅ Released | v2.x Architecture Foundation: Controllers, Services, Repositories, Pipeline (306 tests) |
+| v2.0.0 | Cerberus | 🚧 In Progress | Settings & Dashboard Decomposition, Password Vault, Smart Secret Detection (322 tests) |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
 
