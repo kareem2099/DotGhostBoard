@@ -9,6 +9,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Architecture — v2.0.0 Cerberus (Phase 5: Settings Decomposition)
+
+- **Decomposed Monolithic `ui/settings.py` (1,324 LOC)** into a clean, modular package (`ui/settings/`) and standalone components:
+  - `ui/settings/__init__.py`: 100% backward-compatible Facade re-exporting `SettingsDialog`, `load_settings`, `save_settings`, `TagManagerDialog`, `SETTINGS_PATH`, `_DEFAULTS`.
+  - `ui/settings/_io.py`: File-based JSON settings persistence and default settings isolated from UI logic.
+  - `ui/settings/dialog.py`: Reduced from 1,324 lines to a clean **189-line orchestrator shell** that builds tabs and manages save lifecycle.
+  - `ui/settings/pages/`:
+    - `general.py`: General settings tab builder (`build_general_tab`) and embedded `AppFilterEditor` (whitelist/blacklist app filtering).
+    - `security.py`: Eclipse & Security tab builder (`build_security_tab`) and standalone password lifecycle functions (`setup_master_password`, `remove_master_password`, `refresh_eclipse_pw_ui`).
+    - `api.py`: Local REST API configuration builder (`build_api_tab`).
+    - `about.py`: About & system information tab builder (`build_about_tab`).
+  - `ui/tag_manager.py`: Standalone `TagManagerDialog` extracted into an independent module.
+- **Zero Regressions & Full Backward Compatibility**:
+  - All existing callers (`ui/dashboard.py`, `ui/pairing_dialog.py`, tests) continue working without changes.
+  - Test suite expanded from 306 to **322 tests** (+16 new tests in `tests/test_settings.py` covering backward-compatibility, `_io`, `AppFilterEditor`, tab builders, and password UI helpers).
+  - All 322 tests passing with 0 regressions.
+
 ---
 
 ## [1.6.0] — 2026-09-16 — *Phantom*
@@ -50,7 +67,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 #### Phase 4: Dashboard Decomposition
 
-- **Four Behavioral `QObject` Controllers (`ui/controllers/`)** — Decomposed the 2,353-line `Dashboard` God Class into focused, injection-based controllers:
+- **Four Behavioral `QObject` Controllers (`ui/controllers/`)** — Decomposed the 2,353-line monolithic `Dashboard` class into focused, injection-based controllers:
   - `CollectionController`: Sidebar management, drag-and-drop targeting, collection CRUD dialogs, active filter state.
   - `SecurityController`: Session lock/unlock lifecycle, secret copy resolution, card-level Eclipse encrypt/decrypt — no direct widget manipulation.
   - `SyncController`: Peer list UI, pairing dialog invocation, device status styling, outbound broadcast.
