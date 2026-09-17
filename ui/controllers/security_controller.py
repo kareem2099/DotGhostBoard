@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QMessageBox, QWidget
 
 from core.services.security_service import SecurityService
@@ -28,6 +28,7 @@ class SecurityController(QObject):
     item_security_changed = pyqtSignal(int)          # item_id: int
     copy_payload_ready = pyqtSignal(int, dict)       # item_id: int, item_payload: dict
     secret_copy_failed = pyqtSignal(int, str)        # item_id: int, reason: str
+    auto_lock_triggered = pyqtSignal()
     status_message = pyqtSignal(str)
 
     def __init__(
@@ -39,6 +40,24 @@ class SecurityController(QObject):
         super().__init__(parent)
         self._service = service
         self._parent_window = parent_window
+
+        self._auto_lock_timer = QTimer(self)
+        self._auto_lock_timer.setSingleShot(True)
+        self._auto_lock_timer.timeout.connect(self._on_auto_lock_timeout)
+
+    @property
+    def auto_lock_timer(self) -> QTimer:
+        return self._auto_lock_timer
+
+    def reset_auto_lock(self, minutes: int = 0) -> None:
+        """Reset or disable the auto-lock timer based on minutes setting."""
+        if minutes > 0 and self.has_master_password and not self.is_locked:
+            self._auto_lock_timer.start(minutes * 60 * 1000)
+        else:
+            self._auto_lock_timer.stop()
+
+    def _on_auto_lock_timeout(self) -> None:
+        self.auto_lock_triggered.emit()
 
     @property
     def service(self) -> SecurityService:
@@ -82,6 +101,7 @@ class SecurityController(QObject):
 
     def lock(self) -> None:
         """Lock session and scrub keys."""
+        self._auto_lock_timer.stop()
         self._service.lock()
         self.lock_state_changed.emit(True)
 

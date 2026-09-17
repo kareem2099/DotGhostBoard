@@ -25,12 +25,12 @@
 
 | Component | Status | Notes |
 |---|---|---|
-| `ui/settings.py` — 1,324 lines, still monolithic | ⬜ | Needs same decomposition as Dashboard |
-| `ui/dashboard.py` — still ~1,535 lines (target: ≤ 500) | ⬜ | Requires Phase 5 decomposition |
-| `core/security/vault/` — VaultService wired to UI | ⬜ | Vault panel UI not yet extracted |
+| `ui/settings.py` — Decomposed into `ui/settings/` | ✅ | Completed in Phase 5 (1,324 LOC → modular package) |
+| `ui/dashboard.py` — Streamlined to 493 lines (≤ 500) | ✅ | Completed in Phase 6 (Components & Controllers extracted) |
+| Multi-Channel Update System (Stable, Beta, Alpha) | ✅ | Completed in v2.0.0-beta.2 |
+| `core/security/vault/` — VaultService wired to UI | ⬜ | Vault panel UI integration |
 | Wayland backend (`wlr-data-control`) | ⬜ | Planned for v2.1 Leviathan |
 | `core/api_server.py` — 14,765 bytes REST API server | ⬜ | Needs service layer integration |
-| `ui/widgets/` — ItemCard decomposition | ⬜ | Part of Phase 5 |
 
 ---
 

@@ -143,3 +143,16 @@ def test_decrypt_item_emits_security_changed(qapp, fake_sec_service):
     assert res is True
     fake_sec_service.decrypt_clip_permanent.assert_called_once_with(77)
     assert changed_items == [77]
+
+
+def test_auto_lock_timeout_emits_trigger_without_locking(qapp):
+    service = MagicMock(spec=SecurityService)
+    controller = SecurityController(service=service)
+
+    triggered = []
+    controller.auto_lock_triggered.connect(lambda: triggered.append(True))
+
+    controller._on_auto_lock_timeout()
+
+    assert triggered == [True]
+    service.lock.assert_not_called()

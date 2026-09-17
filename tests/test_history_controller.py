@@ -6,6 +6,7 @@ Tests for HistoryController orchestration, card lifecycle, and signals.
 
 from unittest.mock import MagicMock
 import pytest
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from core.services.history_service import HistoryService
@@ -143,3 +144,95 @@ def test_delete_removes_card_and_updates_stats(qapp, fake_history_service):
     fake_history_service.delete_item.assert_called_once_with(1)
     assert 1 not in controller.cards
     assert layout.count() == 2
+
+
+def test_bulk_pin_toggles_selected_items(qapp, fake_history_service):
+    parent_widget = QWidget()
+    layout = QVBoxLayout(parent_widget)
+    controller = HistoryController(service=fake_history_service, cards_layout=layout)
+    controller.load_more(initial=True)
+
+    controller._selected_ids = {1, 2}
+    affected = controller.bulk_pin(True)
+
+    assert affected == 2
+    assert fake_history_service.toggle_pin.call_count == 2
+
+
+def test_bulk_delete_with_confirmation(qapp, fake_history_service, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    fake_history_service.delete_item.return_value = True
+
+    parent_widget = QWidget()
+    layout = QVBoxLayout(parent_widget)
+    controller = HistoryController(service=fake_history_service, cards_layout=layout)
+    controller.load_more(initial=True)
+
+    controller._selected_ids = {1, 2}
+    deleted = controller.bulk_delete(parent_widget)
+
+    assert deleted == 2
+    assert len(controller.selected_ids) == 0
+    assert 1 not in controller.cards
+    assert 2 not in controller.cards
+
+
+def test_bulk_add_tag(qapp, fake_history_service, monkeypatch):
+    from PyQt6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("urgent", True))
+    fake_history_service.add_tag.return_value = ["#urgent"]
+
+    parent_widget = QWidget()
+    layout = QVBoxLayout(parent_widget)
+    controller = HistoryController(service=fake_history_service, cards_layout=layout)
+    controller.load_more(initial=True)
+
+    controller._selected_ids = {1, 2}
+    tag = controller.bulk_add_tag(parent_widget)
+
+    assert tag == "#urgent"
+    assert fake_history_service.add_tag.call_count == 2
+
+
+def test_clear_selection_emits_signal(qapp, fake_history_service):
+    parent_widget = QWidget()
+    layout = QVBoxLayout(parent_widget)
+    controller = HistoryController(service=fake_history_service, cards_layout=layout)
+    controller.load_more(initial=True)
+
+    controller._selected_ids = {1, 2}
+    emitted = []
+    controller.selection_changed.connect(lambda c: emitted.append(c))
+
+    controller.clear_selection()
+    assert len(controller.selected_ids) == 0
+    assert emitted == [0]
+
+
+def test_normal_card_click_focuses_without_selection(qapp, fake_history_service):
+    parent_widget = QWidget()
+    parent_widget.show()
+
+    layout = QVBoxLayout(parent_widget)
+    controller = HistoryController(
+        service=fake_history_service,
+        cards_layout=layout,
+    )
+
+    controller.load_more(initial=True)
+
+    # Pre-select item 2 to verify deselecting on normal click emits selection_changed(0) exactly once
+    controller._selected_ids = {2}
+    emitted = []
+    controller.selection_changed.connect(lambda c: emitted.append(c))
+
+    controller.on_card_clicked(1, Qt.KeyboardModifier.NoModifier)
+
+    assert controller.selected_ids == set()
+    assert controller._focused_idx == 0
+    assert controller._last_clicked_id == 1
+    assert emitted == [0]
+

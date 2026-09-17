@@ -4,22 +4,81 @@ import json
 import shlex
 import platform
 import urllib.request
-from typing import Optional
+from typing import Optional, Literal
 
 from packaging.version import Version, InvalidVersion
-from core.config import GITHUB_API_LATEST_RELEASE
+from core.config import GITHUB_API_RELEASES
 
+# ─────────────────────────────────────────────
+#  Channel type
+# ─────────────────────────────────────────────
+
+Channel = Literal["stable", "beta", "alpha"]
 
 # ─────────────────────────────────────────────
 #  Helpers
 # ─────────────────────────────────────────────
 
 def _parse_version(tag: str) -> Optional[Version]:
-    """Strip leading 'v' and return a packaging.Version, or None on failure."""
+    """
+    Strip leading 'v', normalize dash-style pre-release suffixes to PEP 440,
+    and return a packaging.Version, or None on failure.
+
+    Examples
+    --------
+    v2.0.0-beta.2  → 2.0.0b2
+    v2.0.0-rc.1    → 2.0.0rc1
+    v2.0.0-alpha.1 → 2.0.0a1
+    v2.0.0         → 2.0.0
+    """
+    import re
+    normalized = tag.lstrip("v")
+    # Normalize  -alpha.N / -beta.N / -rc.N  → aN / bN / rcN
+    normalized = re.sub(r"-alpha\.(\d+)$", r"a\1", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"-beta\.(\d+)$",  r"b\1", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"-rc\.(\d+)$",    r"rc\1", normalized, flags=re.IGNORECASE)
     try:
-        return Version(tag.lstrip("v"))
+        return Version(normalized)
     except InvalidVersion:
         return None
+
+
+def _classify_release(version: Version) -> str:
+    """
+    Classify a release version into one of four buckets:
+      'stable' — no pre-release segment
+      'rc'     — release candidate  (e.g. 2.0.0rc1, 2.0.0-rc.1)
+      'beta'   — beta release       (e.g. 2.0.0b1,  2.0.0-beta.1)
+      'alpha'  — alpha release      (e.g. 2.0.0a1,  2.0.0-alpha.1)
+    """
+    if not version.is_prerelease:
+        return "stable"
+    pre_type = version.pre[0] if version.pre else ""
+    if pre_type == "rc":
+        return "rc"
+    if pre_type == "b":
+        return "beta"
+    if pre_type == "a":
+        return "alpha"
+    return "stable"  # fallback — treat unknown pre-release as stable
+
+
+def _release_matches_channel(release_type: str, channel: Channel) -> bool:
+    """
+    Return True when a release of *release_type* should be visible
+    to a user on the given *channel*.
+
+      Stable → stable only
+      Beta   → stable, beta, rc
+      Alpha  → stable, beta, rc, alpha
+    """
+    if channel == "stable":
+        return release_type == "stable"
+    if channel == "beta":
+        return release_type in ("stable", "beta", "rc")
+    if channel == "alpha":
+        return True  # accepts all
+    return release_type == "stable"
 
 
 def _current_arch_tokens() -> list[str]:
@@ -39,41 +98,72 @@ def _current_arch_tokens() -> list[str]:
 #  Public API
 # ─────────────────────────────────────────────
 
-def check_for_updates(current_version: str) -> Optional[dict]:
+def check_for_updates(
+    current_version: str,
+    channel: Channel = "stable",
+) -> Optional[dict]:
     """
-    Checks GitHub API for the latest release.
+    Checks GitHub API for the best available release for *channel*.
 
-    Returns a dict with 'version', 'body', 'assets' **only** when the remote
-    tag is *strictly newer* than current_version (semantic comparison via
-    packaging.version).  Returns None otherwise.
+    Algorithm (unified across all channels):
+      1. Fetch /releases list
+      2. Parse each tag — silently skip invalid ones
+      3. Filter by channel (stable/beta/alpha visibility rules)
+      4. Discard candidates ≤ current_version  (no downgrade)
+      5. Return the newest candidate's info dict, or None
+
+    Returns a dict with 'version', 'body', 'assets' only when a
+    strictly-newer, channel-appropriate release exists.
     """
     current = _parse_version(current_version)
     if current is None:
-        print(f"[Updater] Cannot parse current version '{current_version}' — skipping update check.")
+        print(
+            f"[Updater] Cannot parse current version '{current_version}'"
+            " — skipping update check."
+        )
         return None
 
     try:
         req = urllib.request.Request(
-            GITHUB_API_LATEST_RELEASE,
+            GITHUB_API_RELEASES,
             headers={"User-Agent": "DotGhostBoard-Updater"},
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode())
-                latest_tag = data.get("tag_name", "").strip()
-                latest = _parse_version(latest_tag)
-
-                # FIX #2 — only update when remote is STRICTLY greater
-                if latest and latest > current:
-                    return {
-                        "version": latest_tag,
-                        "body": data.get("body", "No release notes provided."),
-                        "assets": data.get("assets", []),
-                    }
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status != 200:
+                return None
+            releases = json.loads(response.read().decode())
     except Exception as e:
-        print(f"[Updater] Failed to check for updates: {e}")
+        print(f"[Updater] Failed to fetch releases: {e}")
+        return None
 
-    return None
+    best_version: Optional[Version] = None
+    best_release: Optional[dict]    = None
+
+    for release in releases:
+        tag = release.get("tag_name", "").strip()
+        v   = _parse_version(tag)
+        if v is None:
+            continue  # silently ignore unparseable tags
+
+        release_type = _classify_release(v)
+        if not _release_matches_channel(release_type, channel):
+            continue  # not visible on this channel
+
+        if v <= current:
+            continue  # no downgrade, and no same-version noise
+
+        if best_version is None or v > best_version:
+            best_version = v
+            best_release = release
+
+    if best_release is None:
+        return None
+
+    return {
+        "version": best_release.get("tag_name", ""),
+        "body":    best_release.get("body", "No release notes provided."),
+        "assets":  best_release.get("assets", []),
+    }
 
 
 def identify_platform_asset(

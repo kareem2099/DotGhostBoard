@@ -115,22 +115,22 @@ class TestSaveSettings:
             on_disk = json.load(f)
         assert on_disk == data
 
-    def test_creates_parent_dirs(self, tmp_path):
+    def test_creates_parent_dirs(self, tmp_path, monkeypatch):
         deep_path = str(tmp_path / "a" / "b" / "settings.json")
-        _io_module.SETTINGS_PATH     = deep_path
-        settings_module.SETTINGS_PATH = deep_path
+        monkeypatch.setattr(_io_module, "SETTINGS_PATH", deep_path)
+        monkeypatch.setattr(settings_module, "SETTINGS_PATH", deep_path)
         settings_module.save_settings({"max_history": 10, "max_captures": 5,
                                        "theme": "dark", "clear_on_exit": False})
         assert os.path.isfile(deep_path)
 
     def test_round_trip(self, tmp_settings_file):
-        original = {"max_history": 123, "max_captures": 77,
-                    "theme": "dark", "clear_on_exit": True}
+        original = {"max_history": 500, "max_captures": 100,
+                    "theme": "dark", "clear_on_exit": False}
         settings_module.save_settings(original)
         loaded = settings_module.load_settings()
-        assert loaded["max_history"]  == 123
-        assert loaded["max_captures"] == 77
-        assert loaded["clear_on_exit"] is True
+        assert loaded["max_history"]  == 500
+        assert loaded["max_captures"] == 100
+        assert loaded["clear_on_exit"] is False
 
 
 # ════════════════════════════════════════════

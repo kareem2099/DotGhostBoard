@@ -3,11 +3,12 @@
 import os
 import sys
 
-APP_VERSION = "v1.6.0"
-APP_CODENAME = "Phantom"
+APP_VERSION = "v2.0.0-beta.2"
+APP_CODENAME = "Cerberus"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"
 GITHUB_API_LATEST_RELEASE = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_API_RELEASES       = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 
 
 def get_asset_path(filename: str) -> str:

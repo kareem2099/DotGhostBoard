@@ -190,25 +190,35 @@ def build_general_tab(dialog: "SettingsDialog") -> QWidget:
     dialog._max_history = QSpinBox()
     dialog._max_history.setRange(10, 5000)
     dialog._max_history.setSingleStep(10)
-    dialog._max_history.setSuffix("  items")
     dialog._max_history.setValue(dialog._settings["max_history"])
     dialog._max_history.setToolTip(
         "Maximum number of clipboard items to keep.\n"
         "Oldest items are trimmed on startup and on capture."
     )
-    form.addRow("Max history:", dialog._max_history)
+    hist_layout = QHBoxLayout()
+    hist_layout.setSpacing(8)
+    hist_layout.addWidget(dialog._max_history, stretch=1)
+    hist_suffix = QLabel("items")
+    hist_suffix.setStyleSheet("color: #8a9296; font-size: 13px;")
+    hist_layout.addWidget(hist_suffix)
+    form.addRow("Max history:", hist_layout)
 
     # Max captures
     dialog._max_captures = QSpinBox()
     dialog._max_captures.setRange(10, 2000)
     dialog._max_captures.setSingleStep(10)
-    dialog._max_captures.setSuffix("  files")
     dialog._max_captures.setValue(dialog._settings.get("max_captures", 100))
     dialog._max_captures.setToolTip(
         "Maximum number of saved image/video capture files to keep.\n"
         "Oldest unpinned captures are deleted from disk automatically."
     )
-    form.addRow("Max captures:", dialog._max_captures)
+    cap_layout = QHBoxLayout()
+    cap_layout.setSpacing(8)
+    cap_layout.addWidget(dialog._max_captures, stretch=1)
+    cap_suffix = QLabel("files")
+    cap_suffix.setStyleSheet("color: #8a9296; font-size: 13px;")
+    cap_layout.addWidget(cap_suffix)
+    form.addRow("Max captures:", cap_layout)
 
     # Clear on exit
     dialog._clear_on_exit = QCheckBox("Clear history when app quits")
@@ -253,14 +263,30 @@ def build_general_tab(dialog: "SettingsDialog") -> QWidget:
 
     form.addRow("Updates:", upd_row)
 
-    # Theme
-    dialog._theme = QComboBox()
-    dialog._theme.addItems(["Dark Neon", "Light  (coming soon)"])
-    dialog._theme.setCurrentIndex(
-        0 if dialog._settings.get("theme", "dark") == "dark" else 1
+    # Update Channel selector
+    dialog._update_channel = QComboBox()
+    dialog._update_channel.setObjectName("UpdateChannelCombo")
+    dialog._update_channel.setToolTip(
+        "Stable: only tested, production releases.\n"
+        "Beta:   includes release candidates and beta builds.\n"
+        "Alpha:  includes all pre-release builds (bleeding edge)."
     )
-    dialog._theme.model().item(1).setEnabled(False)
-    form.addRow("Theme:", dialog._theme)
+    _channel_items = [
+        ("🟢  Stable  (Recommended)", "stable"),
+        ("🟡  Beta  (Pre-releases)",  "beta"),
+        ("🔴  Alpha  (Bleeding edge)", "alpha"),
+    ]
+    current_channel = dialog._settings.get("update_channel", "stable")
+    for label, value in _channel_items:
+        dialog._update_channel.addItem(label, userData=value)
+    # Set current index based on stored value
+    _channel_values = [v for _, v in _channel_items]
+    _channel_idx    = _channel_values.index(current_channel) if current_channel in _channel_values else 0
+    dialog._update_channel.setCurrentIndex(_channel_idx)
+
+    form.addRow("Update Channel:", dialog._update_channel)
+
+    dialog._theme = None
 
     layout.addLayout(form)
 

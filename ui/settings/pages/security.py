@@ -254,11 +254,16 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
     dialog._auto_lock_spin = QSpinBox()
     dialog._auto_lock_spin.setRange(0, 480)
     dialog._auto_lock_spin.setSingleStep(5)
-    dialog._auto_lock_spin.setSuffix("  min  (0 = disabled)")
     dialog._auto_lock_spin.setValue(
         dialog._settings.get("auto_lock_minutes", 0)
     )
-    lock_form.addRow("Lock after:", dialog._auto_lock_spin)
+    lock_row = QHBoxLayout()
+    lock_row.setSpacing(8)
+    lock_row.addWidget(dialog._auto_lock_spin, stretch=1)
+    lock_suffix = QLabel("min  (0 = disabled)")
+    lock_suffix.setStyleSheet("color: #8a9296; font-size: 13px;")
+    lock_row.addWidget(lock_suffix)
+    lock_form.addRow("Lock after:", lock_row)
     layout.addLayout(lock_form)
 
     layout.addWidget(dialog._hsep())
