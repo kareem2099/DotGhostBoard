@@ -12,13 +12,83 @@ from ..database import _db, get_thumb_dir
 from .tags import get_tags
 
 
+def _get_allowed_media_roots() -> list[str]:
+    """
+    Return the strictly allowed canonical root directories for reading and deleting media files:
+      - ~/.config/dotghostboard/ (captures, pins, v_logs, etc.)
+      - Active captures_dir and thumb_dir from database module
+      - System/test temporary directory (tempfile.gettempdir())
+    """
+    import tempfile
+    roots = [
+        os.path.realpath(os.path.expanduser("~/.config/dotghostboard")),
+        os.path.realpath(tempfile.gettempdir()),
+    ]
+    try:
+        from ..database import get_thumb_dir, get_captures_dir
+        for getter in (get_thumb_dir, get_captures_dir):
+            d = getter()
+            if d:
+                roots.append(os.path.realpath(d))
+    except Exception:
+        pass
+    return list(dict.fromkeys(roots))
+
+
+def _is_path_in_allowed_roots(filepath: str) -> str | None:
+    """
+    Resolve filepath and verify it is strictly located inside one of the allowed media roots.
+    Returns the resolved canonical path, or None if invalid or outside allowed boundaries.
+    """
+    if not filepath or not isinstance(filepath, str):
+        return None
+    try:
+        resolved = os.path.realpath(os.path.abspath(filepath))
+    except (ValueError, OSError):
+        return None
+
+    allowed_roots = _get_allowed_media_roots()
+    for root in allowed_roots:
+        if resolved == root or resolved.startswith(root + os.sep):
+            return resolved
+
+    return None
+
+
+def _get_safe_image_path(filepath: str) -> str | None:
+    """
+    Validate that filepath is a legitimate regular file located strictly
+    inside allowed application media directories or temporary storage.
+    """
+    safe_path = _is_path_in_allowed_roots(filepath)
+    if safe_path and os.path.isfile(safe_path):
+        return safe_path
+    return None
+
+
+def _safe_remove_file(filepath: str) -> bool:
+    """
+    Safely delete a file ONLY if it is strictly located inside allowed application
+    media directories or temporary storage. Prevents any arbitrary file deletion.
+    """
+    safe_path = _is_path_in_allowed_roots(filepath)
+    if safe_path and os.path.isfile(safe_path):
+        try:
+            os.remove(safe_path)
+            return True
+        except OSError:
+            return False
+    return False
+
+
 def _get_file_hash(filepath: str) -> str | None:
     """Calculate SHA-256 hash of a file for image duplicate detection."""
-    if not filepath or not os.path.isfile(filepath):
+    safe_path = _get_safe_image_path(filepath)
+    if not safe_path:
         return None
     sha256 = hashlib.sha256()
     try:
-        with open(filepath, "rb") as f:
+        with open(safe_path, "rb") as f:
             while chunk := f.read(65536):
                 sha256.update(chunk)
         return sha256.hexdigest()
@@ -45,33 +115,32 @@ def add_item(item_type: str, content: str, preview: str = None) -> int:
         return existing["id"]
 
     # 2. Image content hash match (detect duplicate screenshots / image pixel data)
-    if item_type == "image" and os.path.isfile(content):
-        new_hash = _get_file_hash(content)
-        if new_hash:
-            new_size = os.path.getsize(content)
-            with _db() as conn:
-                rows = conn.execute(
-                    "SELECT id, content FROM clipboard_items WHERE type = 'image' ORDER BY updated_at DESC LIMIT 100"
-                ).fetchall()
+    if item_type == "image":
+        safe_content = _get_safe_image_path(content)
+        if safe_content:
+            new_hash = _get_file_hash(safe_content)
+            if new_hash:
+                new_size = os.path.getsize(safe_content)
+                with _db() as conn:
+                    rows = conn.execute(
+                        "SELECT id, content FROM clipboard_items WHERE type = 'image' ORDER BY updated_at DESC LIMIT 100"
+                    ).fetchall()
 
-            for row in rows:
-                existing_path = row["content"]
-                if existing_path and os.path.isfile(existing_path):
-                    if os.path.getsize(existing_path) == new_size:
-                        if _get_file_hash(existing_path) == new_hash:
-                            # Duplicate image detected! Remove temporary newly created file
-                            try:
-                                os.remove(content)
-                            except OSError:
-                                pass
+                for row in rows:
+                    existing_path = _get_safe_image_path(row["content"])
+                    if existing_path:
+                        if os.path.getsize(existing_path) == new_size:
+                            if _get_file_hash(existing_path) == new_hash:
+                                # Duplicate image detected! Remove temporary newly created file safely
+                                _safe_remove_file(safe_content)
 
-                            now = datetime.now().isoformat()
-                            with _db() as conn:
-                                conn.execute(
-                                    "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
-                                    (now, row["id"]),
-                                )
-                            return row["id"]
+                                now = datetime.now().isoformat()
+                                with _db() as conn:
+                                    conn.execute(
+                                        "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
+                                        (now, row["id"]),
+                                    )
+                                return row["id"]
 
     # 3. New item insertion
     now = datetime.now().isoformat()
@@ -347,31 +416,22 @@ def delete_item(item_id: int, secure: bool = False) -> bool:
     if secure and item["type"] in ("image", "video"):
         from core.secure_delete import secure_delete
         for path in (item["content"], item.get("preview")):
-            if path and os.path.isfile(path):
-                secure_delete(path)
+            safe_p = _get_safe_image_path(path)
+            if safe_p:
+                secure_delete(safe_p)
         # Also secure-delete thumbnail
         thumb = os.path.join(get_thumb_dir(), f"{item_id}.png")
-        if os.path.isfile(thumb):
-            secure_delete(thumb)
+        safe_thumb = _get_safe_image_path(thumb)
+        if safe_thumb:
+            secure_delete(safe_thumb)
     else:
-        # Original cleanup: plain os.remove
+        # Original cleanup: plain safe remove
         for path in (item["content"], item.get("preview")):
-            if (
-                path
-                and item["type"] in ("image", "video")
-                and os.path.isfile(path)
-            ):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+            if item["type"] in ("image", "video"):
+                _safe_remove_file(path)
         # Also remove thumbnail if not secure
         thumb = os.path.join(get_thumb_dir(), f"{item_id}.png")
-        if os.path.isfile(thumb):
-            try:
-                os.remove(thumb)
-            except OSError:
-                pass
+        _safe_remove_file(thumb)
 
     with _db() as conn:
         conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
@@ -388,20 +448,12 @@ def delete_unpinned_items():
         """).fetchall()
 
     for row in rows:
-        # Remove original and preview files
+        # Remove original and preview files safely
         for path in (row["content"], row["preview"]):
-            if path and os.path.isfile(path):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-        # Remove auto-generated thumbnail
+            _safe_remove_file(path)
+        # Remove auto-generated thumbnail safely
         thumb = os.path.join(get_thumb_dir(), f"{row['id']}.png")
-        if os.path.isfile(thumb):
-            try:
-                os.remove(thumb)
-            except OSError:
-                pass
+        _safe_remove_file(thumb)
 
     with _db() as conn:
         conn.execute("DELETE FROM clipboard_items WHERE is_pinned = 0")
@@ -611,20 +663,12 @@ def clean_old_captures(keep: int = 100) -> int:
 
     deleted = 0
     for row in to_delete:
-        # Remove capture file
+        # Remove capture file safely
         for path in (row["content"], row["preview"]):
-            if path and os.path.isfile(path):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-        # Also remove from thumbnails dir by item id
+            _safe_remove_file(path)
+        # Also remove from thumbnails dir by item id safely
         thumb = os.path.join(get_thumb_dir(), f"{row['id']}.png")
-        if os.path.isfile(thumb):
-            try:
-                os.remove(thumb)
-            except OSError:
-                pass
+        _safe_remove_file(thumb)
         deleted += 1
 
     # Bulk-delete all rows in a single transaction
