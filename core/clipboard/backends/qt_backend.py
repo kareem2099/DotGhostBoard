@@ -69,6 +69,13 @@ class QtClipboardBackend(QObject):
             if mime is None:
                 return
 
+            # Ignore clipboard if password manager hint is present
+            if mime.hasFormat("x-kde-passwordManagerHint"):
+                hint = bytes(mime.data("x-kde-passwordManagerHint")).decode("utf-8", errors="ignore").strip().lower()
+                if hint == "secret":
+                    self._is_self_paste = False
+                    return
+
             if self._is_self_paste:
                 self._is_self_paste = False
                 if mime.hasText():

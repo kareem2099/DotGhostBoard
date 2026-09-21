@@ -49,6 +49,7 @@ def _vault_db(path: str | None = None) -> Generator[sqlite3.Cursor, None, None]:
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
+    conn.execute("PRAGMA secure_delete = ON;")
 
     try:
         os.chmod(target, 0o600)

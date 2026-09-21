@@ -34,6 +34,7 @@ class TopBarWidget(QFrame):
     clear_history_clicked = pyqtSignal()
     lock_clicked = pyqtSignal()
     update_clicked = pyqtSignal()
+    vault_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,6 +64,12 @@ class TopBarWidget(QFrame):
         self.clear_btn.setToolTip("Delete all un-pinned items")
         self.clear_btn.clicked.connect(self.clear_history_clicked.emit)
 
+        self.vault_btn = QPushButton("🛡️")
+        self.vault_btn.setObjectName("TopBarVaultBtn")
+        self.vault_btn.setFixedSize(28, 28)
+        self.vault_btn.setToolTip("The Vault (Ctrl+Shift+V)")
+        self.vault_btn.clicked.connect(self.vault_clicked.emit)
+
         self.lock_btn = QPushButton("🔒")
         self.lock_btn.setObjectName("SessionLockBtn")
         self.lock_btn.setFixedSize(28, 28)
@@ -89,6 +96,8 @@ class TopBarWidget(QFrame):
         top_layout.addSpacing(8)
         top_layout.addWidget(self.stats_label)
         top_layout.addSpacing(8)
+        top_layout.addWidget(self.vault_btn)
+        top_layout.addSpacing(4)
         top_layout.addWidget(self.lock_btn)
         top_layout.addSpacing(4)
         top_layout.addWidget(self.settings_btn)

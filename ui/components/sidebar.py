@@ -29,6 +29,7 @@ class SidebarWidget(QFrame):
     """
 
     create_collection_requested = pyqtSignal()
+    vault_toggle_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,6 +80,15 @@ class SidebarWidget(QFrame):
         self.devices_list.setFixedHeight(DEVICES_LIST_HEIGHT)
         self.devices_list.setToolTip("Double-click a device to pair")
         layout.addWidget(self.devices_list)
+
+        # ── Vault Section ──
+        layout.addSpacing(12)
+        self.vault_btn = QPushButton("🛡️  The Vault")
+        self.vault_btn.setObjectName("SidebarVaultBtn")
+        self.vault_btn.setFixedHeight(34)
+        self.vault_btn.setToolTip("Open The Vault (Ctrl+Shift+V)")
+        self.vault_btn.clicked.connect(self.vault_toggle_requested.emit)
+        layout.addWidget(self.vault_btn)
 
     def set_collapsed(self, collapsed: bool):
         """Collapse or restore the sidebar for responsive view."""

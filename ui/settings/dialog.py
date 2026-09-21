@@ -172,6 +172,8 @@ class SettingsDialog(QDialog):
         self._settings["stealth_mode"]      = self._stealth_check.isChecked()
         self._settings["app_filter_mode"]   = self._app_filter_editor.get_mode()
         self._settings["app_filter_list"]   = self._app_filter_editor.get_app_list()
+        if hasattr(self, "_detect_passwords_check"):
+            self._settings["detect_passwords"] = self._detect_passwords_check.isChecked()
 
         # API / Network
         self._settings["api_enabled"]  = self._api_check.isChecked()

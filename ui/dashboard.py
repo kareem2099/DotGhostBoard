@@ -21,20 +21,21 @@ from PyQt6.QtWidgets import (
 )
 
 from core.app_filter import AppFilter
-from core.constants import REL_TIME_INTERVAL_MS
+from core.constants import REL_TIME_INTERVAL_MS, VAULT_DRAWER_WIDTH
 from core.crypto import has_master_password
 from core.paths import resource_path
 from core.services import CollectionService, HistoryService, SecurityService, SyncService
 from core.watcher import ClipboardWatcher
 from ui.controllers import (
     CollectionController, HistoryController, SecurityController,
-    SyncController, UpdateController,
+    SyncController, UpdateController, wire_dashboard_controllers,
 )
 from ui.controllers.update_controller import UpdateCheckerThread
 from ui.lock_screen import LockScreen
 from ui.settings import SettingsDialog, load_settings, save_settings
 from ui.spotlight import SpotlightSearchDialog
 from ui.components import BulkToolbar, CardsView, DashboardTrayManager, SidebarWidget, TopBarWidget
+from ui.vault import attach_vault, attach_send_to_vault
 from ui.widgets import ItemCard, PinSuggestionToast, StatsHeaderCard
 
 logger = logging.getLogger(__name__)
@@ -70,10 +71,10 @@ class Dashboard(QMainWindow):
         self._build_ui()
         self._setup_tray()
         self._start_watcher()
+        attach_send_to_vault(self)
         self._load_history()
         self._refresh_sidebar()
         self._clean_captures()
-
         self._start_api_server()
         self._start_discovery()
         self._init_sync_engine()
@@ -150,6 +151,8 @@ class Dashboard(QMainWindow):
         root.addWidget(self.bulk_toolbar.bulk_bar)
         main_hbox.addWidget(main_area)
 
+        attach_vault(self, main_hbox)
+
         self.statusBar().setStyleSheet("QStatusBar { background: #0c0d0e; color: #697177; border-top: 1px solid #1d2022; font-size: 10px; padding-left: 6px; }")
         self.statusBar().showMessage("Watching clipboard…")
         self.scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -158,35 +161,7 @@ class Dashboard(QMainWindow):
         self.history_controller = HistoryController(service=self.history_service, cards_layout=self.cards_layout, search_box=self.search_box, scroll_area=self.scroll, stats_card=self.stats_header, parent=self)
 
         # Wire inter-controller and UI signals
-        bt, hc, sc, cc = self.bulk_toolbar, self.history_controller, self.security_controller, self.collection_controller
-        bt.pin_all_requested.connect(hc.bulk_pin)
-        bt.delete_all_requested.connect(lambda: hc.bulk_delete(self))
-        bt.export_requested.connect(lambda: hc.bulk_export(self))
-        bt.add_tag_requested.connect(lambda: hc.bulk_add_tag(self))
-        bt.cancel_requested.connect(hc.clear_selection)
-        bt.hint_dismissed.connect(self._dismiss_hint)
-        hc.selection_changed.connect(bt.update_selection_count)
-        hc.selection_changed.connect(self._on_selection_count_changed)
-
-        cc.collection_selected.connect(hc.filter_by_collection)
-        cc.collection_changed.connect(hc.reload)
-        cc.item_moved_to_collection.connect(self._on_item_moved_to_collection)
-
-        hc.secret_copy_requested.connect(sc.handle_secret_copy)
-        sc.copy_payload_ready.connect(hc.record_copy_result)
-        hc.encrypt_requested.connect(lambda iid: sc.encrypt_item(iid, self))
-        hc.decrypt_requested.connect(lambda iid: sc.decrypt_item(iid, confirm=True, parent_widget=self))
-        sc.item_security_changed.connect(hc.refresh_item)
-        hc.reveal_requested.connect(self._on_reveal_requested)
-        hc.pin_suggested.connect(self._on_pin_suggested)
-        hc.item_copied_ready.connect(self._on_item_copied_ready)
-
-        self.sync_controller.api_text_received.connect(self._on_sync_item_received)
-        self.sync_controller.sync_received_signal.connect(self._on_sync_item_received)
-
-        hc.status_message.connect(self.statusBar().showMessage)
-        cc.status_message.connect(self.statusBar().showMessage)
-        self.sync_controller.status_message.connect(self.statusBar().showMessage)
+        wire_dashboard_controllers(self)
 
     # ══════════════════════════════════════════
     # Coordinator Properties & Compatibility Shims
@@ -198,6 +173,8 @@ class Dashboard(QMainWindow):
     clear_btn = property(lambda s: getattr(s.topbar, "clear_btn", None) if hasattr(s, "topbar") else None)
     lock_btn = property(lambda s: getattr(s.topbar, "lock_btn", None) if hasattr(s, "topbar") else None)
     update_btn = property(lambda s: getattr(s.topbar, "update_btn", None) if hasattr(s, "topbar") else None)
+    vault = property(lambda s: getattr(s, "vault_panel", None))
+    vault_btn = property(lambda s: getattr(s.sidebar_widget, "vault_btn", None) if hasattr(s, "sidebar_widget") else None)
     scroll = property(lambda s: getattr(s, "cards_view", None))
     cards_container = property(lambda s: getattr(s.cards_view, "cards_container", None) if hasattr(s, "cards_view") else None)
     cards_layout = property(lambda s: getattr(s.cards_view, "cards_layout", None) if hasattr(s, "cards_view") else None)
@@ -236,10 +213,15 @@ class Dashboard(QMainWindow):
 
     def _on_lock_state_changed(self, is_locked: bool):
         if is_locked:
-            if getattr(self, "watcher", None): self.watcher.stop()
-            if getattr(self, "sync_controller", None): self.sync_controller.stop_all()
+            if getattr(self, "vault_controller", None) and self.vault_controller.is_unlocked:
+                self.vault_controller.lock()
+            if getattr(self, "watcher", None):
+                self.watcher.stop()
+            if getattr(self, "sync_controller", None):
+                self.sync_controller.stop_all()
         else:
-            if getattr(self, "watcher", None) and not self._is_monitoring_paused: self.watcher.start()
+            if getattr(self, "watcher", None) and not self._is_monitoring_paused:
+                self.watcher.start()
             self._start_api_server()
             self._start_discovery()
             self._init_sync_engine()
@@ -258,7 +240,8 @@ class Dashboard(QMainWindow):
 
     def _on_item_copied_ready(self, item_id: int, item: dict):
         if getattr(self, "watcher", None):
-            self.watcher.mark_self_paste(); self.watcher.paste_item_to_clipboard(item)
+            self.watcher.mark_self_paste()
+            self.watcher.paste_item_to_clipboard(item)
 
     def _on_item_moved_to_collection(self, item_id: int, target_coll_id: int | None):
         if self.active_collection_id is not None and target_coll_id != self.active_collection_id:
@@ -272,7 +255,8 @@ class Dashboard(QMainWindow):
 
     def _on_sync_item_received(self, item_id: int, text: str):
         if (item := self.history_service.get_item(item_id)):
-            self._add_card(item, at_top=True); self._refresh_stats()
+            self._add_card(item, at_top=True)
+            self._refresh_stats()
 
     def _on_api_new_text(self, item_id: int, text: str):
         self._on_sync_item_received(item_id, text)
@@ -292,23 +276,17 @@ class Dashboard(QMainWindow):
     def _refresh_stats(self): self.history_controller.refresh_stats()
     def _add_card(self, item: dict, at_top: bool = True): self.history_controller.add_card(item, at_top=at_top)
     def _remove_card(self, item_id: int): self.history_controller.remove_card(item_id)
-    def _rebuild_card_in_place(self, item_id: int): self.history_controller.refresh_item(item_id)
-    def _on_new_text(self, item_id: int, text: str): self.history_controller.on_text_captured(item_id, text)
-    def _on_new_image(self, item_id: int, file_path: str): self.history_controller.on_image_captured(item_id, file_path)
-    def _on_new_video(self, item_id: int, video_path: str): self.history_controller.on_video_captured(item_id, video_path)
-    def _on_thumb_ready(self, item_id: int, thumb_path: str): self.history_controller.on_thumb_ready(item_id, thumb_path)
     def _on_copy(self, item_id: int): self.history_controller.on_copy(item_id)
-    def _on_pin(self, item_id: int): self.history_controller.on_pin(item_id)
-    def _on_delete(self, item_id: int): self.history_controller.on_delete(item_id)
-    def _encrypt_card(self, item_id: int): self.security_controller.encrypt_item(item_id, self)
-    def _decrypt_card(self, item_id: int): self.security_controller.decrypt_item(item_id, confirm=True, parent_widget=self)
     def _on_card_clicked(self, item_id: int, modifiers):
         if modifiers & Qt.KeyboardModifier.ControlModifier and not self._settings.get("multiselect_hint_dismissed", False): self.bulk_toolbar.show_hint()
         self.history_controller.on_card_clicked(item_id, modifiers)
     def _on_selection_count_changed(self, count: int):
         self.statusBar().showMessage(f"{count} item(s) selected  •  Ctrl+click to add, Shift+click to range" if count > 0 else "Watching clipboard…")
     def _clear_selection(self): self.history_controller.clear_selection()
-    def _dismiss_hint(self): self.bulk_toolbar.hide_hint(); self._settings["multiselect_hint_dismissed"] = True; save_settings(self._settings)
+    def _dismiss_hint(self):
+        self.bulk_toolbar.hide_hint()
+        self._settings["multiselect_hint_dismissed"] = True
+        save_settings(self._settings)
     def _update_bulk_bar(self): self.bulk_toolbar.update_selection_count(len(self._selected_ids))
     def _bulk_pin(self, pin: bool): return self.history_controller.bulk_pin(pin)
     def _bulk_delete(self): return self.history_controller.bulk_delete(self)
@@ -328,12 +306,7 @@ class Dashboard(QMainWindow):
     def _init_sync_engine(self): self.sync_controller.init_sync_engine(is_locked=self._is_locked())
     def _start_api_server(self): self.sync_controller.start_api_server(is_locked=self._is_locked())
     def _start_discovery(self): self.sync_controller.start_discovery(is_locked=self._is_locked())
-    def _on_device_discovered(self, node_id, data): self.sync_controller.add_or_update_device(node_id, data)
-    def _on_device_removed(self, node_id): self.sync_controller.remove_device(node_id)
-    def _on_device_double_clicked(self, item): self.sync_controller._on_item_double_clicked(item)
-    def _on_pairing_requested(self, node_id, device_name): self.sync_controller._on_pairing_requested(node_id, device_name)
-    def _on_pairing_completed(self, node_id, device_name): self.sync_controller._on_pairing_completed(node_id, device_name)
-    def _on_pairing_failed(self, node_id, error_message): self.sync_controller._on_pairing_failed(node_id, error_message)
+
     def check_for_updates(self): self.update_controller.check_for_updates(channel=self._settings.get("update_channel", "stable"))
     def _on_update_found(self, update_info: dict, asset_url: str): self.topbar.set_update_visible(True)
     def _show_updater_dialog(self): self.update_controller.show_updater_dialog(self)
@@ -382,10 +355,17 @@ class Dashboard(QMainWindow):
         if (self._startup_locked or self._active_key is None) and has_master_password():
             self._show_lock_screen()
             return
-        self.show(); self.raise_(); self.activateWindow()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def toggle_visibility(self):
-        self.hide() if self.isVisible() else self.show_and_raise()
+        if self.isVisible():
+            if getattr(self, "vault_controller", None) and self.vault_controller.is_unlocked:
+                self.vault_controller.lock(wipe_clipboard=False)
+            self.hide()
+        else:
+            self.show_and_raise()
 
     def _open_settings(self):
         if self._is_locked():
@@ -418,8 +398,12 @@ class Dashboard(QMainWindow):
         if self._is_locked() and not self._show_lock_screen(show_dashboard=False):
             return
         if hasattr(self, "spotlight_dialog") and self.spotlight_dialog:
-            if self.spotlight_dialog.isVisible(): self.spotlight_dialog.hide()
-            else: self.spotlight_dialog.show(); self.spotlight_dialog.raise_(); self.spotlight_dialog.activateWindow()
+            if self.spotlight_dialog.isVisible():
+                self.spotlight_dialog.hide()
+            else:
+                self.spotlight_dialog.show()
+                self.spotlight_dialog.raise_()
+                self.spotlight_dialog.activateWindow()
 
     def _on_spotlight_item_selected(self, item: dict):
         item_id = item.get("id")
@@ -442,7 +426,8 @@ class Dashboard(QMainWindow):
         if getattr(self, "sync_controller", None): self.sync_controller.stop_all()
         self._update_tray_menu_and_tooltip()
         if getattr(self, "history_controller", None): self.history_controller.on_session_locked()
-        self.hide(); self._show_lock_screen()
+        self.hide()
+        self._show_lock_screen()
 
     def _show_lock_screen(self, *, show_dashboard: bool = True) -> bool:
         if hasattr(self, "security_controller"):
@@ -458,7 +443,9 @@ class Dashboard(QMainWindow):
         self._reset_auto_lock()
         self._update_tray_menu_and_tooltip()
         if show_dashboard:
-            self.show(); self.raise_(); self.activateWindow()
+            self.show()
+            self.raise_()
+            self.activateWindow()
             self.statusBar().showMessage("🔓 Unlocked")
         return True
 
@@ -476,13 +463,19 @@ class Dashboard(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        is_compact = self.width() < 650
-        if getattr(self, "sidebar_widget", None): self.sidebar_widget.set_collapsed(is_compact)
-        if getattr(self, "topbar", None): self.topbar.set_compact_mode(is_compact)
+        vp = getattr(self, "vault_panel", None)
+        avail = self.width() - (VAULT_DRAWER_WIDTH if vp is not None and vp.isVisible() else 0)
+        is_compact = avail < 650
+        if getattr(self, "sidebar_widget", None):
+            self.sidebar_widget.set_collapsed(is_compact)
+        if getattr(self, "topbar", None):
+            self.topbar.set_compact_mode(is_compact)
 
     def closeEvent(self, event):
         if event.spontaneous():
             event.ignore()
+            if getattr(self, "vault_controller", None) and self.vault_controller.is_unlocked:
+                self.vault_controller.lock(wipe_clipboard=False)
             self.hide()
             self.tray.showMessage("DotGhostBoard", "Running in background. Click tray icon to restore.", QSystemTrayIcon.MessageIcon.Information, 2000)
             return
@@ -490,8 +483,12 @@ class Dashboard(QMainWindow):
         print("[Dashboard] Shutting down...")
         if self._settings.get("clear_on_exit", False):
             self.history_service.delete_unpinned_items()
-        if hasattr(self, "watcher") and self.watcher: self.watcher.stop()
-        if hasattr(self, "sync_controller"): self.sync_controller.stop_all(2000)
-        if hasattr(self, "update_controller"): self.update_controller.cleanup()
-        if hasattr(self, "tray") and self.tray: self.tray.hide()
+        if hasattr(self, "watcher") and self.watcher:
+            self.watcher.stop()
+        if hasattr(self, "sync_controller"):
+            self.sync_controller.stop_all(2000)
+        if hasattr(self, "update_controller"):
+            self.update_controller.cleanup()
+        if hasattr(self, "tray") and self.tray:
+            self.tray.hide()
         event.accept()

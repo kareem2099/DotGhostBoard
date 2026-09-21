@@ -194,9 +194,10 @@ QPushButton:pressed {
     border-color: #00ff41;
 }
 
-/* Pin, Copy, Delete Buttons */
+/* Pin, Copy, Delete, Vault Buttons */
 QPushButton#PinBtn,
 QPushButton#CopyBtn,
+QPushButton#VaultBtn,
 QPushButton#DeleteBtn {
     background: transparent;
     border: none;
@@ -206,8 +207,14 @@ QPushButton#DeleteBtn {
 
 QPushButton#PinBtn[pinned="false"],
 QPushButton#CopyBtn,
+QPushButton#VaultBtn,
 QPushButton#DeleteBtn {
     color: #555d62;
+}
+
+QPushButton#VaultBtn:hover {
+    color: #00ff41;
+    background: #18251d;
 }
 
 QPushButton#PinBtn[pinned="true"] {
@@ -707,4 +714,174 @@ QPushButton#EclipseBtnDanger:hover {
     background: #2e1d1d;
     border-color: #6a3434;
     color: #ff8a8a;
+}
+
+/* ════════════════════════════════════════════
+   The Vault — Phase 7 UI Styles
+   ════════════════════════════════════════════ */
+
+QPushButton#SidebarVaultBtn {
+    background: #141b16;
+    color: #38d374;
+    border: 1px solid #1f3627;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    text-align: left;
+    padding-left: 12px;
+}
+
+QPushButton#SidebarVaultBtn:hover {
+    background: #1a251e;
+    border-color: #274d34;
+    color: #4eed8d;
+}
+
+QPushButton#SidebarVaultBtn:pressed {
+    background: #101612;
+}
+
+QFrame#VaultPanel {
+    background-color: #111315;
+    border-left: 1px solid #222629;
+}
+
+QLabel#VaultTitle {
+    color: #00ff41;
+    font-size: 15px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#VaultBadge[unlocked="false"] {
+    background: #261919;
+    color: #e27676;
+    border: 1px solid #482727;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+}
+
+QLabel#VaultBadge[unlocked="true"] {
+    background: #15241b;
+    color: #38d374;
+    border: 1px solid #1f3e2a;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+}
+
+QPushButton#VaultToolBtn {
+    background: #181a1c;
+    color: #a4abb0;
+    border: 1px solid #2b3034;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 10px;
+}
+
+QPushButton#VaultToolBtn:hover {
+    background: #222629;
+    color: #ffffff;
+    border-color: #3e4449;
+}
+
+QPushButton#VaultAddBtn {
+    background: #1b3824;
+    color: #34d070;
+    border: 1px solid #235232;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 12px;
+}
+
+QPushButton#VaultAddBtn:hover {
+    background: #234b30;
+    color: #44ec85;
+    border-color: #316b43;
+}
+
+QPushButton#VaultCategoryBtn {
+    background: #16181a;
+    color: #7b848a;
+    border: 1px solid #24282b;
+    border-radius: 12px;
+    font-size: 10px;
+    padding: 2px 7px;
+}
+
+QPushButton#VaultCategoryBtn:hover {
+    color: #d6d9db;
+    border-color: #353b40;
+}
+
+QPushButton#VaultCategoryBtn:checked {
+    background: #15261c;
+    color: #00ff41;
+    border: 1px solid #1f4e2d;
+    font-weight: 600;
+}
+
+QFrame#SecretCard {
+    background-color: #16181a;
+    border: 1px solid #25292c;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+QFrame#SecretCard:hover {
+    border-color: #383e44;
+    background-color: #191c1f;
+}
+
+QLabel#SecretTitle {
+    color: #e2e6e8;
+    font-size: 13px;
+    font-weight: 600;
+    background: transparent;
+}
+
+QLabel#SecretCategoryBadge {
+    background: #202428;
+    color: #8b949a;
+    border-radius: 3px;
+    font-size: 10px;
+    padding: 1px 5px;
+    font-weight: 500;
+}
+
+QLabel#SecretPayloadMasked {
+    color: #555e65;
+    font-family: monospace;
+    font-size: 13px;
+    background: transparent;
+}
+
+QLabel#SecretPayloadRevealed {
+    color: #38d374;
+    font-family: monospace;
+    font-size: 12px;
+    background: #0f1612;
+    border: 1px solid #1c3624;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+QPushButton#SecretCardActionBtn {
+    background: #1c1f22;
+    color: #8c969c;
+    border: 1px solid #2b3035;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 3px 7px;
+}
+
+QPushButton#SecretCardActionBtn:hover {
+    background: #252a2e;
+    color: #ffffff;
+    border-color: #3d444a;
 }

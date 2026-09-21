@@ -8,10 +8,10 @@ Owns system tray icon rendering, context menu actions, retry loops,
 and tooltip formatting. Communicates with Dashboard via semantic signals.
 """
 
+from typing import Callable, Optional
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication,
     QMenu,
     QSystemTrayIcon,
 )
@@ -35,10 +35,17 @@ class DashboardTrayManager(QObject):
         self._parent_widget = parent
         self._tray_retry_count: int = 0
         self.tray: QSystemTrayIcon | None = None
+        self._menu: QMenu | None = None
+        self._actions: list[QAction] = []
 
     @staticmethod
     def make_tray_icon() -> QIcon:
         """Create a stylized neon ghost icon for the system tray."""
+        import os
+        from core.paths import resource_path
+        icon_path = resource_path("data", "icons", "icon_32.png")
+        if os.path.isfile(icon_path):
+            return QIcon(icon_path)
         px = QPixmap(32, 32)
         px.fill(Qt.GlobalColor.transparent)
         p = QPainter(px)
@@ -57,6 +64,8 @@ class DashboardTrayManager(QObject):
         """Initialize the QSystemTrayIcon and attach signal handlers."""
         self.tray = QSystemTrayIcon(self.make_tray_icon(), self)
         self.tray.activated.connect(self._on_tray_click)
+        self._menu = QMenu(self._parent_widget)
+        self.tray.setContextMenu(self._menu)
         self.ensure_tray_visible()
 
     def ensure_tray_visible(self):
@@ -90,11 +99,18 @@ class DashboardTrayManager(QObject):
             self.tray.setToolTip("DotGhostBoard — Monitoring clipboard")
 
         # ── Context Menu ──
-        menu = QMenu(self._parent_widget)
+        if self._menu is None:
+            self._menu = QMenu(self._parent_widget)
+            self.tray.setContextMenu(self._menu)
+
+        menu = self._menu
+        menu.clear()
+        self._actions.clear()
 
         show_action = QAction("👻 Open DotGhostBoard", menu)
         show_action.triggered.connect(self.toggle_visibility_requested.emit)
         menu.addAction(show_action)
+        self._actions.append(show_action)
 
         if not is_locked:
             if is_monitoring_paused:
@@ -108,10 +124,14 @@ class DashboardTrayManager(QObject):
                     self.pause_monitoring_requested.emit
                 )
             menu.addAction(toggle_monitor_action)
+            self._actions.append(toggle_monitor_action)
 
             settings_action = QAction("⚙ Settings", menu)
-            settings_action.triggered.connect(self.open_settings_requested.emit)
+            settings_action.triggered.connect(
+                self.open_settings_requested.emit
+            )
             menu.addAction(settings_action)
+            self._actions.append(settings_action)
 
         menu.addSeparator()
 
@@ -123,11 +143,13 @@ class DashboardTrayManager(QObject):
                 lock_action = QAction("🔒 Lock", menu)
                 lock_action.triggered.connect(self.lock_requested.emit)
             menu.addAction(lock_action)
+            self._actions.append(lock_action)
             menu.addSeparator()
 
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self.quit_requested.emit)
         menu.addAction(quit_action)
+        self._actions.append(quit_action)
 
         self.tray.setContextMenu(menu)
 
@@ -139,10 +161,40 @@ class DashboardTrayManager(QObject):
         self,
         title: str,
         message: str,
-        icon: QSystemTrayIcon.MessageIcon = QSystemTrayIcon.MessageIcon.Information,
+        icon: QSystemTrayIcon.MessageIcon = (
+            QSystemTrayIcon.MessageIcon.Information
+        ),
         timeout: int = 2000,
+        action_callback: Optional[Callable[[], None]] = None,
     ):
-        if self.tray and self.tray.isVisible():
+        """
+        Display a desktop notification.
+        First attempts native OS / FreeDesktop notification with
+        click-to-activate callback.
+        Falls back to QSystemTrayIcon.showMessage if native is unavailable.
+        """
+        from core.notifications import (
+            get_default_icon_path,
+            send_desktop_notification,
+        )
+
+        cat = (
+            "secret"
+            if "secret" in title.lower() or "password" in title.lower()
+            else "general"
+        )
+        icon_path = get_default_icon_path(cat)
+        callback = action_callback or self.toggle_visibility_requested.emit
+
+        sent = send_desktop_notification(
+            title=title,
+            message=message,
+            icon=icon_path,
+            timeout_ms=timeout,
+            action_callback=callback,
+        )
+
+        if not sent and self.tray and self.tray.isVisible():
             self.tray.showMessage(title, message, icon, timeout)
 
     def hide(self):

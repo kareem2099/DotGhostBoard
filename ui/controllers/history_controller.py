@@ -38,6 +38,7 @@ class HistoryController(QObject):
     encrypt_requested = pyqtSignal(int)             # item_id
     decrypt_requested = pyqtSignal(int)             # item_id
     reveal_requested = pyqtSignal(int)              # item_id
+    send_to_vault_requested = pyqtSignal(int)       # item_id
     item_copied_ready = pyqtSignal(int, dict)       # item_id, item_data (for clipboard paste)
     pin_suggested = pyqtSignal(int, str)            # item_id, preview_text
     stats_updated = pyqtSignal(dict)
@@ -147,6 +148,7 @@ class HistoryController(QObject):
         card.sig_tag_added.connect(self.on_tag_added)
         card.sig_tag_removed.connect(self.on_tag_removed)
         card.sig_clicked.connect(self.on_card_clicked)
+        card.sig_send_to_vault.connect(self.send_to_vault_requested.emit)
         card.sig_reveal_requested.connect(self.reveal_requested.emit)
         card.sig_reset_count.connect(self.on_reset_count)
         card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -293,8 +295,11 @@ class HistoryController(QObject):
         self.refresh_stats()
         self.status_message.emit("Pinned 📌" if new_state else "Unpinned")
 
-    def on_delete(self, item_id: int):
-        self._service.delete_item(item_id)
+    def on_delete(self, item_id: int, secure: bool = False, force: bool = False):
+        if secure or force:
+            self._service.delete_item(item_id, secure=secure, force=force)
+        else:
+            self._service.delete_item(item_id)
         self.remove_card(item_id)
         self.refresh_stats()
         self.status_message.emit("Item deleted 🗑")
@@ -542,12 +547,22 @@ class HistoryController(QObject):
         from PyQt6.QtGui import QAction
 
         menu = QMenu(card)
+        menu.addAction(QAction("⎘ Copy", card, triggered=lambda: self.on_copy(card.item_id)))
+
+        if card.item_type == "text":
+            menu.addAction(QAction("🛡️ Send to Vault...", card,
+                                   triggered=lambda: self.send_to_vault_requested.emit(card.item_id)))
         if card.is_secret:
             menu.addAction(QAction("🔓 Decrypt (remove lock)", card,
                                    triggered=lambda: self.decrypt_requested.emit(card.item_id)))
         else:
             menu.addAction(QAction("🔒 Mark as Secret (Encrypt)", card,
                                    triggered=lambda: self.encrypt_requested.emit(card.item_id)))
+
+        pin_label = "📍 Unpin" if card.is_pinned else "📌 Pin"
+        menu.addAction(QAction(pin_label, card, triggered=lambda: self.on_pin(card.item_id)))
+        menu.addAction(QAction("✕ Delete", card, triggered=lambda: self.on_delete(card.item_id)))
+
         menu.exec(card.mapToGlobal(pos))
 
     # ──────────────────────────────────────────

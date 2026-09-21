@@ -22,6 +22,7 @@ from .migrations import init_db
 from .repositories.clips import (
     _get_file_hash,
     add_item,
+    add_encrypted_item,
     increment_copy_count,
     reset_copy_count,
     get_all_items,
@@ -98,6 +99,7 @@ __all__ = [
     # Clips
     "_get_file_hash",
     "add_item",
+    "add_encrypted_item",
     "increment_copy_count",
     "reset_copy_count",
     "get_all_items",

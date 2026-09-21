@@ -9,7 +9,7 @@ import logging
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSizePolicy, QApplication,
-    QGraphicsOpacityEffect, QWidget
+    QGraphicsOpacityEffect, QWidget, QMenu
 )
 from PyQt6.QtGui import QPixmap, QDrag, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QByteArray
@@ -49,6 +49,7 @@ class ItemCard(QFrame):
     sig_tag_removed = pyqtSignal(int, str)
     sig_clicked     = pyqtSignal(int, object)
     sig_reset_count = pyqtSignal(int)
+    sig_send_to_vault = pyqtSignal(int)
 
     # E003: emitted when the card asks Dashboard for the active key
     sig_reveal_requested = pyqtSignal(int)   # (item_id)
@@ -212,9 +213,20 @@ class ItemCard(QFrame):
 
         actions.addWidget(self.pin_btn)
         actions.addWidget(copy_btn)
+
+        if self.item_type == "text":
+            vault_btn = QPushButton("🛡")
+            vault_btn.setObjectName("VaultBtn")
+            vault_btn.setFixedSize(26, 26)
+            vault_btn.setToolTip("Send to Secret Vault (Encrypted)")
+            vault_btn.clicked.connect(lambda: self.sig_send_to_vault.emit(self.item_id))
+            actions.addWidget(vault_btn)
+
         actions.addWidget(del_btn)
 
         return actions
+
+
 
     # ──────────────────────────────────────────────────────────
     # _build_preview — text / image / video / secret content

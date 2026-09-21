@@ -3,7 +3,7 @@
 import os
 import sys
 
-APP_VERSION = "v2.0.0-beta.2"
+APP_VERSION = "v2.0.0"
 APP_CODENAME = "Cerberus"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"

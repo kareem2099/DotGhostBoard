@@ -152,6 +152,17 @@ def add_item(item_type: str, content: str, preview: str = None) -> int:
         return cursor.lastrowid
 
 
+def add_encrypted_item(ciphertext: str, preview: str = "") -> int:
+    """Insert an already-encrypted ciphertext item directly with is_secret=1 (zero plaintext in DB)."""
+    now = datetime.now().isoformat()
+    with _db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO clipboard_items (type, content, preview, is_secret, is_pinned, copy_count, created_at, updated_at)
+            VALUES ('text', ?, ?, 1, 0, 1, ?, ?)
+        """, (ciphertext, preview, now, now))
+        return cursor.lastrowid
+
+
 def increment_copy_count(item_id: int) -> int:
     """
     Increment the copy_count for an item (called when user presses the copy button).
@@ -397,19 +408,19 @@ def export_items(item_ids: list[int], fmt: str) -> str:
         return "\n".join(lines)
 
 
-def delete_item(item_id: int, secure: bool = False) -> bool:
+def delete_item(item_id: int, secure: bool = False, force: bool = False) -> bool:
     """
-    Delete item — pinned items are protected and won't be deleted.
+    Delete item — pinned items are protected unless force=True.
 
     Args:
         item_id: ID of the item to delete.
-        secure:  If True, overwrite file bytes before deletion (Eclipse).
-                 Only applies to image/video items with a file on disk.
+        secure:  If True, overwrite database columns and file bytes before deletion.
+        force:   If True, delete even if the item is pinned (e.g. migrating to Vault).
     """
     item = get_item_by_id(item_id)
     if not item:
         return False
-    if item["is_pinned"]:
+    if item["is_pinned"] and not force:
         return False  # ← basic protection for pinned items
 
     # Secure-delete file-based items if requested
@@ -434,7 +445,26 @@ def delete_item(item_id: int, secure: bool = False) -> bool:
         _safe_remove_file(thumb)
 
     with _db() as conn:
-        conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
+        if secure:
+            conn.execute("PRAGMA secure_delete = ON")
+            conn.execute(
+                "UPDATE clipboard_items SET content = '', preview = '' WHERE id = ?",
+                (item_id,),
+            )
+            conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
+        else:
+            conn.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
+
+    if secure:
+        try:
+            with _db() as chk_conn:
+                res = chk_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if res and res[0] != 0:
+                    import logging
+                    logging.getLogger(__name__).warning("WAL checkpoint busy (code %s)", res[0])
+        except Exception:
+            pass
+
     return True
 
 

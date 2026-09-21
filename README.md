@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v2.0.0--beta.2-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v2.0.0-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Cerberus-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-389%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-470%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -408,7 +408,7 @@ tests/test_v155_polish.py .......                                        [100%]
 | v1.5.6 | Nexus Global Hotkeys & UI Polish | ✅ Released | Per-user Global Desktop Shortcuts (GNOME/XFCE), decoupled Spotlight, Eclipse lock protection, UI theme polish, 220 tests |
 | v1.5.7 | Nexus Hotfix V | ✅ Released | CI headless stability, packaging Python dependencies, CLI enhancements, 220 tests |
 | v1.6.0 | Phantom | ✅ Released | v2.x Architecture Foundation: Controllers, Services, Repositories, Pipeline (306 tests) |
-| v2.0.0-beta.2 | Cerberus | 🟡 Beta Released | Settings & Dashboard Decomposition, Multi-Channel Updates (389 tests) |
+| v2.0.0 | Cerberus | ✅ Released | The Vault UI, Zero-Log Secret Detector, FreeDesktop Notifications, 2.0.0 Icon Architecture (470 tests) |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
 

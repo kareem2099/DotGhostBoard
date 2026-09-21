@@ -40,6 +40,8 @@ _DEFAULTS: dict = {
     "api_enabled":                False,
     "api_port":                   9090,
     "api_token":                  "",
+    # Security / Vault
+    "detect_passwords":           True,
 }
 
 

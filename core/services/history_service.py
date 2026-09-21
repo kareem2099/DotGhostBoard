@@ -46,9 +46,9 @@ class HistoryService:
         """Retrieve single item by id."""
         return self._storage.get_item_by_id(item_id)
 
-    def delete_item(self, item_id: int) -> bool:
+    def delete_item(self, item_id: int, secure: bool = False, force: bool = False) -> bool:
         """Delete an item and its associated media files."""
-        return self._storage.delete_item(item_id)
+        return self._storage.delete_item(item_id, secure=secure, force=force)
 
     def delete_items(self, item_ids: list[int]) -> int:
         """Bulk delete items. Returns number of deleted items."""

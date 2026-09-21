@@ -9,6 +9,7 @@ from .security_controller import SecurityController
 from .sync_controller import SyncController
 from .history_controller import HistoryController
 from .update_controller import UpdateController
+from .coordination import wire_dashboard_controllers
 
 __all__ = [
     "CollectionController",
@@ -16,5 +17,6 @@ __all__ = [
     "SyncController",
     "HistoryController",
     "UpdateController",
+    "wire_dashboard_controllers",
 ]
 

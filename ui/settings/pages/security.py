@@ -293,6 +293,24 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
 
     layout.addWidget(dialog._hsep())
 
+    # ── Zero-Log Password Protection ──────────────────────────────────────────────
+    layout.addWidget(dialog._section_label("🛡️  Zero-Log Password Protection"))
+
+    dialog._detect_passwords_check = QCheckBox(
+        "Intercept passwords & tokens before history (Requires Master Password)"
+    )
+    dialog._detect_passwords_check.setChecked(
+        bool(dialog._settings.get("detect_passwords", True))
+    )
+    dialog._detect_passwords_check.setToolTip(
+        "Automatically detect passwords, API keys, and sensitive tokens.\n"
+        "Prevents them from appearing on the public history board,\n"
+        "prompting to save to The Vault or keep."
+    )
+    layout.addWidget(dialog._detect_passwords_check)
+
+    layout.addWidget(dialog._hsep())
+
     # \u2500\u2500 App Filter \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     layout.addWidget(dialog._section_label("\U0001f6e1  App Filter"))
 

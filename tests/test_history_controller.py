@@ -15,6 +15,8 @@ from ui.controllers.history_controller import HistoryController
 
 @pytest.fixture
 def fake_history_service():
+    from core import storage
+    storage.init_db()
     service = MagicMock(spec=HistoryService)
     sample_items = [
         {"id": 1, "content": "Plain Item 1", "type": "text", "is_secret": 0, "is_pinned": 0, "copy_count": 0, "tags": "[]"},

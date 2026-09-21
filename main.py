@@ -3,12 +3,23 @@ import os
 import signal
 import tempfile
 import hashlib
-
+import logging
 import stat
+
+def _global_exception_handler(exc_type, exc_value, exc_traceback):
+    """Catch unhandled exceptions to prevent hard Qt aborts / qFatal crashes."""
+    logging.getLogger("DotGhostBoard").critical(
+        "Unhandled exception in Qt event loop / application:",
+        exc_info=(exc_type, exc_value, exc_traceback),
+    )
+
+sys.excepthook = _global_exception_handler
 
 # Suppress D-Bus warnings before any Qt import
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.dbus.*=false"
-if os.getenv("DOTGHOST_FORCE_X11") == "1":
+if os.getenv("DOTGHOST_FORCE_WAYLAND") == "1":
+    pass
+elif os.getenv("DOTGHOST_FORCE_X11") == "1" or os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 from PyQt6.QtWidgets import QApplication

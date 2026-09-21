@@ -7,6 +7,76 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0] — 2026-09-21 — *Cerberus (General Availability)*
+
+> **Codename:** Cerberus — Stable / Production Release
+>
+> This major milestone completes the transformation of DotGhostBoard into a full-fledged cryptographic clipboard security station. Features include the dedicated encrypted Vault UI subsystem, zero-log password & secret detection with Shannon entropy analysis, memory-safe deduplication, system-native FreeDesktop desktop notifications with click activation, universal engine-level secure deletion, and a modern responsive 2.0.0 cyber-stealth icon architecture with 470 passing tests.
+
+### Added — The Vault UI Subsystem (`ui/vault/`)
+
+- **The Vault Drawer Panel (`ui/vault/vault_panel.py`)**:
+  - Sliding / toggleable drawer panel integrated into the Dashboard central layout (`340px` fixed width, `#VaultPanel`).
+  - Accessible via sidebar button (`🛡️ The Vault` with tooltips) and global hotkey `Ctrl+Shift+V`.
+  - Dynamic status indicator (`🔒 Locked` / `🔓 Unlocked`), Lock toggle tool button, `+ Add` secret action, and `✕` close button.
+  - Real-time search filtering across secret titles and category pills (`All`, `Pass`, `Token`, `Key`, `Note`, `Gen`).
+  - Rich locked state banner with inline unlock CTA, and empty state prompt.
+- **Vault Controller (`ui/vault/vault_controller.py`)**:
+  - Standalone `QObject` mediating between `VaultService` envelope encryption and UI components.
+  - Manages session lifecycle (`unlock`, `lock`, `add_secret`, `update_secret`, `delete_secret`, `reveal_secret`, `copy_secret`).
+  - In-memory constant-time duplicate detection (`find_duplicate`) using `hmac.compare_digest` with zero plaintext hashes stored in `vault.db`.
+  - Dispatches Qt signals: `vault_unlocked`, `vault_locked`, `secrets_changed`, `secret_revealed`, `secret_copied`, `status_message`, `panel_visibility_changed`.
+- **Secret Card (`ui/vault/secret_card.py`)**:
+  - Masked by default (`••••••••••••••••`) to protect against shoulder surfing.
+  - Ephemeral in-memory reveal (`👁️ Reveal` / `🙈 Hide`) displaying decrypted plaintext in monospace emerald font.
+  - Immediate scrubbing of plaintext upon session lock via `vault_locked` signal.
+  - Disabled mouse selection (`NoTextInteraction`) on sensitive payload labels to prevent accidental clipboard pollution.
+  - 1-click clipboard copy (`📋 Copy`) with visual feedback (`✓ Copied!`), Edit dialog trigger (`✏️`), and confirmation-guarded Delete (`🗑️`).
+- **Master Password Unlock Modal (`ui/vault/unlock_dialog.py`)**:
+  - Frameless modal dialog matching Eclipse lock aesthetics for master password authentication.
+- **Add / Edit Secret Dialog (`ui/vault/secret_dialog.py`)**:
+  - Dual-mode modal for creating and updating secrets with title validation, category selector, and encrypted payload textarea.
+- **Dashboard Integration (`ui/dashboard.py`)**:
+  - Strict preservation of architectural line limit: `ui/dashboard.py` remains at **494 lines** (≤ 500 LOC).
+  - Integrated hotkey `Ctrl+Shift+V` and auto-locking synchronization when main session locks.
+- **Testing**:
+  - Added `tests/test_vault_ui.py` with 27 comprehensive unit and integration tests.
+
+### Added — Send to Vault, Deduplication & Zero-Log Protection
+
+- **Send to Vault Action (`ui/vault/send_to_vault.py`, `ui/widgets/item_card.py`)**:
+  - Added direct 🛡️ "Send to Vault" button on text item cards and in context menus (`🛡️ Send to Vault...`).
+  - Automatically prefills the `SecretDialog` with secret payload and focuses directly on the title input.
+  - Abort safety: dialog cancellation preserves item in history without deletion.
+  - Decrypts Eclipse-encrypted items on the fly before passing plaintext to the Vault.
+  - In-memory deduplication interception: if plaintext already exists in the Vault, displays transient 4-second auto-dismiss "Already Secured" banner instead of creating duplicate cards.
+  - Globally enforced `PRAGMA secure_delete = ON` on all SQLite database connections, zeroing content columns and verifying WAL truncation on deletion.
+- **Zero-Log Automatic Secret & Password Protection (`core/security/detector.py`, `ui/widgets/secret_toast.py`)**:
+  - Precision detection combining Shannon entropy ($\ge 3.0$), character class analysis, and strict regex patterns.
+  - Comprehensive negative heuristics: excludes paths, environment variables (e.g. `$PWD`), code function calls, package namespaces, git branches, ISO timestamps, MAC addresses, SSH commands, and multiline files with incidental keyword occurrences.
+  - Zero character leakage: fixed-length mask (`••••••••••••`) without exposing leading or trailing plaintext chars.
+  - Zero-Loss Timeout Fallback: when 60s TTL expires without user action, candidate is automatically encrypted with Eclipse (`is_secret = 1`) into history rather than discarded.
+  - System Tray notification when Dashboard window is hidden in tray mode.
+  - Dynamic toggle in Settings (`Security -> Zero-Log Password Protection`) evaluated in real-time.
+
+### Added — Native Desktop Notifications & 2.0.0 Brand Identity
+
+- **Native FreeDesktop Linux Notifications (`core/notifications.py`)**:
+  - Dispatches native OS notifications via FreeDesktop `/usr/bin/notify-send` and session D-Bus.
+  - Includes click action callback (`-A default="Open DotGhostBoard"`) routed through a thread-safe Qt dispatcher (`_NotificationDispatcher`) to bring the window to the foreground upon click.
+  - Graceful fallback to `QSystemTrayIcon.showMessage` if external notification daemon is unavailable.
+- **2.0.0 Cyber-Stealth Icon & Asset Pipeline (`scripts/generate_icon.py`)**:
+  - Replaced legacy 8-bit Pac-Man ghost with sleek, modern Cyber-Stealth Phantom glyph featuring glowing neon green visor (`#00ff41`) on dark graphite matte squircle.
+  - Pure brand mark free of transient text or version numbers for long-term brand longevity.
+  - Automated high-quality downsampling pipeline with Lanczos resampling, contrast boost, and unsharp masking for crispness down to 16px and 32px.
+  - Generates full icon suite: `icon_16.png`, `icon_32.png`, `icon_48.png`, `icon_64.png`, `icon_128.png`, `icon_256.png`, `icon_512.png`, and `icon.png`.
+  - Unified system tray integration in `ui/components/tray_manager.py` using `icon_32.png`.
+
+### Quality, Architecture & Testing
+
+- **Architectural Line Limit Preserved**: `ui/dashboard.py` strictly held to **494 lines** ($\le 500$ LOC limit) with zero semicolons.
+- **470 Tests Passing (100% Green)**: Comprehensive unit, integration, and security test suite covering cryptographic isolation, raw disk byte overwrite verification, IPC, UI controllers, and notifications.
+
 ## [2.0.0-beta.2] — 2026-09-18 — *Cerberus*
 
 > **Codename:** Cerberus — Phase 5 & 6 Architecture Refactoring & Multi-Channel Updates
