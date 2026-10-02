@@ -106,13 +106,18 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
 
     def _on_secret_candidate(event) -> None:
         """Handle incoming secret candidate from watcher pipeline."""
-        if not dashboard.security_service.has_master_password():
-            return
         if not dashboard._settings.get("detect_passwords", True):
             return
 
         cand_text = str(event.content) if hasattr(event, "content") else str(event)
         if not cand_text:
+            return
+
+        # ── No master password configured: save as plain text so nothing is lost ──
+        if not dashboard.security_service.has_master_password():
+            storage.add_item("text", cand_text)
+            if hasattr(dashboard, "history_controller"):
+                dashboard.history_controller.reload()
             return
 
         # Consecutive duplicate copy while toast is active: do not duplicate toast or fallback

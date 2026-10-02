@@ -1,5 +1,4 @@
 import os
-import tempfile
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextBrowser, QProgressBar, QMessageBox
@@ -15,9 +14,9 @@ from core.config import APP_VERSION
 # ─────────────────────────────────────────────
 
 class DownloadWorker(QThread):
-    progress          = pyqtSignal(int)
+    progress = pyqtSignal(int)
     finished_download = pyqtSignal(str, str)   # (output_path, asset_url)
-    error             = pyqtSignal(str)
+    error = pyqtSignal(str)
 
     def __init__(self, asset_url: str):
         super().__init__()
@@ -27,8 +26,12 @@ class DownloadWorker(QThread):
         try:
             filename = self.asset_url.split("/")[-1]
             # Sanitise filename — keep only safe characters
-            filename = "".join(c for c in filename if c.isalnum() or c in "._-")
-            output_dir = os.path.expanduser("~/.local/share/dotghostboard/updates")
+            filename = "".join(
+                c for c in filename if c.isalnum() or c in "._-"
+            )
+            output_dir = os.path.expanduser(
+                "~/.local/share/dotghostboard/updates"
+            )
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(
                 output_dir, f"dotghostboard_update_{filename}"
@@ -47,13 +50,17 @@ class UpdaterDialog(QDialog):
     def __init__(self, update_info: dict, asset_url: str, parent=None):
         super().__init__(parent)
         self.update_info = update_info
-        self.asset_url   = asset_url
+        self.asset_url = asset_url
         self.worker: DownloadWorker | None = None
 
+        self.setObjectName("UpdaterDialog")
         self.setWindowTitle("Update Available")
         self.setModal(True)
         self.resize(500, 400)
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
+        flags = (
+            Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setWindowFlags(flags)
 
         self._build_ui()
 
@@ -65,29 +72,23 @@ class UpdaterDialog(QDialog):
         root.setSpacing(14)
 
         title = QLabel(f"🚀  New Update: {self.update_info['version']}")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #00ff41;")
+        title.setObjectName("UpdaterTitle")
         root.addWidget(title)
 
         info = QLabel(f"You are currently running {APP_VERSION}.")
-        info.setStyleSheet("color: #aaa;")
+        info.setObjectName("UpdaterInfo")
         root.addWidget(info)
 
         self.browser = QTextBrowser()
-        self.browser.setMarkdown(self.update_info.get("body", "No changelog provided."))
-        self.browser.setStyleSheet(
-            "QTextBrowser {"
-            "  background: #0a0a0a;"
-            "  border: 1px solid #222;"
-            "  border-radius: 6px;"
-            "  padding: 10px;"
-            "  color: #ddd;"
-            "}"
-        )
+        body = self.update_info.get("body", "No changelog provided.")
+        self.browser.setMarkdown(body)
+        self.browser.setObjectName("UpdaterBrowser")
         root.addWidget(self.browser)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setObjectName("UpdaterProgressBar")
         self.progress_bar.hide()
         root.addWidget(self.progress_bar)
 
@@ -96,21 +97,12 @@ class UpdaterDialog(QDialog):
 
         # FIX #2 — Cancel stays enabled; its slot is swapped during download
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("UpdaterCancelBtn")
         self.cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(self.cancel_btn)
 
         self.download_btn = QPushButton("Download && Install")
-        self.download_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #00ff4122;"
-            "  color: #00ff41;"
-            "  border: 1px solid #00ff41;"
-            "  padding: 6px 16px;"
-            "  border-radius: 4px;"
-            "  font-weight: bold;"
-            "} "
-            "QPushButton:hover { background: #00ff4144; }"
-        )
+        self.download_btn.setObjectName("UpdaterDownloadBtn")
         self.download_btn.clicked.connect(self._start_download)
         btn_row.addWidget(self.download_btn)
 
@@ -120,6 +112,7 @@ class UpdaterDialog(QDialog):
 
     def _start_download(self):
         self.download_btn.setEnabled(False)
+        self.download_btn.setText("⏳ Downloading...")
         self.progress_bar.show()
 
         # FIX #2 — rewire Cancel to abort the active download
@@ -128,10 +121,14 @@ class UpdaterDialog(QDialog):
         self.cancel_btn.clicked.connect(self._cancel_download)
 
         self.worker = DownloadWorker(self.asset_url)
-        self.worker.progress.connect(self.progress_bar.setValue)
+        self.worker.progress.connect(self._on_download_progress)
         self.worker.finished_download.connect(self._on_download_finished)
         self.worker.error.connect(self._on_error)
         self.worker.start()
+
+    def _on_download_progress(self, percent: int):
+        self.progress_bar.setValue(percent)
+        self.download_btn.setText(f"⏳ Downloading... {percent}%")
 
     def _cancel_download(self):
         """Stop the in-progress download and close the dialog cleanly."""
@@ -154,10 +151,12 @@ class UpdaterDialog(QDialog):
         self.worker = None
 
         self.progress_bar.setValue(100)
+        self.download_btn.setText("⚙️ Installing...")
         self.accept()   # close the download dialog first
 
         # Open the terminal-style install log screen
         from ui.update_log_screen import UpdateLogScreen
+        from ui.window_utils import prepare_dialog_for_current_workspace
         log_screen = UpdateLogScreen(
             downloaded_file=output_path,
             asset_url=asset_url,
@@ -166,6 +165,7 @@ class UpdaterDialog(QDialog):
             release_notes=self.update_info.get("body", ""),
             parent=self.parent(),
         )
+        prepare_dialog_for_current_workspace(log_screen)
         log_screen.exec()
 
     def _on_error(self, message: str):
@@ -174,6 +174,7 @@ class UpdaterDialog(QDialog):
         self.worker = None
 
         self.progress_bar.hide()
+        self.download_btn.setText("Download && Install")
         self.download_btn.setEnabled(True)
 
         # Restore Cancel button to its original close-dialog behaviour
@@ -185,9 +186,9 @@ class UpdaterDialog(QDialog):
             self, "Download Error", f"Error during download:\n{message}"
         )
 
-    # ── Window close (X button) ───────────────────────────────────────────────
+    # ── Window close (X button) ───────────────────────────────────────────
 
     def closeEvent(self, event):
-        # FIX #1 — stop the thread when the user closes the window mid-download
+        # FIX #1 — stop thread when user closes window mid-download
         self._stop_worker()
         super().closeEvent(event)

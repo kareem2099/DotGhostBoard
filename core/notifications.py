@@ -131,6 +131,7 @@ def send_desktop_notification(
 
             if action_callback:
                 def _wait_action():
+                    proc = None
                     try:
                         proc = subprocess.Popen(
                             cmd,
@@ -138,11 +139,24 @@ def send_desktop_notification(
                             stderr=subprocess.DEVNULL,
                             text=True,
                         )
-                        out, _ = proc.communicate(timeout=(timeout_ms / 1000.0) + 3.0)
+                        # Wait up to notification duration + 2s grace, capped at 15s max
+                        wait_secs = min((timeout_ms / 1000.0) + 2.0, 15.0)
+                        out, _ = proc.communicate(timeout=wait_secs)
                         if out and out.strip() == "default":
                             _safe_dispatch_callback(action_callback)
+                    except subprocess.TimeoutExpired:
+                        # User dismissed / notification expired without clicking — expected path
+                        if proc is not None:
+                            proc.kill()
+                            proc.communicate()  # drain to avoid zombie
                     except Exception as wait_exc:
-                        logger.debug("notify-send action wait finished: %s", wait_exc)
+                        logger.debug("notify-send action wait failed: %s", wait_exc)
+                        if proc is not None:
+                            try:
+                                proc.kill()
+                                proc.communicate()
+                            except Exception:
+                                pass
 
                 threading.Thread(target=_wait_action, daemon=True).start()
             else:

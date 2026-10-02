@@ -17,10 +17,10 @@ import hashlib
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTextEdit, QProgressBar,
-    QSizePolicy, QScrollArea, QWidget
+    QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QTextCursor, QFont
+from PyQt6.QtGui import QFont
 
 
 # ─────────────────────────────────────────────
@@ -62,10 +62,13 @@ class InstallWorker(QThread):
     def __init__(self, downloaded_file: str, asset_url: str):
         super().__init__()
         self.downloaded_file = downloaded_file
-        self.asset_url       = asset_url
+        self.asset_url = asset_url
 
     def run(self):
-        import shlex, stat, shutil, subprocess
+        import shlex
+        import shutil
+        import stat
+        import subprocess
 
         def log(msg: str):
             self.log_line.emit(msg)
@@ -78,23 +81,28 @@ class InstallWorker(QThread):
             if not os.path.isfile(self.downloaded_file):
                 raise RuntimeError(f"File not found: {self.downloaded_file}")
             size = _human_size(self.downloaded_file)
-            sha  = _sha256(self.downloaded_file)
+            sha = _sha256(self.downloaded_file)
             log(f"  Size   : {size}")
             log(f"  SHA-256: {sha[:32]}…")
-            log(f"  Status : OK ✓")
+            log("  Status : OK ✓")
             log("")
 
             # ── DEB ──────────────────────────────────────────────────────────
             if ext == ".deb" or self.asset_url.lower().endswith(".deb"):
                 log("► Package type  : DEB (.deb)")
-                log(f"► Package path  : {os.path.basename(self.downloaded_file)}")
+                fname = os.path.basename(self.downloaded_file)
+                log(f"► Package path  : {fname}")
                 log("")
                 log("► Writing install script…")
 
-                safe_path  = shlex.quote(self.downloaded_file)
-                script_dir = os.path.expanduser("~/.local/share/dotghostboard/updates")
-                os.makedirs(script_dir, exist_ok=True)
-                script_path = os.path.join(script_dir, "dotghostboard_install.sh")
+                safe_path = shlex.quote(self.downloaded_file)
+                updates_dir = os.path.expanduser(
+                    "~/.local/share/dotghostboard/updates"
+                )
+                os.makedirs(updates_dir, exist_ok=True)
+                script_path = os.path.join(
+                    updates_dir, "dotghostboard_install.sh"
+                )
 
                 with open(script_path, "w") as f:
                     f.write("#!/bin/sh\n")
@@ -133,14 +141,21 @@ class InstallWorker(QThread):
                     if result.returncode == 126:
                         msg += " (authorisation denied)"
                     elif result.returncode == 127:
-                        msg += " (pkexec not found — run: sudo chmod 4755 /usr/bin/pkexec)"
+                        msg += (
+                            " (pkexec not found — run: sudo chmod 4755 "
+                            "/usr/bin/pkexec)"
+                        )
                     log(f"✗ Installation failed: {msg}")
                     self.finished.emit(False, msg)
 
             # ── AppImage ─────────────────────────────────────────────────────
-            elif ext == ".appimage" or self.asset_url.lower().endswith(".appimage"):
+            elif (
+                ext == ".appimage"
+                or self.asset_url.lower().endswith(".appimage")
+            ):
                 log("► Package type : AppImage")
-                log(f"► New binary   : {os.path.basename(self.downloaded_file)}")
+                new_bin = os.path.basename(self.downloaded_file)
+                log(f"► New binary   : {new_bin}")
                 log("")
 
                 current = os.environ.get("APPIMAGE")
@@ -151,7 +166,7 @@ class InstallWorker(QThread):
                 old_file = current + ".old"
                 if os.path.exists(old_file):
                     os.remove(old_file)
-                    log(f"► Removed stale backup.")
+                    log("► Removed stale backup.")
 
                 log("► Swapping binary…")
                 os.rename(current, old_file)
@@ -292,29 +307,30 @@ class UpdateLogScreen(QDialog):
     ):
         super().__init__(parent)
         self.downloaded_file = downloaded_file
-        self.asset_url       = asset_url
-        self.new_version     = new_version
+        self.asset_url = asset_url
+        self.new_version = new_version
         self.current_version = current_version or "current"
-        self.release_notes   = release_notes or "_No release notes provided._"
+        self.release_notes = release_notes or "_No release notes provided._"
 
         self._worker: InstallWorker | None = None
         self._cursor_visible = True
-        self._done           = False
-        self._log_count      = 0
-        self._countdown      = 5
+        self._done = False
+        self._log_count = 0
+        self._countdown = 5
 
         self.setWindowTitle("DotGhostBoard — Installing Update")
         self.setModal(True)
         self.resize(720, 630)
         self.setMinimumSize(580, 500)
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
+        flags = Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint
+        self.setWindowFlags(flags)
         self.setStyleSheet(_STYLE)
 
         self._build_ui()
         self._start_cursor_blink()
         QTimer.singleShot(500, self._start_install)
 
-    # ── UI construction ───────────────────────────────────────────────────────
+    # ── UI construction ───────────────────────────────────────────────────
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -356,7 +372,8 @@ class UpdateLogScreen(QDialog):
         ver_col.setSpacing(4)
         lbl_updating = QLabel("UPDATING DOTGHOSTBOARD")
         lbl_updating.setStyleSheet(
-            "color:#446644; font-size:9px; letter-spacing:2px; font-weight:bold;"
+            "color:#446644; font-size:9px; letter-spacing:2px; "
+            "font-weight:bold;"
         )
         ver_col.addWidget(lbl_updating)
 
@@ -382,7 +399,9 @@ class UpdateLogScreen(QDialog):
         fsize = _human_size(self.downloaded_file)
         file_info = QLabel(f"📦  {fname}\n💾  {fsize}")
         file_info.setObjectName("FileInfo")
-        file_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        file_info.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         b_lay.addWidget(file_info)
 
         root.addWidget(banner)
@@ -390,7 +409,8 @@ class UpdateLogScreen(QDialog):
         # ── What's New (collapsible-ish) ──────────────────────────
         wn_label = QLabel("▾  What's New")
         wn_label.setStyleSheet(
-            "color:#446644; font-size:10px; letter-spacing:1px; padding-left:2px;"
+            "color:#446644; font-size:10px; letter-spacing:1px; "
+            "padding-left:2px;"
         )
         root.addWidget(wn_label)
 
@@ -473,7 +493,7 @@ class UpdateLogScreen(QDialog):
         )
         self._append("", "#00ff41")
 
-    # ── Separator ─────────────────────────────────────────────────────────────
+    # ── Separator ─────────────────────────────────────────────────────────
 
     @staticmethod
     def _separator() -> QFrame:
@@ -482,7 +502,7 @@ class UpdateLogScreen(QDialog):
         f.setStyleSheet("color:#1a3a1a; margin:0px;")
         return f
 
-    # ── Cursor blink ──────────────────────────────────────────────────────────
+    # ── Cursor blink ──────────────────────────────────────────────────────
 
     def _start_cursor_blink(self):
         self._blink_timer = QTimer(self)
@@ -494,7 +514,7 @@ class UpdateLogScreen(QDialog):
         self._cursor_visible = not self._cursor_visible
         self.cursor_label.setText("█" if self._cursor_visible else " ")
 
-    # ── Terminal helpers ───────────────────────────────────────────────────────
+    # ── Terminal helpers ──────────────────────────────────────────────────
 
     def _append(self, text: str, color: str | None = None):
         """Append one styled line to the terminal."""
@@ -507,17 +527,28 @@ class UpdateLogScreen(QDialog):
                 color = "#00ccff"
             elif text.startswith("  [stderr]"):
                 color = "#ffaa00"
-            elif text.startswith("  Size") or text.startswith("  SHA") or text.startswith("  Status") or text.startswith("  Script") or text.startswith("  ["):
+            elif (
+                text.startswith("  Size")
+                or text.startswith("  SHA")
+                or text.startswith("  Status")
+                or text.startswith("  Script")
+                or text.startswith("  [")
+            ):
                 color = "#888888"
             elif text.startswith("┌") or text.startswith("└"):
                 color = "#444"
             else:
                 color = "#00cc33"
 
-        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        safe = (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
         safe = safe.replace(" ", "&nbsp;")
         self.log_box.insertHtml(
-            f'<span style="color:{color}; font-family:monospace;">{safe}</span><br>'
+            f'<span style="color:{color}; font-family:monospace;">'
+            f'{safe}</span><br>'
         )
         self.log_box.verticalScrollBar().setValue(
             self.log_box.verticalScrollBar().maximum()
@@ -528,7 +559,7 @@ class UpdateLogScreen(QDialog):
         pct = min(80, self._log_count * 5)
         self.progress.setValue(pct)
 
-    # ── Install flow ──────────────────────────────────────────────────────────
+    # ── Install flow ──────────────────────────────────────────────────────
 
     def _start_install(self):
         self.status_lbl.setText("● Installing…")
@@ -557,7 +588,7 @@ class UpdateLogScreen(QDialog):
                 "QProgressBar#InstallProgress::chunk { background: #ff4444; }"
             )
 
-    # ── Countdown to auto-restart ─────────────────────────────────────────────
+    # ── Countdown to auto-restart ─────────────────────────────────────────
 
     def _start_countdown(self):
         self._countdown = 5
@@ -578,18 +609,50 @@ class UpdateLogScreen(QDialog):
     def _update_countdown_label(self):
         self.restart_btn.setText(f"Restart Now  ({self._countdown})")
 
-    # ── Restart / close ───────────────────────────────────────────────────────
+    # ── Restart / close ───────────────────────────────────────────────────
 
     def _restart_or_close(self):
         if hasattr(self, "_cd_timer"):
             self._cd_timer.stop()
+
+        self.accept()
+
         appimage = os.environ.get("APPIMAGE")
         if appimage and os.path.isfile(appimage):
-            os.execv(appimage, [appimage] + sys.argv[1:])
-        else:
-            self.accept()
+            try:
+                os.execv(appimage, [appimage] + sys.argv[1:])
+            except Exception:
+                pass
 
-    # ── Close guard ───────────────────────────────────────────────────────────
+        launcher = None
+        for candidate in (
+            "/usr/bin/dotghostboard",
+            "/opt/dotghostboard/dotghostboard.sh",
+        ):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                launcher = candidate
+                break
+
+        import subprocess
+        if launcher:
+            try:
+                subprocess.Popen([launcher])
+            except Exception:
+                pass
+        elif sys.argv and os.path.isfile(sys.argv[0]):
+            try:
+                subprocess.Popen([sys.executable] + sys.argv, cwd=os.getcwd())
+            except Exception:
+                pass
+
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app:
+            app.closeAllWindows()
+            app.quit()
+        sys.exit(0)
+
+    # ── Close guard ───────────────────────────────────────────────────────
 
     def closeEvent(self, event):
         if self._worker and self._worker.isRunning():

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 _DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard")
-_USER_DATA    = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
+_USER_DATA = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
 VAULT_DB_PATH = os.path.join(_USER_DATA, "vault.db")
 
 VAULT_SCHEMA_VERSION = 1
@@ -89,10 +89,16 @@ def init_vault_db(path: str | None = None) -> None:
                 category TEXT DEFAULT 'generic',
                 ciphertext TEXT NOT NULL,
                 metadata_encrypted TEXT,
+                expires_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        try:
+            cur.execute("ALTER TABLE vault_items ADD COLUMN expires_at TIMESTAMP;")
+        except sqlite3.OperationalError:
+            pass
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS vault_metadata (
                 key TEXT PRIMARY KEY,
@@ -100,10 +106,22 @@ def init_vault_db(path: str | None = None) -> None:
             );
         """)
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS vault_item_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vault_item_id INTEGER NOT NULL,
+                ciphertext TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (vault_item_id) REFERENCES vault_items(id) ON DELETE CASCADE
+            );
+        """)
+        cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_vault_category ON vault_items(category);
         """)
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_vault_updated ON vault_items(updated_at DESC);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vault_history_item ON vault_item_history(vault_item_id, created_at DESC);
         """)
 
         if v < VAULT_SCHEMA_VERSION:

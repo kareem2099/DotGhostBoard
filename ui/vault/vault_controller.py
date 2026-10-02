@@ -38,6 +38,7 @@ class VaultController(QObject):
     secret_revealed = pyqtSignal(int)        # item_id (never emit plaintext over signal bus)
     secret_copy_starting = pyqtSignal()     # emitted immediately before clipboard.setText()
     secret_copied = pyqtSignal(int)          # item_id
+    history_item_removed = pyqtSignal(int)  # item_id removed from clipboard history by vault sweep
     status_message = pyqtSignal(str)
     panel_visibility_changed = pyqtSignal(bool)
 
@@ -98,7 +99,13 @@ class VaultController(QObject):
         self.vault_locked.emit()
         self.status_message.emit("🔒 The Vault locked")
 
-    def add_secret(self, title: str, secret_text: str, category: str = "generic") -> int:
+    def add_secret(
+        self,
+        title: str,
+        secret_text: str,
+        category: str = "generic",
+        expires_at: Optional[str] = None,
+    ) -> int:
         """
         Encrypt and persist a new secret to vault.db.
         """
@@ -112,7 +119,12 @@ class VaultController(QObject):
         if not secret_text:
             raise ValueError("Secret content cannot be empty.")
 
-        item_id = self._service.add_secret(clean_title, secret_text, category=category)
+        item_id = self._service.add_secret(
+            clean_title,
+            secret_text,
+            category=category,
+            expires_at=expires_at,
+        )
         self.secrets_changed.emit()
         self.status_message.emit(f"Secret '{clean_title}' encrypted & saved ✓")
         return item_id
@@ -123,6 +135,7 @@ class VaultController(QObject):
         title: Optional[str] = None,
         secret_text: Optional[str] = None,
         category: Optional[str] = None,
+        expires_at: Optional[str] = None,
     ) -> bool:
         """
         Update an existing secret's metadata or payload.
@@ -140,6 +153,7 @@ class VaultController(QObject):
             title=clean_title,
             secret_text=secret_text,
             category=category,
+            expires_at=expires_at,
         )
         if success:
             self.secrets_changed.emit()
@@ -149,13 +163,41 @@ class VaultController(QObject):
     def delete_secret(self, item_id: int) -> bool:
         """
         Permanently delete a secret from vault.db.
+        Also removes any matching plain-text copy from the clipboard history
+        so the secret is not left orphaned in the public dashboard.
         """
         if not self.is_unlocked:
             self.status_message.emit("⚠ Cannot delete secret: Vault is locked.")
             raise VaultLockedError("Vault is locked.")
 
+        # Decrypt the secret in-memory before deleting so we can match against history
+        plaintext: str | None = None
+        try:
+            plaintext = self._service.get_secret(item_id)
+        except Exception:
+            pass
+
         success = self._service.delete_secret(item_id)
         if success:
+            # Sweep clipboard history for any matching plain-text copy and remove it
+            if plaintext:
+                try:
+                    from core import storage
+                    history_item = storage.get_item_by_content(plaintext)
+                    if history_item:
+                        storage.delete_item(
+                            history_item["id"],
+                            secure=True,
+                            force=True,  # remove even if pinned
+                        )
+                        self.history_item_removed.emit(history_item["id"])
+                        logger.debug(
+                            "Removed matching history item id=%s after Vault deletion",
+                            history_item["id"],
+                        )
+                except Exception as exc:
+                    logger.warning("Could not sweep history after Vault deletion: %s", exc)
+
             self.secrets_changed.emit()
             self.status_message.emit("Secret deleted from Vault")
         return success
@@ -232,12 +274,10 @@ class VaultController(QObject):
         clipboard = QApplication.clipboard()
         if clipboard:
             current_text = clipboard.text()
-            if current_text:
-                cur_hash = hashlib.sha256(current_text.encode("utf-8")).hexdigest()
-                if cur_hash == self._pending_clipboard_hash:
-                    clipboard.clear()
-                    clipboard.setText("")
-                    self.status_message.emit("Clipboard cleared")
+            cur_hash = hashlib.sha256(current_text.encode("utf-8")).hexdigest()
+            if cur_hash == self._pending_clipboard_hash:
+                clipboard.clear()  # clear() alone is sufficient; setText("") would create a new MimeData
+                self.status_message.emit("Clipboard cleared")
         self._pending_clipboard_hash = None
 
     def list_secrets(
@@ -279,3 +319,87 @@ class VaultController(QObject):
             if other is not None and hmac.compare_digest(other.encode("utf-8"), needle):
                 return s
         return None
+
+    def copy_text(self, text: str, auto_clear_seconds: int = 30) -> bool:
+        """
+        Copy arbitrary sensitive plaintext (e.g. historical secret) with self-paste
+        suppression, password-manager hint, and auto-scrub.
+        """
+        if not self.is_unlocked:
+            self.status_message.emit("⚠ Vault is locked — unlock first to copy.")
+            return False
+
+        self.secret_copy_starting.emit()
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            md = QMimeData()
+            md.setText(text)
+            md.setData("x-kde-passwordManagerHint", b"secret")
+            clipboard.setMimeData(md)
+            self._schedule_clipboard_auto_clear(text, timeout_ms=auto_clear_seconds * 1000)
+            self.status_message.emit(f"Secret copied to clipboard (auto-clears in {auto_clear_seconds}s) ✓")
+            return True
+        return False
+
+    def get_secret_history(self, item_id: int) -> list[dict]:
+        """Fetch historical plaintext versions for a secret (in-memory only)."""
+        if not self.is_unlocked:
+            self.status_message.emit("⚠ Vault is locked — unlock first to view history.")
+            return []
+        try:
+            return self._service.get_secret_history(item_id)
+        except Exception as exc:
+            logger.error("Failed to fetch history for secret id=%s: %s", item_id, exc)
+            return []
+
+    def restore_secret_history(self, item_id: int, history_id: int) -> bool:
+        """Restore an older password version from history."""
+        if not self.is_unlocked:
+            self.status_message.emit("⚠ Vault is locked.")
+            raise VaultLockedError("Vault is locked.")
+        success = self._service.restore_secret_history(item_id, history_id)
+        if success:
+            self.secrets_changed.emit()
+            self.status_message.emit("Secret restored from history ✓")
+        return success
+
+    def count_secret_history(self, item_id: int) -> int:
+        return self._service.count_secret_history(item_id)
+
+    def export_vault(self, passphrase: str, file_path: str) -> int:
+        """
+        Export unlocked vault into an encrypted .vault backup file.
+        Returns the number of exported items.
+        """
+        if not self.is_unlocked:
+            self.status_message.emit("⚠ Cannot export: Vault is locked.")
+            raise VaultLockedError("Vault is locked.")
+
+        from core.security.vault.backup import export_vault_package
+        data = export_vault_package(self._service, passphrase)
+        with open(file_path, "wb") as f:
+            f.write(data)
+        count = self._service.count()
+        self.status_message.emit(f"Vault exported successfully ({count} items) ✓")
+        return count
+
+    def import_vault(self, passphrase: str, file_path: str) -> dict[str, int]:
+        """
+        Import entries from an encrypted .vault file into the unlocked Vault.
+        Returns a dict with import metrics.
+        """
+        if not self.is_unlocked:
+            self.status_message.emit("⚠ Cannot import: Vault is locked.")
+            raise VaultLockedError("Vault is locked.")
+
+        with open(file_path, "rb") as f:
+            data = f.read()
+
+        from core.security.vault.backup import import_vault_package
+        result = import_vault_package(self._service, data, passphrase)
+        if result["imported_count"] > 0:
+            self.secrets_changed.emit()
+        self.status_message.emit(
+            f"Imported {result['imported_count']} secrets ({result['skipped_count']} skipped) ✓"
+        )
+        return result

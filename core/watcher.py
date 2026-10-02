@@ -15,6 +15,7 @@ from core.clipboard import (
     ClipboardBackend,
     QtClipboardBackend,
 )
+from core.security.auto_tagger import apply_auto_tags
 
 
 # ──────────────────────────────────────────────────────────
@@ -140,6 +141,16 @@ class ClipboardWatcher(QObject):
         )
 
         if event.content_type == "text":
+            # Auto-tag new text items (non-blocking: runs in same thread, sub-ms)
+            apply_auto_tags(item_id, event.content)
+            # Auto-purge: respect the user's "Max history" setting from Settings → General
+            try:
+                from ui.settings._io import load_settings
+                from core.constants import HISTORY_PURGE_CHUNK
+                _max = load_settings().get("max_history", 500)
+                storage.auto_purge_history(max_items=_max, chunk=HISTORY_PURGE_CHUNK)
+            except Exception:
+                pass  # never crash the capture pipeline over a purge failure
             self.new_text_captured.emit(item_id, event.content)
         elif event.content_type == "image":
             self.new_image_captured.emit(item_id, event.content)

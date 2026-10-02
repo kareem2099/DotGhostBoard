@@ -42,6 +42,7 @@ class SecretCard(QFrame):
 
     edit_requested = pyqtSignal(int)
     delete_requested = pyqtSignal(int)
+    history_requested = pyqtSignal(int)
 
     def __init__(
         self,
@@ -59,7 +60,10 @@ class SecretCard(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         self._build_ui()
-        self._controller.vault_locked.connect(self.scrub_revealed)
+        # UniqueConnection prevents duplicate slots if the card is somehow re-wired
+        self._controller.vault_locked.connect(
+            self.scrub_revealed, Qt.ConnectionType.UniqueConnection
+        )
 
     @property
     def summary(self) -> VaultSummary:
@@ -93,6 +97,36 @@ class SecretCard(QFrame):
 
         top_row.addWidget(self.cat_badge)
         top_row.addWidget(self.title_label)
+
+        self.expiry_badge: Optional[QLabel] = None
+        if self._summary.expires_at:
+            self.expiry_badge = QLabel()
+            self.expiry_badge.setObjectName("SecretExpiryBadge")
+            if self._summary.is_expired:
+                self.expiry_badge.setText("⛔ EXPIRED")
+                self.expiry_badge.setToolTip(f"Expired on {self._summary.expires_at[:10]}")
+                self.expiry_badge.setStyleSheet(
+                    "background: #3b1717; color: #ff6b6b; font-size: 10px; font-weight: 700; "
+                    "padding: 2px 6px; border-radius: 4px; border: 1px solid #752929;"
+                )
+            else:
+                days = self._summary.days_remaining
+                if days is not None and days <= 7:
+                    self.expiry_badge.setText(f"⚠️ {days}d left")
+                    self.expiry_badge.setToolTip(f"Expires on {self._summary.expires_at[:10]}")
+                    self.expiry_badge.setStyleSheet(
+                        "background: #3b3017; color: #f0c040; font-size: 10px; font-weight: 700; "
+                        "padding: 2px 6px; border-radius: 4px; border: 1px solid #756029;"
+                    )
+                else:
+                    self.expiry_badge.setText(f"⏳ {self._summary.expires_at[:10]}")
+                    self.expiry_badge.setToolTip(f"Expires on {self._summary.expires_at[:10]}")
+                    self.expiry_badge.setStyleSheet(
+                        "background: #1c2530; color: #64b5f6; font-size: 10px; font-weight: 600; "
+                        "padding: 2px 6px; border-radius: 4px; border: 1px solid #294060;"
+                    )
+            top_row.addWidget(self.expiry_badge)
+
         top_row.addStretch()
         top_row.addWidget(self.date_label)
 
@@ -110,27 +144,37 @@ class SecretCard(QFrame):
 
         self.reveal_btn = QPushButton("👁️ Reveal")
         self.reveal_btn.setObjectName("SecretCardActionBtn")
+        self.reveal_btn.setToolTip("Reveal secret in-memory (hidden automatically on Vault lock or minimize)")
         self.reveal_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reveal_btn.clicked.connect(self._toggle_reveal)
 
         self.copy_btn = QPushButton("📋 Copy")
         self.copy_btn.setObjectName("SecretCardActionBtn")
+        self.copy_btn.setToolTip("Copy secret to clipboard (auto-scrubs from clipboard in 30s)")
         self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy)
 
+        self.history_btn = QPushButton("📜")
+        self.history_btn.setObjectName("SecretCardActionBtn")
+        self.history_btn.setToolTip("View Password History (retains last 3 encrypted versions for rollback)")
+        self.history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.history_btn.clicked.connect(lambda: self.history_requested.emit(self._summary.id))
+
         self.edit_btn = QPushButton("✏️ Edit")
         self.edit_btn.setObjectName("SecretCardActionBtn")
+        self.edit_btn.setToolTip("Edit secret title, payload, category, or expiration date")
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.edit_btn.clicked.connect(lambda: self.edit_requested.emit(self._summary.id))
 
         self.delete_btn = QPushButton("🗑️")
         self.delete_btn.setObjectName("SecretCardActionBtn")
-        self.delete_btn.setToolTip("Delete Secret")
+        self.delete_btn.setToolTip("Delete Secret (also purges any unencrypted plaintext copies from history)")
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_btn.clicked.connect(self._on_delete)
 
         actions_row.addWidget(self.reveal_btn)
         actions_row.addWidget(self.copy_btn)
+        actions_row.addWidget(self.history_btn)
         actions_row.addStretch()
         actions_row.addWidget(self.edit_btn)
         actions_row.addWidget(self.delete_btn)

@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 class SecurityController(QObject):
     """
-    Behavioral controller for session authentication and Eclipse cryptographic actions.
-    Communicates via Qt signals without directly coupling to UI presentation widgets.
+    Behavioral controller for session authentication and Eclipse crypto.
+    Communicates via Qt signals without coupling to UI presentation widgets.
     """
-    lock_state_changed = pyqtSignal(bool)           # is_locked: bool
-    item_security_changed = pyqtSignal(int)          # item_id: int
-    copy_payload_ready = pyqtSignal(int, dict)       # item_id: int, item_payload: dict
-    secret_copy_failed = pyqtSignal(int, str)        # item_id: int, reason: str
+    lock_state_changed = pyqtSignal(bool)
+    item_security_changed = pyqtSignal(int)
+    copy_payload_ready = pyqtSignal(int, dict)
+    secret_copy_failed = pyqtSignal(int, str)
     auto_lock_triggered = pyqtSignal()
     status_message = pyqtSignal(str)
 
@@ -84,7 +84,6 @@ class SecurityController(QObject):
 
         self.lock_state_changed.emit(self.is_locked)
 
-
     def prompt_unlock(self, parent_widget: Optional[QWidget] = None) -> bool:
         """
         Display LockScreen dialog to authenticate user.
@@ -92,6 +91,8 @@ class SecurityController(QObject):
         """
         dlg_parent = parent_widget or self._parent_window
         dlg = LockScreen(setup=False, parent=dlg_parent)
+        from ui.window_utils import prepare_dialog_for_current_workspace
+        prepare_dialog_for_current_workspace(dlg)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             key = dlg.get_key()
             self.set_active_key(key)
@@ -115,14 +116,16 @@ class SecurityController(QObject):
         if self.is_locked:
             unlocked = self.prompt_unlock()
             if not unlocked or self.is_locked:
-                self.secret_copy_failed.emit(item_id, "Session is locked — unlock to copy secret.")
-                self.status_message.emit("⚠ Session is locked — unlock to copy secret.")
+                msg = "Session is locked — unlock to copy secret."
+                self.secret_copy_failed.emit(item_id, msg)
+                self.status_message.emit(f"⚠ {msg}")
                 return
 
         plaintext = self._service.decrypt_clip_for_view(item_id)
         if plaintext is None:
-            self.secret_copy_failed.emit(item_id, "Decryption failed — wrong key or corrupted data.")
-            self.status_message.emit("⚠ Decryption failed — wrong key or corrupted data.")
+            msg = "Decryption failed — wrong key or corrupted data."
+            self.secret_copy_failed.emit(item_id, msg)
+            self.status_message.emit(f"⚠ {msg}")
             return
 
         payload = dict(item_data)
@@ -132,26 +135,32 @@ class SecurityController(QObject):
     def reveal_secret(self, item_id: int) -> Optional[str]:
         """Decrypt a secret item in-memory for preview on card."""
         if self.is_locked:
-            self.status_message.emit("⚠ Session is locked — unlock first to reveal secrets.")
+            self.status_message.emit(
+                "⚠ Session is locked — unlock first to reveal secrets."
+            )
             return None
 
         plaintext = self._service.decrypt_clip_for_view(item_id)
         if plaintext is None:
-            self.status_message.emit("⚠ Decryption failed — wrong key or corrupted data.")
+            self.status_message.emit(
+                "⚠ Decryption failed — wrong key or corrupted data."
+            )
             return None
 
         self.status_message.emit("🔓 Secret revealed  (visible until locked)")
         return plaintext
 
-    def encrypt_item(self, item_id: int, parent_widget: Optional[QWidget] = None) -> bool:
+    def encrypt_item(
+        self, item_id: int, parent_widget: Optional[QWidget] = None
+    ) -> bool:
         """Encrypt an item on demand using the active session key."""
         if self.is_locked:
             dlg_parent = parent_widget or self._parent_window
-            QMessageBox.information(
-                dlg_parent,
-                "Unlock Required",
-                "Please unlock the session first.\nUse the 🔒 button in the top bar.",
+            msg = (
+                "Please unlock the session first.\n"
+                "Use the 🔒 button in the top bar."
             )
+            QMessageBox.information(dlg_parent, "Unlock Required", msg)
             return False
 
         success = self._service.encrypt_clip(item_id)
@@ -179,10 +188,14 @@ class SecurityController(QObject):
             return False
 
         if confirm:
+            msg = (
+                "Permanently decrypt this item?\n"
+                "It will be stored as plain text again."
+            )
             reply = QMessageBox.question(
                 dlg_parent,
                 "Remove Encryption",
-                "Permanently decrypt this item?\nIt will be stored as plain text again.",
+                msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:

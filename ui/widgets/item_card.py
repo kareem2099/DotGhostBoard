@@ -5,11 +5,13 @@ ItemCard widget for DotGhostBoard.
 """
 
 import os
+import json as _json
 import logging
+import webbrowser
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QSizePolicy, QApplication,
-    QGraphicsOpacityEffect, QWidget, QMenu
+    QGraphicsOpacityEffect, QWidget
 )
 from PyQt6.QtGui import QPixmap, QDrag, QPainter, QPen, QColor
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QMimeData, QByteArray
@@ -50,6 +52,7 @@ class ItemCard(QFrame):
     sig_clicked     = pyqtSignal(int, object)
     sig_reset_count = pyqtSignal(int)
     sig_send_to_vault = pyqtSignal(int)
+    sig_smart_action  = pyqtSignal(int, str)   # (item_id, action_name)
 
     # E003: emitted when the card asks Dashboard for the active key
     sig_reveal_requested = pyqtSignal(int)   # (item_id)
@@ -254,6 +257,11 @@ class ItemCard(QFrame):
             content_widget = self._build_content(item)
             if content_widget:
                 main_layout.addWidget(content_widget)
+            # Smart Actions bar — only for text items with detected patterns
+            if item.get("type") == "text" and not self.is_secret:
+                smart_bar = self._build_smart_actions(item.get("content", ""))
+                if smart_bar:
+                    main_layout.addWidget(smart_bar)
 
     # ──────────────────────────────────────────────────────────
     # _build_tags — tag chips + inline tag input
@@ -269,6 +277,114 @@ class ItemCard(QFrame):
             lambda tag: self.sig_tag_removed.emit(self.item_id, tag)
         )
         main_layout.addWidget(self._tag_row)
+
+    # ──────────────────────────────────────────────────────────
+    # Smart Actions bar
+    # ──────────────────────────────────────────────────────────
+    def _build_smart_actions(self, content: str) -> QWidget | None:
+        """
+        Build a compact inline action bar based on detected content patterns.
+        Returns None if no relevant patterns are found (keeps UI clean).
+        """
+        try:
+            from core.security.auto_tagger import detect_tags
+            tags = detect_tags(content)
+        except Exception:
+            return None
+
+        if not tags:
+            return None
+
+        bar = QFrame()
+        bar.setObjectName("SmartActionsBar")
+        bar.setStyleSheet(
+            "QFrame#SmartActionsBar { background: transparent; }"
+        )
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(0, 2, 0, 0)
+        layout.setSpacing(4)
+
+        def _make_btn(label: str, tip: str, slot) -> QPushButton:
+            btn = QPushButton(label)
+            btn.setObjectName("SmartActionBtn")
+            btn.setToolTip(tip)
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton#SmartActionBtn {"
+                "  background: #1a1d20; color: #7ec8e3;"
+                "  border: 1px solid #2a3540; border-radius: 4px;"
+                "  font-size: 10px; padding: 0 7px; font-weight: 600;"
+                "}"
+                "QPushButton#SmartActionBtn:hover {"
+                "  background: #1e2d3a; color: #a8dff0; border-color: #3a5060;"
+                "}"
+                "QPushButton#SmartActionBtn:pressed { background: #142030; }"
+            )
+            btn.clicked.connect(slot)
+            return btn
+
+        added = False
+
+        if "#link" in tags:
+            import re
+            urls = re.findall(r"https?://[^\s'\"<>]{3,}", content)
+            if urls:
+                url = urls[0]
+                layout.addWidget(_make_btn(
+                    "🔗 Open Link", f"Open in browser: {url[:60]}",
+                    lambda _, u=url: webbrowser.open(u)
+                ))
+                added = True
+
+        if "#json" in tags:
+            def _format_json():
+                try:
+                    pretty = _json.dumps(_json.loads(content), indent=2, ensure_ascii=False)
+                    QApplication.clipboard().setText(pretty)
+                except Exception:
+                    pass
+                self.sig_smart_action.emit(self.item_id, "format_json")
+            layout.addWidget(_make_btn("{ } Format JSON", "Format and copy as pretty JSON", _format_json))
+            added = True
+
+        if "#email" in tags:
+            import re
+            emails = re.findall(r"[\w._%+\-]+@[\w.\-]+\.[A-Za-z]{2,}", content)
+            if emails:
+                mail = emails[0]
+                layout.addWidget(_make_btn(
+                    "✉ Compose", f"Open email to {mail}",
+                    lambda _, m=mail: webbrowser.open(f"mailto:{m}")
+                ))
+                added = True
+
+        if "#ip" in tags:
+            import re
+            ips = re.findall(
+                r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
+                r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b", content
+            )
+            if ips:
+                ip = ips[0]
+                layout.addWidget(_make_btn(
+                    "📡 Copy IP", f"Copy IP address: {ip}",
+                    lambda _, i=ip: QApplication.clipboard().setText(i)
+                ))
+                added = True
+
+        if "#secret" in tags:
+            layout.addWidget(_make_btn(
+                "🛡 → Vault", "Move this secret to The Vault (encrypted)",
+                lambda: self.sig_send_to_vault.emit(self.item_id)
+            ))
+            added = True
+
+        if not added:
+            return None
+
+        layout.addStretch()
+        return bar
 
     # ──────────────────────────────────────────────────────────
     # E003 — Secret overlay (locked state)
@@ -466,7 +582,9 @@ class ItemCard(QFrame):
     def _on_image_click(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             from ui.image_viewer import ImageViewer
+            from ui.window_utils import prepare_dialog_for_current_workspace
             viewer = ImageViewer(self._file_path, self)
+            prepare_dialog_for_current_workspace(viewer)
             viewer.exec()
 
     # ──────────────────────────────────────────────────────────

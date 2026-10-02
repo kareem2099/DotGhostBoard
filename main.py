@@ -114,12 +114,28 @@ LOCK_FILE_PATH = os.path.join(_runtime_dir, f"dotghostboard-{_uid}-{_profile_has
 def main():
     _cleanup_old_appimage()
 
+    if any(arg in sys.argv for arg in ("--help", "-h")):
+        print(
+            "DotGhostBoard — Modern, privacy-focused Linux clipboard manager\n\n"
+            "Usage: dotghostboard [OPTIONS]\n\n"
+            "Options:\n"
+            "  -h, --help                 Show this help message and exit\n"
+            "  -s, --spotlight            Show or toggle Spotlight search overlay\n"
+            "  -t, --toggle               Toggle dashboard visibility\n"
+            "  --show                     Show dashboard window\n"
+            "  -m, --minimized, --tray,   Start minimized to system tray\n"
+            "      --startup, --background\n\n"
+            "Environment Variables:\n"
+            "  DOTGHOST_HOME              Custom profile/config directory\n"
+            "  DOTGHOST_NO_EWMH=1         Disable EWMH window migration across workspaces\n"
+        )
+        sys.exit(0)
+
     # ── Startup flags ──────────────────────────────────────────────────────
     startup_flags = ("--startup", "--background", "--minimized", "--tray", "-m")
     is_startup_mode = any(arg in sys.argv for arg in startup_flags)
     is_spotlight_mode = any(arg in sys.argv for arg in ("--spotlight", "-s", "spotlight"))
     is_toggle_mode = any(arg in sys.argv for arg in ("--toggle", "-t", "toggle"))
-    is_show_mode = any(arg in sys.argv for arg in ("--show", "show"))
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -128,6 +144,16 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("DotGhostBoard")
     app.setQuitOnLastWindowClosed(False)
+
+    # ── Global theme ──────────────────────────────────────────────────────
+    from core.paths import resource_path
+    _qss_file = resource_path("ui", "ghost.qss")
+    if os.path.exists(_qss_file):
+        try:
+            with open(_qss_file, "r", encoding="utf-8") as _f:
+                app.setStyleSheet(_f.read())
+        except OSError:
+            pass
 
     # ── Single Instance Guard: QLockFile authority + QLocalServer IPC ─────
     lock_file = QLockFile(LOCK_FILE_PATH)
@@ -190,6 +216,10 @@ def main():
         from core.autostart import migrate_legacy_entries
         migrate_legacy_entries()
 
+        # Initialize storage database schema
+        from core.storage import init_db
+        init_db()
+
         # ── Eclipse: startup lock ──────────────────────────────────────────
         from core.crypto    import has_master_password
         from ui.lock_screen import LockScreen
@@ -203,7 +233,9 @@ def main():
                 # Start dashboard in locked state; unlocking happens on demand.
                 startup_locked = True
             else:
+                from ui.window_utils import prepare_dialog_for_current_workspace
                 lock   = LockScreen(setup=False)
+                prepare_dialog_for_current_workspace(lock)
                 result = lock.exec()
                 if result != LockScreen.DialogCode.Accepted:
                     sys.exit(0)   # Locked out → quit gracefully (finally block runs)

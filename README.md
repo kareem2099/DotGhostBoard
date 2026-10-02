@@ -2,12 +2,12 @@
 
 > Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
 
-![Version](https://img.shields.io/badge/version-v2.0.0-238636?style=flat-square&labelColor=0f0f0f)
-![Codename](https://img.shields.io/badge/codename-Cerberus-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v2.1.0-238636?style=flat-square&labelColor=0f0f0f)
+![Codename](https://img.shields.io/badge/codename-Leviathan-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-470%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-522%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -35,6 +35,7 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Clear history** — Wipe unpinned items in one click (pinned items always stay)
 - **System tray** — Lives quietly in your tray, always available
 - **Global Shortcuts** — `Ctrl+Alt+V` toggles the dashboard from anywhere; `Ctrl+Alt+Space` opens the floating Spotlight search overlay (GNOME & XFCE native)
+- **Tiling Window Manager Support (EWMH)** — Seamless cross-workspace migration upon summon (`Ctrl+Alt+V`, `dotghostboard --toggle`) on Qtile, Openbox, and EWMH-compliant window managers; migrates to your active workspace and focuses without hiding
 - **Spotlight Quick Search** — Floating, instant clipboard search overlay (`Ctrl+Alt+Space`); search, navigate with arrows, copy, and close instantly with zero window flicker; protected by Eclipse Master Password
 - **In-Dashboard Search** — `Ctrl+F` instantly focuses and selects the search bar within the main dashboard
 - **App icon** — Auto-generated neon ghost icon via `scripts/generate_icon.py`
@@ -84,8 +85,20 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **REST API** — Token-protected local-network API for history, item pushing, and pairing workflows.
 - **CLI Companion** — `dotghost push` and `dotghost pop` from your terminal for seamless shell workflow.
 - **Secure Device Pairing** — PIN-protected handshakes to ensure unauthorized devices can't intercept your sync data.
+- **The Vault Subsystem (`Ctrl+Shift+V`)** — Dedicated encrypted drawer panel (`vault.db`) with envelope encryption (domain-separated KEK + per-database DEK), masked secrets, search filtering, category pills, constant-time deduplication, and auto-scrubbing. Features an expanded 380px drawer with a clean two-row header and an informative Empty State Tips Card.
+- **Zero-Log Secret Detector** — Shannon entropy analysis & regex heuristics detecting API keys, tokens, and passwords on copy, offering one-click "Send to Vault" and auto-scrub actions without leaving plaintext in history.
+- **Desktop Notifications** — Native FreeDesktop desktop notifications (`notify-send`) with interactive click-to-summon callbacks.
 - **Copy Count Badge** — Each card shows a live pill badge (`×2`, `×5`, `×10+`) tracking how many times an item has been copied. Color escalates from teal → orange → 🔥 as the count grows.
 - **Auto-Pin Suggestion** — At `×5` copies a non-blocking toast appears suggesting you pin the item. At `×10` the item is **auto-pinned silently** so frequently-used text is always protected from deletion.
+- **Smart Auto-Tagging (Leviathan)** — Zero-overhead rules engine automatically categorizes incoming clips (`#link`, `#code`, `#json`, `#secret`, `#email`, `#ip`, `#phone`, `#path`, `#hash`) using local regex heuristics.
+- **Contextual Smart Actions** — Inline card actions tailored to content type: `🔗 Open Link` in browser, `{ } Format JSON` with indentation, `✉ Compose` email, `📡 Copy IP`, or `🛡 → Vault` to securely encrypt credentials.
+- **Built-in Vault Password & Token Generator** — Cryptographically strong password/token generator in Add/Edit Secret dialog (`⚡ Generate`) with customizable length, symbols, and live Shannon entropy strength bar.
+- **Vault Password History** — Retains last 3 previous encrypted password versions (`vault_item_history`) with single-click reveal, copy, or revert via dedicated `📜` history modal dialog.
+- **Vault Encrypted Export & Import (`.vault`)** — Standalone AES-256-GCM encrypted backup packages protected by high-iteration PBKDF2-HMAC-SHA256 (100,000 rounds); exports all secrets, 3-version history, and expiry dates with zero disk plaintext leaks and intelligent duplicate resolution.
+- **Secret Expiration Dates & Status Badges** — Optional expiration dates on vault items (`30d`, `90d`, `180d`, `1y`, or custom date picker) with live visual card status badges (`⛔ EXPIRED`, `⚠️ Xd left`, `⏳ YYYY-MM-DD`).
+- **Vault Plaintext History Sweep** — Deleting or scrubbing a secret from The Vault automatically purges any lingering unencrypted plaintext copies from clipboard history.
+- **Dynamic Auto-Purge History** — Configurable history threshold dynamically enforced from Settings, auto-purging oldest unpinned items while respecting pin immunity.
+- **Unified Password Input & Masking (`PasswordInputWidget`)** — Reusable password input with integrated `👁️ / 🙈` eye toggle, unified design system, and compact, balanced spacing across both App Session Lock and Vault Unlock screens.
 - **Modern Typography & Aesthetic** — Clean sans-serif UI typography (`Inter` / `Noto Sans`), muted dark-slate theme, refined card padding, compact 26×26 action buttons, and customizable shortcuts button in Settings.
 
 **Native Desktop Integration:**
@@ -105,6 +118,8 @@ DotGhostBoard/
 │   ├── config.py                    # Runtime configuration helpers
 │   ├── paths.py                     # XDG path resolution
 │   ├── crypto.py                    # AES-256-GCM + HKDF domain-separated key derivation
+│   ├── notifications.py             # FreeDesktop notification dispatcher (action callbacks)
+│   ├── window_manager.py            # Pure ctypes EWMH X11 window management
 │   ├── watcher.py                   # Clipboard Orchestrator → Backend + Pipeline
 │   ├── shortcuts.py                 # Global desktop shortcut manager (GNOME/XFCE)
 │   ├── autostart.py                 # Modular XDG autostart desktop entry manager
@@ -121,7 +136,8 @@ DotGhostBoard/
 │   │   ├── backend.py               # ClipboardBackend Protocol
 │   │   └── backends/qt_backend.py   # Qt polling backend
 │   ├── security/                    # Security domain layer
-│   │   ├── detector.py              # SecretDetector (regex heuristics)
+│   │   ├── detector.py              # SecretDetector (regex & entropy heuristics)
+│   │   ├── auto_tagger.py           # Rules-based auto-tagging engine (Leviathan)
 │   │   └── vault/                   # Vault: isolated vault.db + DEK envelope encryption
 │   ├── services/                    # Business logic layer (Qt-free)
 │   │   ├── history_service.py       # Clipboard item queries, pins, tags, copy thresholds
@@ -139,7 +155,9 @@ DotGhostBoard/
 │           ├── peers.py             # Trusted device credentials
 │           └── stats.py             # Header metrics & copy counts
 ├── ui/
-│   ├── dashboard.py                 # Window shell + signal bus (Orchestrator)
+│   ├── dashboard.py                 # Window shell + signal bus (Orchestrator ≤ 500 LOC)
+│   ├── dashboard_compat.py          # DashboardCompatibilityMixin architectural shim
+│   ├── window_utils.py              # EWMH cross-workspace migration & dialog modality
 │   ├── components/                  # Isolated UI layout components
 │   │   ├── __init__.py              # Component exports
 │   │   ├── sidebar.py               # SidebarWidget (collections & devices layout)
@@ -151,13 +169,24 @@ DotGhostBoard/
 │   │   ├── history_controller.py    # Card lifecycle, pagination, search, pin/copy/delete
 │   │   ├── collection_controller.py # Sidebar, drag-drop, collection CRUD
 │   │   ├── security_controller.py   # Lock/unlock, secret copy, Eclipse encrypt/decrypt
-│   │   └── sync_controller.py       # Peer pairing, device list, broadcast
+│   │   ├── sync_controller.py       # Peer pairing, device list, broadcast
+│   │   └── update_controller.py     # Update check worker and notification trigger
+│   ├── vault/                       # The Vault UI subsystem
+│   │   ├── vault_panel.py           # Slide-out Vault drawer widget (two-row header & tips card)
+│   │   ├── vault_controller.py      # Vault lifecycle & duplicate detector
+│   │   ├── secret_card.py           # Masked secret card with reveal/copy/scrub
+│   │   ├── secret_dialog.py         # Add/Edit secret modal
+│   │   ├── history_dialog.py        # Password history viewer & version revert modal
+│   │   ├── backup_dialog.py         # Passphrase modal for encrypted export & import (.vault)
+│   │   ├── unlock_dialog.py         # Vault master password unlock dialog
+│   │   └── send_to_vault.py         # Bridge from clipboard cards to Vault
 │   ├── widgets/                     # Modular widget package
 │   │   ├── item_card.py             # Full clipboard card widget
 │   │   ├── stats_header.py          # Header stats bar
 │   │   ├── pin_toast.py             # Non-blocking pin suggestion toast
 │   │   ├── tag_chip.py              # Tag chip widget
-│   │   └── tag_input.py             # Inline tag autocomplete input
+│   │   ├── tag_input.py             # Inline tag autocomplete input
+│   │   └── password_input.py        # Composite PasswordInputWidget with eye visibility toggle
 │   ├── spotlight.py                 # Floating Spotlight quick search overlay
 │   ├── settings/                    # Settings package (decomposed)
 │   │   ├── __init__.py              # Backward-compatible facade
@@ -168,6 +197,7 @@ DotGhostBoard/
 │   ├── lock_screen.py               # Session lock screen
 │   ├── pairing_dialog.py            # Device pairing UI (Nexus)
 │   ├── updater_dialog.py            # GUI for GitHub updates
+│   ├── update_log_screen.py         # Update installation log & process relauncher
 │   └── ghost.qss                    # Dark Neon theme stylesheet
 ├── cli/
 │   └── dotghost.py              # Command-line companion (push, pop, spotlight, toggle)
@@ -358,6 +388,31 @@ sudo apt remove dotghostboard
 | Minimize | Click X — the app stays alive in the system tray |
 | Quit | Right-click the tray icon → Quit |
 
+### 🛡️ The Vault & Encrypted Backups (`.vault`)
+
+The Vault (`Ctrl+Shift+V`) is a physically isolated, encrypted credential storage engine (`vault.db`).
+
+* **Envelope Encryption**: Secrets are encrypted with a per-database Data Encryption Key (DEK), wrapped with a domain-separated Key Encryption Key (KEK) derived from your Master Password via HKDF-SHA256.
+* **Streamlined Two-Row Drawer**: Slide-out drawer with dedicated title/badge status row and independent action toolbar (`+ Add Secret`, Lock/Unlock, Export, Import, Tips).
+* **Empty State Onboarding**: Informative tips card explaining quick shortcuts (`Ctrl+Shift+V`), 30-second clipboard scrubbing, 3-version history, and expiration monitoring.
+* **Encrypted Export (`.vault`)**: Clicking `📤 Export` packages all secrets, 3-version password histories, categories, timestamps, and expiration dates into a standalone binary file.
+  - **Cipher**: `AES-256-GCM` (authenticated encryption with 96-bit random nonce and 128-bit authentication tag).
+  - **Key Derivation**: `PBKDF2-HMAC-SHA256` with **100,000 rounds** and an independent, per-backup 16-byte random salt.
+  - **Zero Plaintext**: Absolutely zero unencrypted text is written to disk. The resulting `.vault` package is safe to store in the cloud, on USB drives, or transfer across systems.
+  - **Passphrase Security**: Protected by an independent passphrase chosen at export. Passphrases are never stored; backups cannot be decrypted if the passphrase is forgotten.
+* **Authenticated Import**: Clicking `📥 Import` prompts for the backup passphrase, verifies the package's cryptographic integrity tag, and imports secrets into your Vault while automatically skipping exact duplicates.
+
+### Window Manager & Multi-Workspace Compatibility
+
+DotGhostBoard automatically adheres to the **Extended Window Manager Hints (EWMH)** specification under X11. When invoked via global shortcut (`Ctrl+Alt+V`) or Spotlight (`Ctrl+Alt+Space`) on another virtual desktop or workspace, the window and modal dialogs seamlessly migrate to your active workspace (verified against **Qtile** and **Openbox**; should work on any EWMH-compliant tiling WM such as i3 or bspwm, but not yet independently tested on those).
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DOTGHOST_HOME` | `~/.config/dotghostboard` | Override the custom configuration and database directory. |
+| `DOTGHOST_NO_EWMH` | `0` | Set to `1` to disable EWMH workspace migration and leave window placement strictly to your window manager's default placement rules. |
+
 ---
 
 ## Running Tests
@@ -368,21 +423,23 @@ python3 -m pytest
 
 Expected output:
 ```
-tests/test_api.py .....                                                  [  2%]
-tests/test_autostart.py .................                                [ 10%]
-tests/test_eclipse.py .................................                  [ 25%]
-tests/test_ipc_spotlight.py ..........                                   [ 29%]
-tests/test_media.py ...........................                          [ 41%]
-tests/test_runtime_dir.py ........                                       [ 45%]
-tests/test_settings.py ............                                      [ 50%]
-tests/test_storage.py ................................                   [ 65%]
-tests/test_storage_v130.py ............................................. [ 85%]
-....                                                                     [ 87%]
-tests/test_thumbnailer.py .........                                      [ 91%]
-tests/test_updater_core.py ...........                                   [ 96%]
-tests/test_v155_polish.py .......                                        [100%]
+tests/test_api.py .....                                                  [  1%]
+tests/test_autostart.py .................                                [  3%]
+tests/test_auto_tagger.py ...........                                    [  5%]
+tests/test_eclipse.py .................................                  [ 11%]
+tests/test_ipc_spotlight.py ..........                                   [ 13%]
+tests/test_media.py ...........................                          [ 19%]
+tests/test_password_generator.py ......                                  [ 20%]
+tests/test_storage.py ................................                   [ 26%]
+tests/test_vault.py ........                                             [ 27%]
+tests/test_vault_history.py .....                                        [ 28%]
+tests/test_vault_ui.py ................................................. [ 38%]
+tests/test_watcher_backend_integration.py .......                        [ 40%]
+tests/test_window_manager.py ...................                          [ 44%]
+....                                                                     [ 96%]
+tests/test_updater_core.py .................................             [100%]
 
-220 passed
+511 passed
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -409,8 +466,16 @@ tests/test_v155_polish.py .......                                        [100%]
 | v1.5.7 | Nexus Hotfix V | ✅ Released | CI headless stability, packaging Python dependencies, CLI enhancements, 220 tests |
 | v1.6.0 | Phantom | ✅ Released | v2.x Architecture Foundation: Controllers, Services, Repositories, Pipeline (306 tests) |
 | v2.0.0 | Cerberus | ✅ Released | The Vault UI, Zero-Log Secret Detector, FreeDesktop Notifications, 2.0.0 Icon Architecture (470 tests) |
+| v2.0.1 | Cerberus | ✅ Released | Tiling Window Manager EWMH Migration (Qtile/Openbox), Workspace Toggle Fix, Vault & Notification Hardening (489 tests) |
+| v2.1.0 | Leviathan | ✅ Released | Smart Auto-Tagging, Contextual Card Actions, Vault Generator, Password History, Vault Export/Import, Secret Expiry, Vault Sweep, Auto-Purge (522 tests) |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
+
+---
+
+## Acknowledgments
+
+Special thanks to **[@knodalyte](https://github.com/knodalyte)** for reporting GitHub Issue [#1](https://github.com/kareem2099/DotGhostBoard/issues/1) ("[BUG] does not behave well under tiling window manager") and providing valuable diagnostic feedback that enabled native EWMH cross-workspace migration.
 
 ---
 

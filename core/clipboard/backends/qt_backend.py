@@ -74,13 +74,20 @@ class QtClipboardBackend(QObject):
                 hint = bytes(mime.data("x-kde-passwordManagerHint")).decode("utf-8", errors="ignore").strip().lower()
                 if hint == "secret":
                     self._is_self_paste = False
+                    if mime.hasText():
+                        self._last_content = mime.text().strip()
                     return
 
             if self._is_self_paste:
-                self._is_self_paste = False
                 if mime.hasText():
-                    self._last_content = mime.text().strip()
-                elif mime.hasUrls():
+                    current = mime.text().strip()
+                    if current == self._last_content:
+                        return  # Pending clipboard change hasn't arrived yet
+                    self._is_self_paste = False
+                    self._last_content = current
+                    return
+                self._is_self_paste = False
+                if mime.hasUrls():
                     urls = mime.urls()
                     if urls:
                         self._last_content = urls[0].toLocalFile()

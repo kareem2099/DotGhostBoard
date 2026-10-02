@@ -524,6 +524,8 @@ class HistoryController(QObject):
         )
         msg.setDefaultButton(QMessageBox.StandardButton.No)
 
+        from ui.window_utils import prepare_dialog_for_current_workspace
+        prepare_dialog_for_current_workspace(msg)
         if msg.exec() != QMessageBox.StandardButton.Yes:
             return False
 
@@ -533,6 +535,7 @@ class HistoryController(QObject):
             purge_fn=self._service.delete_unpinned_items,
             parent=parent_widget,
         )
+        prepare_dialog_for_current_workspace(dialog)
         dialog.exec()
 
         for iid in [iid for iid, c in self._cards.items() if not c.is_pinned]:

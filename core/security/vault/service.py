@@ -17,7 +17,7 @@ from core.crypto import (
     secure_zero,
 )
 from core.security.vault.repository import VaultRepository
-from core.security.vault.models import VaultItem, VaultSummary
+from core.security.vault.models import VaultSummary
 
 
 class VaultLockedError(RuntimeError):
@@ -129,11 +129,22 @@ class VaultService:
             raise VaultLockedError("Vault is locked. Unlock before accessing secrets.")
         return bytes(self._vault_dek)
 
-    def add_secret(self, title: str, secret_text: str, category: str = "generic") -> int:
+    def add_secret(
+        self,
+        title: str,
+        secret_text: str,
+        category: str = "generic",
+        expires_at: Optional[str] = None,
+    ) -> int:
         """Encrypt and persist secret text to vault.db."""
         key = self._require_unlocked()
         ciphertext = encrypt(secret_text, key)
-        return self._repo.add_item(title=title, ciphertext=ciphertext, category=category)
+        return self._repo.add_item(
+            title=title,
+            ciphertext=ciphertext,
+            category=category,
+            expires_at=expires_at,
+        )
 
     def get_secret(self, item_id: int) -> Optional[str]:
         """Fetch and decrypt secret payload."""
@@ -149,16 +160,64 @@ class VaultService:
         title: Optional[str] = None,
         secret_text: Optional[str] = None,
         category: Optional[str] = None,
+        save_history: bool = True,
+        expires_at: Optional[str] = None,
     ) -> bool:
-        """Update an existing secret."""
+        """Update an existing secret, preserving previous ciphertext in history if secret_text changes."""
         key = self._require_unlocked()
-        ciphertext = encrypt(secret_text, key) if secret_text is not None else None
+        ciphertext = None
+        if secret_text is not None:
+            if save_history:
+                existing_item = self._repo.get_item(item_id)
+                if existing_item and existing_item.ciphertext:
+                    try:
+                        existing_plain = decrypt(existing_item.ciphertext, key)
+                        if existing_plain != secret_text:
+                            self._repo.add_history_entry(item_id, existing_item.ciphertext, max_entries=3)
+                    except Exception:
+                        pass
+            ciphertext = encrypt(secret_text, key)
+
         return self._repo.update_item(
             item_id=item_id,
             title=title,
             ciphertext=ciphertext,
             category=category,
+            expires_at=expires_at,
         )
+
+    def get_secret_history(self, item_id: int, limit: int = 3) -> list[dict]:
+        """Fetch and decrypt historical secret versions for an item."""
+        key = self._require_unlocked()
+        records = self._repo.get_history(item_id, limit=limit)
+        results = []
+        for r in records:
+            try:
+                plaintext = decrypt(r["ciphertext"], key)
+                results.append({
+                    "id": r["id"],
+                    "vault_item_id": r["vault_item_id"],
+                    "plaintext": plaintext,
+                    "created_at": r["created_at"],
+                })
+            except Exception:
+                pass
+        return results
+
+    def restore_secret_history(self, item_id: int, history_id: int) -> bool:
+        """Restore a historical secret value as the current active secret."""
+        key = self._require_unlocked()
+        records = self._repo.get_history(item_id, limit=10)
+        target = next((r for r in records if r["id"] == history_id), None)
+        if not target:
+            return False
+        plaintext = decrypt(target["ciphertext"], key)
+        # Update with save_history=True so the replaced current secret is preserved
+        return self.update_secret(item_id, secret_text=plaintext, save_history=True)
+
+    def count_secret_history(self, item_id: int) -> int:
+        """Return count of historical versions."""
+        return self._repo.count_history(item_id)
 
     def delete_secret(self, item_id: int) -> bool:
         """Delete secret from vault.db."""

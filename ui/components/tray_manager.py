@@ -23,6 +23,7 @@ class DashboardTrayManager(QObject):
     """
 
     toggle_visibility_requested = pyqtSignal()
+    show_requested = pyqtSignal()  # Always shows (never hides) — for notification callbacks
     pause_monitoring_requested = pyqtSignal()
     resume_monitoring_requested = pyqtSignal()
     open_settings_requested = pyqtSignal()
@@ -184,7 +185,9 @@ class DashboardTrayManager(QObject):
             else "general"
         )
         icon_path = get_default_icon_path(cat)
-        callback = action_callback or self.toggle_visibility_requested.emit
+        # Use show_requested (not toggle) so clicking a notification always
+        # brings the window up — never accidentally hides it.
+        callback = action_callback or self.show_requested.emit
 
         sent = send_desktop_notification(
             title=title,

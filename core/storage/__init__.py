@@ -47,6 +47,7 @@ from .repositories.clips import (
     decrypt_all_secret_items,
     reencrypt_all_secret_items,
     clean_old_captures,
+    auto_purge_history,
 )
 
 from .repositories.stats import (
@@ -124,6 +125,7 @@ __all__ = [
     "decrypt_all_secret_items",
     "reencrypt_all_secret_items",
     "clean_old_captures",
+    "auto_purge_history",
     # Stats
     "get_today_stats",
     "get_stats",

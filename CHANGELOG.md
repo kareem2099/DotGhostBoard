@@ -7,6 +7,236 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.0] — 2026-10-02 — *Leviathan (Smart Auto-Tagging, Contextual Actions, Vault Backup & Expiry)*
+
+> **Codename:** Leviathan — Power-User Productivity & Vault Intelligence Release
+>
+> This release introduces rules-based Smart Auto-Tagging (`#link`, `#code`, `#json`, `#secret`, `#email`, `#ip`, `#phone`, `#path`, `#hash`) using local regex and entropy heuristics with zero NLP/AI runtime overhead, contextual inline Smart Action buttons directly on item cards (Open Link, Format Pretty JSON, Compose Email, Copy IP, Send to Vault), an integrated secure Password & Token Generator within The Vault dialog featuring Shannon entropy bit calculation and visual strength meters, standalone AES-256-GCM encrypted Vault backup/restore (`.vault` format) with 100k-round PBKDF2 key derivation, Secret Expiry dates with visual countdown and expired status badges, cross-subsystem Vault-to-Dashboard history sweep to eliminate lingering plaintext duplicates, robust bracket and special-character preservation for complex passwords, and dynamic user-configured auto-purge history management. Automated test suite expanded to 522 passing tests.
+
+### Added — Smart Auto-Tagging Engine (`core/security/auto_tagger.py`, `core/watcher.py`, `tests/test_auto_tagger.py`)
+
+- **Rules-Based Auto-Tagging Engine (`core/security/auto_tagger.py`)**:
+  - Pure local regex and Shannon entropy heuristics that automatically classify clipboard text upon capture without external dependencies or heavy background processes.
+  - Automatically identifies and applies contextual tags:
+    - `#link` — HTTP, HTTPS, and FTP URLs.
+    - `#code` — Multi-line code snippets, programming language keywords (`def`, `class`, `function`, `public static`, `async/await`, etc.), and dense syntax structures.
+    - `#json` — Valid JSON objects or arrays.
+    - `#secret` — High-entropy credentials, API keys, JWT tokens, AWS access keys, GitHub PATs, and PEM private keys.
+    - `#email` — Standard RFC email addresses.
+    - `#ip` — IPv4 and IPv6 addresses.
+    - `#phone` — Formatted telephone and mobile numbers.
+    - `#path` — Unix absolute and Windows filesystem paths.
+    - `#hash` — Cryptographic digests (MD5, SHA-1, SHA-256).
+- **Clipboard Ingestion Pipeline Integration (`core/watcher.py`)**:
+  - Auto-detected tags are seamlessly merged with user-defined tags during clipboard ingestion, enabling instant tag filtering and search matching right from the first copy.
+- **Dedicated Test Suite (`tests/test_auto_tagger.py`)**:
+  - 11 comprehensive unit tests covering all pattern heuristics, error handling, and storage persistence.
+
+### Added — Contextual Smart Actions on Cards (`ui/widgets/item_card.py`)
+
+- **Inline Smart Actions Toolbar**:
+  - Contextual, non-intrusive action buttons appear dynamically beneath card content when recognizable patterns are present:
+    - **🔗 Open Link**: Instantly opens detected URLs in the default desktop browser.
+    - **{ } Format JSON**: Parses and re-formats minified JSON into indented, human-readable JSON copied directly back to the clipboard.
+    - **✉ Compose**: Launches the system mail client with prefilled `mailto:` target.
+    - **📡 Copy IP**: Extracts and copies clean IP address from noisy logs or text.
+    - **🛡 → Vault**: One-click transition for detected credentials or high-entropy tokens to be securely stored into The Vault with envelope encryption.
+- **Card Signal Routing (`sig_smart_action`)**: Emits structured action signals for telemetry and UI status responses.
+
+### Added — Built-in Vault Password & Token Generator (`ui/vault/secret_dialog.py`, `tests/test_password_generator.py`)
+
+- **Integrated Generator Modal (`ui/vault/secret_dialog.py`)**:
+  - Added a dedicated `⚡ Generate` button and expandable generator section in the Add / Edit Secret dialog.
+  - Generates cryptographically secure passwords or API tokens using Python's `secrets` CSPRNG.
+  - Configurable length (8–64 chars), character pool toggles (lowercase, uppercase, digits, symbols), and token modes (`hex`, `uuid4`, `base64`, `bearer`, `urlsafe`).
+- **Real-Time Entropy & Strength Meter**:
+  - Real-time calculation of Shannon entropy bits (`_entropy_bits`).
+  - Visual color-coded strength bar (Weak, Moderate, Strong, Fort Knox) with instantaneous dynamic feedback.
+- **Unit Test Coverage (`tests/test_password_generator.py`)**:
+  - 6 unit tests covering CSPRNG distribution, format validation, entropy calculations, and fallback behaviors.
+
+### Added — Vault Password History & Safe Revert (`core/security/vault/`, `ui/vault/history_dialog.py`, `tests/test_vault_history.py`)
+
+- **Automated Encrypted History Retention (`core/security/vault/repository.py`, `service.py`)**:
+  - Automatically captures and retains up to 3 previous encrypted ciphertext versions (`vault_item_history`) whenever a secret payload is updated or rotated.
+  - Strict FIFO pruning prevents unbounded database growth while ensuring the last 3 password states are preserved.
+  - Zero-exposure: historical secrets remain fully encrypted with the per-database DEK envelope and are decrypted in-memory only upon explicit user request.
+  - Cascading cleanup: deleting a Vault item permanently purges its associated history records.
+- **Dedicated Password History Dialog (`ui/vault/history_dialog.py`)**:
+  - Accessed via the `📜` history button on any `SecretCard`.
+  - Displays version chronological index, creation timestamp, and masked (`••••••••`) payload.
+  - Features in-memory `👁️ Reveal` / `🙈 Hide`, safe `📋 Copy` (with automatic 30s clipboard scrubbing), and a single-click `↺ Revert to this` button.
+  - Reverting restores an older password as the active secret while archiving the current value into history, preventing accidental overwrites.
+  - Memory-safe: immediately scrubs all plaintext buffers from memory when closed or when the Vault locks.
+- **Comprehensive Test Suite (`tests/test_vault_history.py`)**:
+  - 5 tests validating history capping, FIFO pruning, cascade deletion, service lifecycle, locked error protection, and UI dialog interactions.
+
+### Added — Vault Encrypted Export & Import (.vault) (`core/security/vault/backup.py`, `ui/vault/vault_panel.py`, `ui/vault/vault_controller.py`, `tests/test_vault_backup.py`)
+
+- **Cryptographic Backup Engine (`core/security/vault/backup.py`)**:
+  - Standalone `.vault` binary package format: `b"DGBV" + version (1B) + salt (16B) + nonce (12B) + ciphertext + GCM auth tag (16B)`.
+  - AES-256-GCM authenticated encryption paired with PBKDF2-HMAC-SHA256 key derivation (100,000 iterations) using an independent per-export salt.
+  - Packages all secrets, categories, creation/updated timestamps, full 3-version historical entries, and expiration dates.
+  - Zero disk leaks: encryption and decryption occur entirely in memory before writing to disk or populating the database.
+- **Import & Duplicate Resolution Engine**:
+  - Validates magic header, format version, and cryptographic authenticity; rejects wrong passphrases or truncated files cleanly without corrupting the active database.
+  - Built-in duplicate skipping policy (`overwrite_existing=False`) preventing duplicate credential proliferation during backup restores.
+- **Drawer Panel Export & Import Tooling (`ui/vault/vault_panel.py`, `ui/vault/vault_controller.py`)**:
+  - Added dedicated `📤` (Export) and `📥` (Import) tool buttons directly in The Vault drawer header bar.
+  - Password modal dialogs to capture and confirm backup passphrases with clear success and error feedback.
+- **Dedicated Test Coverage (`tests/test_vault_backup.py`)**:
+  - 6 unit tests covering format validation, plaintext confidentiality, roundtrip restore, corrupted file rejection, wrong passphrase handling, and duplicate skipping.
+
+### Added — Secret Expiry Date & Visual Warning Badges (`core/security/vault/models.py`, `database.py`, `ui/vault/secret_dialog.py`, `secret_card.py`, `tests/test_vault_expiry.py`)
+
+- **Database Expiration Column & Dynamic Migration (`core/security/vault/database.py`, `repository.py`)**:
+  - Added `expires_at TIMESTAMP` to the `vault_items` table with backward-compatible dynamic migration in `init_vault_db`.
+  - Query filtering and storage persistence across repository and service layers.
+- **Expiry Computing Models (`core/security/vault/models.py`)**:
+  - Added dynamic `@property is_expired` and `@property days_remaining` to both `VaultItem` and `VaultSummary` models for clean state checks.
+- **SecretDialog Expiry Controls (`ui/vault/secret_dialog.py`)**:
+  - Added optional `[ ] Set Expiration Date` checkbox with animated expand/collapse container.
+  - Preset duration dropdown (`30 Days`, `90 Days`, `180 Days`, `1 Year`, `Custom...`) paired with an interactive `QDateEdit` calendar picker.
+  - Backward-compatible `SecretData` tuple unpack allowing existing callers and tests unpacking 3 elements (`title, payload, cat = dlg.get_data()`) to function seamlessly without modification while exposing `.expires_at`.
+- **SecretCard Visual Status Badges (`ui/vault/secret_card.py`)**:
+  - Dynamic pill badges rendered in the top header row of each secret card:
+    - `⛔ EXPIRED` — Red badge with tooltip indicating expiration date.
+    - `⚠️ Xd left` — Yellow warning badge when expiration is within 7 days.
+    - `⏳ YYYY-MM-DD` — Blue pill badge for long-term active secrets.
+- **Dedicated Test Suite (`tests/test_vault_expiry.py`)**:
+  - 5 tests covering property calculations, database persistence, dialog presets, custom dates, tuple unpacking, and visual badge rendering.
+
+### Added — Vault-to-Dashboard History Sweep (`ui/vault/vault_controller.py`, `ui/vault/wiring.py`)
+
+- **Coordinated Plaintext Purge**:
+  - When a secret is deleted from The Vault, or scrubbed after transmission, any matching plaintext duplicates lingering in the unencrypted dashboard history are automatically swept and removed from the database and UI.
+- **Safe Signal Decoupling**:
+  - Emits `history_item_removed` signal across `ui/vault/wiring.py` to trigger UI card disposal in `HistoryController` without tight coupling between Vault and History subsystems.
+
+### Fixed — Bracket & Special Character Password Preservation (`core/storage/repositories/clips.py`, `core/watcher.py`)
+
+- **Complex Password Support**:
+  - Resolved an issue where passwords containing brackets, parentheses, or syntax symbols (e.g. `tn)eT2sabF*P#hbRb`) were misinterpreted as expressions or dropped during storage verification.
+- **Dashboard Visibility**:
+  - Ensured that unencrypted passwords and credentials correctly populate the dashboard history when no Master Password is configured, preventing accidental capture loss.
+
+### Improved — Configurable Auto-Purge History Limit (`core/storage/repositories/clips.py`, `core/constants.py`)
+
+- **Settings Dynamic Integration**:
+  - `auto_purge_history()` now directly reads and honors the user's "Max history" configuration from the Settings panel (defaulting to user settings, e.g. 2000 items), while falling back cleanly to `HISTORY_MAX_ITEMS` and maintaining `HISTORY_PURGE_CHUNK` batch sizing.
+  - Prevents unbounded SQLite database growth on long-running instances while strictly preserving pinned cards.
+
+### Improved — Vault Drawer UX & Empty State Onboarding (`ui/vault/vault_panel.py`, `core/constants.py`, `ui/ghost.qss`)
+
+- **Two-Row Header Architecture (`ui/vault/vault_panel.py`)**:
+  - Reorganized drawer top bar into two dedicated rows to prevent horizontal crowding and button clipping:
+    - **Row 1:** Title (`🛡️ The Vault`), Status Badge (`🔒 Locked` / `🔓 Unlocked`), flexible stretch, and Close button (`✕`).
+    - **Row 2 Toolbar:** Prominent `+ Add Secret` primary button on the left, flexible stretch, and utility action buttons on the right (`🔓 / 🔒` Lock Toggle, `📤` Export Backup, `📥` Import Backup, `❓` Quick Tips Guide).
+  - Increased `VAULT_DRAWER_WIDTH` from 340px to 380px (`core/constants.py`) for improved typography and comfortable action spacing.
+- **Vault Empty State Smart Tips Card (`ui/vault/vault_panel.py`, `ui/ghost.qss`)**:
+  - When the Vault is unlocked but contains no secrets, users are greeted with an informative, styled onboarding card (`#VaultTipsCard`) highlighting core capabilities:
+    - ⌨️ **Global Shortcut**: `Ctrl+Shift+V` to open or hide the Vault from anywhere.
+    - ⏱️ **Automatic Clipboard Scrubbing**: Secrets copied to clipboard are wiped automatically after 30 seconds.
+    - 📜 **Version History**: Up to 3 previous encrypted password versions are preserved for safe rollback.
+    - ⏳ **Expiration Tracking**: Support for temporary tokens and credentials with proactive expiration warnings.
+
+### Improved — Unified Password Input & Compact Lock Screens (`ui/widgets/password_input.py`, `ui/lock_screen.py`, `ui/vault/unlock_dialog.py`, `ui/ghost.qss`)
+
+- **Reusable Composite Component (`ui/widgets/password_input.py`)**:
+  - Introduced `PasswordInputWidget`, unifying password input across the application with an integrated `👁️ / 🙈` eye toggle button.
+  - Automatically handles echo mode transitions (`Password` ↔ `Normal`), tooltip updates, and seamless property forwarding (`text()`, `setText()`, `clear()`, `returnPressed`, `setFocus()`).
+- **UI & Design System Unification**:
+  - Refactored both `LockScreen` (application session gatekeeper) and `VaultUnlockDialog` (vault subsystem authenticator) to use the shared `PasswordInputWidget`.
+  - Removed duplicated hardcoded inline stylesheets from `ui/lock_screen.py` and consolidated styling centrally in `ui/ghost.qss`.
+- **Proportional Compact Sizing & Layout Polish**:
+  - Eliminated excessive vertical dead space (~80px gap) between the password field and the action button on `LockScreen`.
+  - Reduced `LockScreen` fixed height to 235px (290px in first-time setup mode) with optimized margins `(32, 22, 32, 22)` and spacing (`10px`).
+  - Adjusted `VaultUnlockDialog` to a matching compact height of 265px for a cohesive, balanced design.
+
+### Improved — Vault Backup Dialog Usability & Security Guidance (`ui/vault/backup_dialog.py`, `ui/ghost.qss`)
+
+- **Transparent Security Education**:
+  - Enhanced `VaultBackupDialog` with explicit cryptographic transparency informing users that `.vault` backup packages are encrypted with AES-256-GCM authenticated encryption and 100,000-round PBKDF2-HMAC-SHA256 key derivation.
+  - Clearly enumerates all backed-up items (all secrets, 3-version history, categories, timestamps, expiration dates).
+  - Prominent amber warning notice (`#VaultBackupWarnDesc`, `#e3b341`) stressing that backup passphrases cannot be recovered if lost.
+- **Layout & Typography Fixes**:
+  - Expanded dialog width from 460px to 520px.
+  - Replaced single multiline label with dedicated individual `QLabel` widgets for each bullet item, resolving Qt text measurement clipping and overlap.
+
+---
+
+## [2.0.1] — 2026-10-01 — *Cerberus (Maintenance & Tiling WM Support)*
+
+> **Codename:** Cerberus — Tiling Window Manager Support & Security Hardening Release
+>
+> This maintenance release introduces native EWMH cross-workspace migration for X11 window managers (verified against Qtile and Openbox; designed for EWMH-compliant WMs like i3, bspwm, etc.), fixes cross-workspace toggle hiding behavior, guarantees dialog modality across workspaces, hardens desktop notification action handling, refines The Vault drawer UX (secret prefill, memory scrubbing, leak prevention), refactors the dashboard architecture into a modular mixin (449 LOC, 0 Flake8 errors), fixes updater process relaunching, and expands the automated test suite to 489 passing tests.
+>
+> **Special Thanks:** Heartfelt thanks to **[@knodalyte](https://github.com/knodalyte)** for reporting GitHub Issue [#1](https://github.com/kareem2099/DotGhostBoard/issues/1) and providing crucial diagnostic feedback on tiling window manager behavior!
+
+### Added — Tiling Window Manager & EWMH Migration (`core/window_manager.py`, `ui/window_utils.py`)
+
+- **Cross-Workspace Window Migration (`core/window_manager.py`)**:
+  - Pure Python + `ctypes` (`libX11.so.6`) implementation with zero external runtime dependencies.
+  - Context-managed single X11 connection (`x11_connection`) with persistent `XSetErrorHandler` to prevent fatal crashes on transient X11 errors.
+  - Direct reading and writing of `_NET_CURRENT_DESKTOP` and `_NET_WM_DESKTOP`.
+  - Pager-priority ClientMessages (`source=2`) for mapped window desktop relocation and `_NET_ACTIVE_WINDOW` focus activation.
+- **Workspace-Aware Toggle & Summon (`ui/window_utils.py`, `ui/dashboard.py`)**:
+  - Added `is_on_current_workspace(widget)`: resolves the X11 limitation where Qt reports `isVisible() == True` even when mapped to an inactive workspace.
+  - When summoning via global shortcut (`Ctrl+Alt+V`), Spotlight (`Ctrl+Alt+Space`), or CLI (`dotghostboard --toggle`), if the window is open on another workspace/group, it now migrates to the active workspace and focuses instead of erroneously hiding.
+- **Modal Dialog Workspace Preparation (`ui/window_utils.py`, throughout UI controllers)**:
+  - Added `prepare_dialog_for_current_workspace(dlg)` to set `_NET_WM_DESKTOP` before `dlg.exec()`.
+  - Universally integrated across all modal dialogs: `LockScreen`, `UpdaterDialog`, `UpdateLogScreen`, `SettingsDialog`, `TagManagerDialog`, `PairingDialog`, `PurgeEasterEggDialog`, `VaultUnlockDialog`, `SecretDialog`, `ImageViewer`, and confirmation `QMessageBox` dialogs.
+  - Guarantees background notifications and modal dialogs appear on the user's active workspace with intact Qt modal event loops.
+- **Robust Headless Qtile Integration Fixture (`tests/fixtures/qtile_test_config.py`, `tests/test_window_manager.py`)**:
+  - Added dedicated Qtile test configuration fixture explicitly defining numeric groups `1` through `9`, Max layout, and screen.
+  - Decoupled `test_real_qtile_and_qt_integration` from Qtile's built-in `default_config` (which varied group schemes like `asdfuiop` across releases), ensuring stable cross-platform and CI E2E validation.
+- **EWMH Kill Switch & CLI Documentation (`main.py`, `README.md`)**:
+  - Added `DOTGHOST_NO_EWMH=1` environment variable to bypass EWMH handling for setups desiring default window manager behavior.
+  - Added `--help` / `-h` CLI flag and documented all flags and environment variables in `README.md`.
+- **Interactive Xephyr Testing Tool (`scripts/demo_qtile_xephyr.sh`)**:
+  - Automated launcher running Qtile and DotGhostBoard in a nested Xephyr X11 display for live manual and visual verification.
+
+### Fixed — Desktop Notifications & Action Callbacks (`core/notifications.py`)
+
+- **Interactive Notification Click Activation**:
+  - Fixed desktop notification action callback triggering window summon when notification is clicked.
+  - Bounded action listener wait duration with a grace period (`min((timeout_ms / 1000.0) + 2.0, 15.0)`).
+  - Explicit termination and zombie drainage (`proc.kill()` and `proc.communicate()`) on dismissal or timeout to prevent lingering background `notify-send` sub-processes.
+
+### Fixed — The Vault UI & Memory Safety (`ui/vault/`, `core/services/security_service.py`)
+
+- **Secret Editing UX (`ui/vault/vault_panel.py`)**:
+  - Pre-fills current decrypted secret plaintext when opening the Edit Secret dialog (`_prompt_edit_secret`), enabling seamless updates without requiring users to type complex credentials from scratch.
+- **Safe Clipboard Scrubbing (`ui/vault/vault_controller.py`)**:
+  - Removed redundant `clipboard.setText("")` following `clipboard.clear()`, preventing spurious empty MimeData instances from triggering clipboard re-captures.
+  - Ensured pending clipboard hash is reliably reset when scrub timer fires regardless of external clipboard state.
+- **Signal Leak Prevention (`ui/vault/secret_card.py`, `ui/vault/vault_panel.py`)**:
+  - Used `Qt.ConnectionType.UniqueConnection` for `vault_locked` signal bindings on secret cards to prevent duplicate event delivery.
+  - Explicitly disconnected signals prior to widget destruction in `refresh_list()`, preventing dangling signal handlers from attempting memory scrubs on deleted Qt objects.
+- **Modal Workspace Preparation (`ui/vault/vault_panel.py`)**:
+  - Prepared `VaultUnlockDialog` and `SecretDialog` with `prepare_dialog_for_current_workspace()` to ensure they appear centered and focused on active tiling window manager groups.
+- **Key Derivation Architecture Documentation (`core/services/security_service.py`)**:
+  - Documented domain separation between Eclipse session key and Vault KEK in `set_session_key()`.
+
+### Fixed — Updater Lifecycle & Shutdown (`ui/update_log_screen.py`, `ui/updater_dialog.py`, `ui/ghost.qss`)
+
+- Fixed `UpdateLogScreen._restart_or_close` to cleanly terminate old application processes (`closeAllWindows()`, `quit()`, `sys.exit(0)`) and execute new binary/AppImage instances without lingering zombie processes.
+- Enhanced updater dialog buttons with dynamic progress tracking (`⏳ Downloading... {percent}%`, `⚙️ Installing...`).
+- Consolidated updater styling in `ui/ghost.qss`.
+
+### Refactored — Architecture & Flake8 Compliance (`ui/dashboard.py`, `ui/dashboard_compat.py`)
+
+- Extracted backward compatibility properties and coordination shims into `ui/dashboard_compat.py` via `DashboardCompatibilityMixin`.
+- Reduced `ui/dashboard.py` to **449 lines** (strictly adhering to the $\le 500$ LOC architectural limit).
+- Achieved **100% clean Flake8 compliance** (0 errors or warnings) across all modified and new files.
+
+### Testing & Verification (`tests/test_window_manager.py`)
+
+- Added 19 comprehensive tests covering X11 struct sizes, client message payloads, kill switches, mock parent ordering, and live `Xvfb` integration tests against real **Openbox** and real **Qtile 0.36.0**.
+- Total test suite expanded to **489 passing tests (100% green)**.
+
+---
+
 ## [2.0.0] — 2026-09-21 — *Cerberus (General Availability)*
 
 > **Codename:** Cerberus — Stable / Production Release

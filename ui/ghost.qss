@@ -885,3 +885,664 @@ QPushButton#SecretCardActionBtn:hover {
     color: #ffffff;
     border-color: #3d444a;
 }
+
+QFrame#VaultEmptyGuideCard {
+    background: #141719;
+    border: 1px solid #22272b;
+    border-radius: 8px;
+    margin-top: 14px;
+}
+
+QLabel#VaultEmptyGuideTitle {
+    color: #00ff41;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+QLabel#VaultEmptyGuideItem {
+    color: #8c969d;
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+#SecretExpHint {
+    color: #727a80;
+    font-size: 10px;
+    padding-top: 2px;
+}
+
+/* ════════════════════════════════════════════
+   Vault Dialogs (SecretDialog & VaultUnlockDialog)
+   ════════════════════════════════════════════ */
+
+QDialog#SecretDialog, QDialog#VaultUnlockDialog {
+    background: #111315;
+    border: 1px solid #282c30;
+    border-radius: 12px;
+}
+
+#SecretDialogTitle, #VaultUnlockTitle {
+    color: #00ff41;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+#VaultUnlockTitle {
+    font-size: 18px;
+}
+
+#VaultUnlockSubtitle {
+    color: #727a80;
+    font-size: 12px;
+}
+
+#SecretDialogDivider, #VaultUnlockDivider {
+    background: #202428;
+    max-height: 1px;
+    border: none;
+}
+
+#SecretFieldLabel {
+    color: #8c969d;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#SecretInput, #SecretCombo {
+    background: #181b1d;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+#SecretInput:focus, #SecretCombo:focus {
+    border: 1px solid #2bbf5c;
+    background: #1a1d20;
+}
+
+#SecretTextEdit {
+    background: #181b1d;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+#SecretTextEdit:focus {
+    border: 1px solid #2bbf5c;
+    background: #1a1d20;
+}
+
+#SecretDateEdit {
+    background: #181b1d;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+#SecretDateEdit:focus {
+    border: 1px solid #2bbf5c;
+    background: #1a1d20;
+}
+
+#SecretDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #2f3438;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+QCalendarWidget QWidget {
+    background-color: #181b1d;
+    color: #e4e7e9;
+}
+
+QCalendarWidget QToolButton {
+    color: #e4e7e9;
+    background-color: #23272b;
+    border: 1px solid #2f3438;
+    border-radius: 4px;
+    margin: 2px;
+    padding: 4px;
+}
+
+QCalendarWidget QToolButton:hover {
+    background-color: #2f3438;
+}
+
+QCalendarWidget QMenu {
+    background-color: #1e2226;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+}
+
+QCalendarWidget QSpinBox {
+    background-color: #1e2226;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 4px;
+}
+
+QCalendarWidget QAbstractItemView:enabled {
+    background-color: #181b1d;
+    color: #e4e7e9;
+    selection-background-color: #2bbf5c;
+    selection-color: #ffffff;
+}
+
+#StrengthWrap {
+    background: #1e2124;
+    border-radius: 2px;
+}
+
+#GenToggleBtn {
+    background: #1a1d20;
+    color: #f0c040;
+    border: 1px solid #3a3510;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 10px;
+}
+
+#GenToggleBtn:hover {
+    background: #232810;
+    color: #ffe066;
+}
+
+#GenToggleBtn:checked {
+    background: #2a2600;
+    color: #ffe066;
+    border-color: #f0c040;
+}
+
+#GenPanel {
+    background: #15181b;
+    border: 1px solid #2a2f34;
+    border-radius: 8px;
+}
+
+#GenLabel {
+    color: #8c969d;
+    font-size: 11px;
+}
+
+#GenCombo {
+    background: #1e2124;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 5px;
+    font-size: 11px;
+    height: 26px;
+    padding: 0 6px;
+}
+
+#GenSlider {
+    height: 20px;
+}
+
+#GenCheck {
+    color: #c8cdd2;
+    font-size: 11px;
+}
+
+#GenCheck::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #3a3f44;
+    border-radius: 3px;
+    background: #1e2124;
+}
+
+#GenCheck::indicator:checked {
+    background: #2bbf5c;
+    border-color: #2bbf5c;
+}
+
+#DoGenBtn {
+    background: #1e3a28;
+    color: #2bbf5c;
+    border: 1px solid #2a5238;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#DoGenBtn:hover {
+    background: #254530;
+    color: #35cf68;
+}
+
+#DoGenBtn:pressed {
+    background: #1a2e20;
+}
+
+/* ── Unified Lock & Unlock Dialogs ── */
+QDialog#LockScreen,
+QDialog#VaultUnlockDialog {
+    background: #101213;
+    border: 1px solid #1f3627;
+    border-radius: 12px;
+}
+
+QLabel#LockTitle,
+QLabel#VaultUnlockTitle {
+    color: #00ff41;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QLabel#LockSubtitle,
+QLabel#VaultUnlockSubtitle {
+    color: #8c969d;
+    font-size: 12px;
+}
+
+QFrame#LockDivider,
+QFrame#VaultUnlockDivider {
+    background: #24282b;
+    max-height: 1px;
+    border: none;
+}
+
+QLabel#LockError,
+QLabel#VaultUnlockError,
+QLabel#SecretDialogError {
+    color: #e26f6f;
+    font-size: 11px;
+    min-height: 16px;
+}
+
+/* ── Unified Password Input Widget Component ── */
+#PasswordInputField, #VaultUnlockInput {
+    background: #181b1d;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+
+#PasswordInputField:focus, #VaultUnlockInput:focus {
+    border: 1px solid #2bbf5c;
+    background: #1a1d20;
+}
+
+#PasswordInputEyeBtn, #VaultUnlockEyeBtn {
+    background: #181b1d;
+    border: 1px solid #2f3438;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+#PasswordInputEyeBtn:hover, #VaultUnlockEyeBtn:hover {
+    background: #222629;
+    border-color: #2bbf5c;
+}
+
+/* ── Action Buttons ── */
+QPushButton#LockBtn,
+QPushButton#VaultUnlockSubmitBtn,
+QPushButton#SecretSaveBtn {
+    background: #2bbf5c;
+    color: #08100b;
+    border: none;
+    border-radius: 7px;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 0 24px;
+    min-height: 38px;
+}
+
+QPushButton#LockBtn:hover,
+QPushButton#VaultUnlockSubmitBtn:hover,
+QPushButton#SecretSaveBtn:hover {
+    background: #35cf68;
+}
+
+QPushButton#LockBtn:pressed,
+QPushButton#VaultUnlockSubmitBtn:pressed,
+QPushButton#SecretSaveBtn:pressed {
+    background: #24a94f;
+}
+
+QPushButton#VaultUnlockCancelBtn,
+QPushButton#SecretCancelBtn {
+    background: #1a1c1e;
+    color: #8c959c;
+    border: 1px solid #292d30;
+    border-radius: 7px;
+    font-size: 12px;
+    padding: 0 16px;
+    min-height: 38px;
+}
+
+QPushButton#VaultUnlockCancelBtn:hover,
+QPushButton#SecretCancelBtn:hover {
+    background: #222629;
+    color: #ffffff;
+}
+
+/* ── Vault Backup Dialog ── */
+
+QDialog#VaultBackupDialog {
+    background: #111315;
+    border: 1px solid #282c30;
+    border-radius: 12px;
+}
+
+#VaultBackupInfoBox {
+    background: #141719;
+    border: 1px solid #22292f;
+    border-left: 3px solid #2bbf5c;
+    border-radius: 8px;
+}
+
+#VaultBackupInfoTitle {
+    color: #38d374;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#VaultBackupInfoDesc {
+    color: #9da7ad;
+    font-size: 11px;
+}
+
+#VaultBackupWarnDesc {
+    color: #e3b341;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#VaultBackupLabel {
+    color: #8c969d;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#VaultBackupInput {
+    background: #181b1d;
+    color: #e4e7e9;
+    border: 1px solid #2f3438;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+#VaultBackupInput:focus {
+    border: 1px solid #2bbf5c;
+    background: #1a1d20;
+}
+
+#VaultBackupCheck {
+    color: #8c969d;
+    font-size: 11px;
+}
+
+#VaultBackupError {
+    color: #e26f6f;
+    font-size: 11px;
+    min-height: 16px;
+}
+
+#VaultBackupCancelBtn {
+    background: #1a1c1e;
+    color: #8c959c;
+    border: 1px solid #292d30;
+    border-radius: 7px;
+    font-size: 12px;
+    padding: 0 16px;
+}
+
+#VaultBackupCancelBtn:hover {
+    background: #222629;
+    color: #ffffff;
+}
+
+#VaultBackupSubmitBtn {
+    background: #2bbf5c;
+    color: #08100b;
+    border: none;
+    border-radius: 7px;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 0 20px;
+}
+
+#VaultBackupSubmitBtn:hover {
+    background: #35cf68;
+}
+
+#VaultBackupSubmitBtn:pressed {
+    background: #24a94f;
+}
+
+/* ════════════════════════════════════════════
+   The Vault Guide Dialog
+   ════════════════════════════════════════════ */
+
+QDialog#VaultGuideDialog {
+    background-color: #0d0f11;
+    border: 1px solid #1f3627;
+    border-radius: 12px;
+}
+
+QFrame#VaultGuideCard {
+    background: #14171a;
+    border: 1px solid #22272b;
+    border-radius: 8px;
+}
+
+QFrame#VaultGuideCard:hover {
+    border-color: #2bbf5c55;
+}
+
+QLabel#VaultGuideCardTitle {
+    color: #38d374;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QLabel#VaultGuideCardItem {
+    color: #9da7ad;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* ════════════════════════════════════════════
+   The Vault Password History Dialog
+   ════════════════════════════════════════════ */
+
+QDialog#PasswordHistoryDialog {
+    background-color: #0d0f11;
+    border: 1px solid #1f3627;
+    border-radius: 12px;
+}
+
+QLabel#HistoryHeading {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+QLabel#HistorySubTitle {
+    color: #7ec8e3;
+    font-size: 12px;
+}
+
+QLabel#HistoryDescLabel {
+    color: #8b949e;
+    font-size: 11px;
+}
+
+QFrame#HistoryInfoBanner {
+    background: #101d14;
+    border: 1px solid #1c3624;
+    border-radius: 6px;
+}
+
+QLabel#HistoryInfoBannerText {
+    color: #7ee787;
+    font-size: 11px;
+}
+
+QFrame#HistoryEntryWidget {
+    background: #14171a;
+    border: 1px solid #252b30;
+    border-radius: 6px;
+}
+
+QFrame#HistoryEntryWidget:hover {
+    border-color: #38d374;
+}
+
+QLabel#HistoryVersionLabel {
+    color: #38d374;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+QLabel#HistoryTimeLabel {
+    color: #6c757d;
+    font-size: 10px;
+}
+
+QLabel#HistoryPayloadLabel {
+    color: #a0aab0;
+    font-family: monospace;
+    font-size: 12px;
+    background: #0f1214;
+    border: 1px solid #1c2226;
+    border-radius: 4px;
+    padding: 6px 8px;
+}
+
+QLabel#HistoryPayloadLabel[revealed="true"] {
+    color: #38d374;
+    background: #0d1a12;
+    border-color: #1c3624;
+}
+
+QPushButton#HistoryToolBtn {
+    background: #1f2428;
+    color: #8c969c;
+    border: 1px solid #2e353b;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 4px 8px;
+}
+
+QPushButton#HistoryToolBtn:hover {
+    background: #2a3138;
+    color: #ffffff;
+    border-color: #3e4850;
+}
+
+QPushButton#HistoryRevertBtn {
+    background: #18281e;
+    color: #38d374;
+    border: 1px solid #234830;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
+QPushButton#HistoryRevertBtn:hover {
+    background: #203828;
+    color: #4eed8d;
+    border-color: #38d374;
+}
+
+QLabel#HistoryEmptyLabel {
+    color: #555d63;
+    font-size: 11px;
+    padding: 24px;
+}
+
+/* ════════════════════════════════════════════
+   Updater Dialog
+   ════════════════════════════════════════════ */
+
+QDialog#UpdaterDialog {
+    background-color: #0f1011;
+}
+
+QLabel#UpdaterTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #00ff41;
+}
+
+QLabel#UpdaterInfo {
+    color: #aaaaaa;
+    font-size: 12px;
+}
+
+QTextBrowser#UpdaterBrowser {
+    background-color: #0a0a0a;
+    border: 1px solid #222222;
+    border-radius: 6px;
+    padding: 10px;
+    color: #dddddd;
+    font-size: 12px;
+}
+
+QProgressBar#UpdaterProgressBar {
+    background: #141618;
+    border: 1px solid #25282a;
+    border-radius: 4px;
+    text-align: center;
+    color: #d6d9db;
+    font-size: 11px;
+    height: 14px;
+}
+
+QProgressBar#UpdaterProgressBar::chunk {
+    background-color: #00ff41;
+    border-radius: 3px;
+}
+
+QPushButton#UpdaterCancelBtn {
+    background: #1e2022;
+    color: #c0c4c8;
+    border: 1px solid #32363a;
+    padding: 6px 14px;
+    border-radius: 4px;
+}
+
+QPushButton#UpdaterCancelBtn:hover {
+    background: #25282c;
+    border-color: #40464c;
+    color: #ffffff;
+}
+
+QPushButton#UpdaterDownloadBtn {
+    background: #00ff4122;
+    color: #00ff41;
+    border: 1px solid #00ff41;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton#UpdaterDownloadBtn:hover {
+    background: #00ff4144;
+}
+
+QPushButton#UpdaterDownloadBtn:disabled {
+    background: #112215;
+    color: #00ff41cc;
+    border: 1px solid #00aa3388;
+}
+

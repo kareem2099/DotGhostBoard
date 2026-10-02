@@ -27,20 +27,21 @@ class VaultRepository:
         ciphertext: str,
         category: str = "generic",
         metadata_encrypted: Optional[str] = None,
+        expires_at: Optional[str] = None,
     ) -> int:
         """Insert an encrypted vault item and return its id."""
         with _vault_db(self._db_path) as cur:
             cur.execute("""
-                INSERT INTO vault_items (title, category, ciphertext, metadata_encrypted, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (title.strip(), category.strip().lower(), ciphertext, metadata_encrypted))
+                INSERT INTO vault_items (title, category, ciphertext, metadata_encrypted, expires_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (title.strip(), category.strip().lower(), ciphertext, metadata_encrypted, expires_at))
             return cur.lastrowid
 
     def get_item(self, item_id: int) -> Optional[VaultItem]:
         """Fetch single VaultItem by id."""
         with _vault_db(self._db_path) as cur:
             cur.execute("""
-                SELECT id, title, category, ciphertext, metadata_encrypted, created_at, updated_at
+                SELECT id, title, category, ciphertext, metadata_encrypted, expires_at, created_at, updated_at
                 FROM vault_items
                 WHERE id = ?
             """, (item_id,))
@@ -55,6 +56,7 @@ class VaultRepository:
                 metadata_encrypted=row["metadata_encrypted"],
                 created_at=str(row["created_at"]),
                 updated_at=str(row["updated_at"]),
+                expires_at=str(row["expires_at"]) if row["expires_at"] else None,
             )
 
     def list_items(
@@ -67,7 +69,7 @@ class VaultRepository:
         with _vault_db(self._db_path) as cur:
             if category:
                 cur.execute("""
-                    SELECT id, title, category, ciphertext, metadata_encrypted, created_at, updated_at
+                    SELECT id, title, category, ciphertext, metadata_encrypted, expires_at, created_at, updated_at
                     FROM vault_items
                     WHERE category = ?
                     ORDER BY updated_at DESC
@@ -75,7 +77,7 @@ class VaultRepository:
                 """, (category.strip().lower(), limit, offset))
             else:
                 cur.execute("""
-                    SELECT id, title, category, ciphertext, metadata_encrypted, created_at, updated_at
+                    SELECT id, title, category, ciphertext, metadata_encrypted, expires_at, created_at, updated_at
                     FROM vault_items
                     ORDER BY updated_at DESC
                     LIMIT ? OFFSET ?
@@ -91,6 +93,7 @@ class VaultRepository:
                     metadata_encrypted=row["metadata_encrypted"],
                     created_at=str(row["created_at"]),
                     updated_at=str(row["updated_at"]),
+                    expires_at=str(row["expires_at"]) if row["expires_at"] else None,
                 ))
             return items
 
@@ -104,7 +107,7 @@ class VaultRepository:
         with _vault_db(self._db_path) as cur:
             if category:
                 cur.execute("""
-                    SELECT id, title, category, created_at, updated_at
+                    SELECT id, title, category, expires_at, created_at, updated_at
                     FROM vault_items
                     WHERE category = ?
                     ORDER BY updated_at DESC
@@ -112,7 +115,7 @@ class VaultRepository:
                 """, (category.strip().lower(), limit, offset))
             else:
                 cur.execute("""
-                    SELECT id, title, category, created_at, updated_at
+                    SELECT id, title, category, expires_at, created_at, updated_at
                     FROM vault_items
                     ORDER BY updated_at DESC
                     LIMIT ? OFFSET ?
@@ -125,6 +128,7 @@ class VaultRepository:
                     category=row["category"],
                     created_at=str(row["created_at"]),
                     updated_at=str(row["updated_at"]),
+                    expires_at=str(row["expires_at"]) if row["expires_at"] else None,
                 )
                 for row in cur.fetchall()
             ]
@@ -136,6 +140,7 @@ class VaultRepository:
         ciphertext: Optional[str] = None,
         category: Optional[str] = None,
         metadata_encrypted: Optional[str] = None,
+        expires_at: Optional[str] = None,
     ) -> bool:
         """Update fields of an existing vault item."""
         updates: list[str] = []
@@ -153,6 +158,9 @@ class VaultRepository:
         if metadata_encrypted is not None:
             updates.append("metadata_encrypted = ?")
             params.append(metadata_encrypted)
+        if expires_at is not None:
+            updates.append("expires_at = ?")
+            params.append(expires_at if expires_at != "" else None)
 
         if not updates:
             return False
@@ -169,9 +177,72 @@ class VaultRepository:
             return cur.rowcount > 0
 
     def delete_item(self, item_id: int) -> bool:
-        """Delete vault item by id."""
+        """Delete vault item by id along with its history."""
         with _vault_db(self._db_path) as cur:
+            cur.execute("DELETE FROM vault_item_history WHERE vault_item_id = ?", (item_id,))
             cur.execute("DELETE FROM vault_items WHERE id = ?", (item_id,))
+            return cur.rowcount > 0
+
+    def add_history_entry(
+        self,
+        vault_item_id: int,
+        ciphertext: str,
+        max_entries: int = 3,
+    ) -> int:
+        """Record a previous encrypted ciphertext version, capping at max_entries."""
+        with _vault_db(self._db_path) as cur:
+            cur.execute("""
+                INSERT INTO vault_item_history (vault_item_id, ciphertext, created_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            """, (vault_item_id, ciphertext))
+            entry_id = cur.lastrowid
+
+            # Keep only the newest max_entries
+            cur.execute("""
+                DELETE FROM vault_item_history
+                WHERE vault_item_id = ?
+                  AND id NOT IN (
+                      SELECT id FROM vault_item_history
+                      WHERE vault_item_id = ?
+                      ORDER BY created_at DESC, id DESC
+                      LIMIT ?
+                  )
+            """, (vault_item_id, vault_item_id, max_entries))
+            return entry_id
+
+    def get_history(self, vault_item_id: int, limit: int = 3) -> list[dict]:
+        """Fetch history entries for a vault item ordered newest first."""
+        with _vault_db(self._db_path) as cur:
+            cur.execute("""
+                SELECT id, vault_item_id, ciphertext, created_at
+                FROM vault_item_history
+                WHERE vault_item_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+            """, (vault_item_id, limit))
+            return [
+                {
+                    "id": row["id"],
+                    "vault_item_id": row["vault_item_id"],
+                    "ciphertext": row["ciphertext"],
+                    "created_at": str(row["created_at"]),
+                }
+                for row in cur.fetchall()
+            ]
+
+    def count_history(self, vault_item_id: int) -> int:
+        """Return total number of history entries for this vault item."""
+        with _vault_db(self._db_path) as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM vault_item_history WHERE vault_item_id = ?",
+                (vault_item_id,),
+            )
+            return cur.fetchone()[0]
+
+    def delete_history_entry(self, history_id: int) -> bool:
+        """Delete single history entry by id."""
+        with _vault_db(self._db_path) as cur:
+            cur.execute("DELETE FROM vault_item_history WHERE id = ?", (history_id,))
             return cur.rowcount > 0
 
     def count_items(self, category: Optional[str] = None) -> int:

@@ -291,7 +291,7 @@ def test_vault_controller_find_duplicate(vault_ui_env):
 def test_secret_card_masked_by_default(vault_ui_env, qapp):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
-    item_id = controller.add_secret("AWS API Key", "super_secret_key", category="token")
+    _ = controller.add_secret("AWS API Key", "super_secret_key", category="token")
     summary = controller.list_secrets()[0]
 
     card = SecretCard(summary, controller)
@@ -308,7 +308,7 @@ def test_secret_card_masked_by_default(vault_ui_env, qapp):
 def test_secret_card_reveal_toggle(vault_ui_env, qapp):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
-    item_id = controller.add_secret("RevealCardTest", "decrypted_token_value", category="token")
+    _ = controller.add_secret("RevealCardTest", "decrypted_token_value", category="token")
     summary = controller.list_secrets()[0]
 
     card = SecretCard(summary, controller)
@@ -329,7 +329,7 @@ def test_secret_card_reveal_toggle(vault_ui_env, qapp):
 def test_secret_card_scrub_on_vault_lock(vault_ui_env, qapp):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
-    item_id = controller.add_secret("ScrubTest", "must_be_scrubbed")
+    _ = controller.add_secret("ScrubTest", "must_be_scrubbed")
     summary = controller.list_secrets()[0]
 
     card = SecretCard(summary, controller)
@@ -346,7 +346,7 @@ def test_secret_card_scrub_on_vault_lock(vault_ui_env, qapp):
 def test_secret_card_copy_button(vault_ui_env, qapp):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
-    item_id = controller.add_secret("CardCopy", "payload_to_copy")
+    _ = controller.add_secret("CardCopy", "payload_to_copy")
     summary = controller.list_secrets()[0]
 
     card = SecretCard(summary, controller)
@@ -546,7 +546,7 @@ def test_vault_panel_search_filtering(vault_ui_env, qapp):
 def test_vault_panel_hide_scrubs_revealed_cards(vault_ui_env, qapp):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
-    item_id = controller.add_secret("RevealHideTest", "ephemeral_payload")
+    _ = controller.add_secret("RevealHideTest", "ephemeral_payload")
 
     panel = VaultPanel(controller)
     panel.show_panel()
@@ -595,7 +595,7 @@ def test_vault_panel_save_with_relock_retry(vault_ui_env, qapp, monkeypatch):
     assert any(s.title == "SavedAfterRelock" for s in controller.list_secrets())
 
 
-def test_vault_panel_prompt_add_duplicate_secret(vault_ui_env, monkeypatch):
+def test_vault_panel_prompt_add_duplicate_secret(vault_ui_env, qapp, monkeypatch):
     controller = vault_ui_env["controller"]
     controller.unlock(vault_ui_env["password"])
     panel = VaultPanel(controller)
@@ -604,9 +604,9 @@ def test_vault_panel_prompt_add_duplicate_secret(vault_ui_env, monkeypatch):
     first_id = controller.add_secret("Gmail Password", "secret_duplicate_candidate", category="password")
 
     # Second add with same secret payload via _prompt_add_secret
-    from ui.vault.secret_dialog import SecretDialog
+    from ui.vault.secret_dialog import SecretDialog, SecretData
     monkeypatch.setattr(SecretDialog, "exec", lambda self: SecretDialog.DialogCode.Accepted)
-    monkeypatch.setattr(SecretDialog, "get_data", lambda self: ("Password Gmail", "secret_duplicate_candidate", "password"))
+    monkeypatch.setattr(SecretDialog, "get_data", lambda self: SecretData("Password Gmail", "secret_duplicate_candidate", "password"))
 
     statuses = []
     controller.status_message.connect(statuses.append)
@@ -884,11 +884,16 @@ def test_qt_clipboard_backend_ignores_password_manager_hint(qapp):
 
 def test_vault_copy_secret_ignored_by_watcher_integration(mock_dashboard):
     dash = mock_dashboard
+    import uuid
     from PyQt6.QtTest import QTest
     from core.watcher import ClipboardWatcher
 
+    secret_val = f"sensitive_vault_secret_{uuid.uuid4().hex[:8]}"
+    control_val = f"control_text_{uuid.uuid4().hex[:8]}"
+
     dash.show()
     dash.activateWindow()
+    QApplication.clipboard().clear()
     QTest.qWait(600)
 
     dash.watcher = ClipboardWatcher()
@@ -896,19 +901,20 @@ def test_vault_copy_secret_ignored_by_watcher_integration(mock_dashboard):
     dash.watcher.new_text_captured.connect(lambda iid, text: captured.append(text))
     dash.watcher.start()
     QTest.qWait(600)
+    captured.clear()
 
     save_master_password("TestMasterPass123!")
     dash.vault_controller.unlock("TestMasterPass123!")
-    item_id = dash.vault_controller.add_secret("TokenA", "sensitive_vault_secret_987")
+    item_id = dash.vault_controller.add_secret("TokenA", secret_val)
 
     try:
-        QApplication.clipboard().setText("control_text_123")
+        QApplication.clipboard().setText(control_val)
         QTest.qWait(1500)
-        if "control_text_123" not in captured:
+        if control_val not in captured:
             pytest.skip(f"watcher never captured control text (captured={captured!r})")
         dash.vault_controller.copy_secret(item_id)
         QTest.qWait(1500)
-        assert "sensitive_vault_secret_987" not in captured
+        assert secret_val not in captured
     finally:
         dash.watcher.stop()
 

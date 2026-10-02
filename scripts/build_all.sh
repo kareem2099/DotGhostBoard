@@ -96,29 +96,19 @@ sha256sum "${FILES[@]}" > SHA256SUMS
 echo "📄 SHA256SUMS contents:"
 cat SHA256SUMS
 
-# 6. GPG Sign Checksums & Assets (.asc Signatures)
-echo ""
-if command -v gpg >/dev/null 2>&1 && gpg --list-secret-keys "$GPG_KEY_ID" &>/dev/null; then
+if [ "${SKIP_GPG:-0}" != "1" ] && command -v gpg >/dev/null 2>&1 && gpg --list-secret-keys "$GPG_KEY_ID" &>/dev/null; then
     echo "🔏 Signing SHA256SUMS with GPG key ($GPG_KEY_ID)..."
-    gpg --yes \
-        --local-user "$GPG_KEY_ID" \
-        --detach-sign \
-        --armor \
-        --output SHA256SUMS.asc \
-        SHA256SUMS
-
-    for f in "${FILES[@]}"; do
-        echo "🔏 Signing $f -> $f.asc..."
-        gpg --yes \
-            --local-user "$GPG_KEY_ID" \
-            --detach-sign \
-            --armor \
-            --output "$f.asc" \
-            "$f"
-    done
-    echo "✅ GPG signatures created (.asc)"
+    if gpg --yes --batch --pinentry-mode error --local-user "$GPG_KEY_ID" --detach-sign --armor --output SHA256SUMS.asc SHA256SUMS 2>/dev/null; then
+        for f in "${FILES[@]}"; do
+            echo "🔏 Signing $f -> $f.asc..."
+            gpg --yes --batch --pinentry-mode error --local-user "$GPG_KEY_ID" --detach-sign --armor --output "$f.asc" "$f" 2>/dev/null || true
+        done
+        echo "✅ GPG signatures created (.asc)"
+    else
+        echo "ℹ️ GPG signing skipped (requires interactive pinentry/passphrase)."
+    fi
 else
-    echo "ℹ️ No GPG secret key detected for $GPG_KEY_ID; signatures skipped."
+    echo "ℹ️ GPG signing skipped or no secret key detected."
 fi
 
 echo ""

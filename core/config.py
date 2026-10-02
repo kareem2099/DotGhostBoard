@@ -3,8 +3,8 @@
 import os
 import sys
 
-APP_VERSION = "v2.0.0"
-APP_CODENAME = "Cerberus"
+APP_VERSION = "v2.1.0"
+APP_CODENAME = "Leviathan"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"
 GITHUB_API_LATEST_RELEASE = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"

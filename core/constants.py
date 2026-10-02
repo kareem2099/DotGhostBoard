@@ -52,6 +52,12 @@ PIN_SUGGESTION_THRESHOLD: int = 5
 AUTO_PIN_THRESHOLD: int = 10
 """Copy count at which an item is silently auto-pinned."""
 
+HISTORY_MAX_ITEMS: int = 500
+"""Maximum unpinned text items kept in history before auto-purge trims the oldest."""
+
+HISTORY_PURGE_CHUNK: int = 50
+"""Number of oldest items removed in a single auto-purge sweep."""
+
 # ── UI dimensions ────────────────────────────────────────────────────────────
 SIDEBAR_WIDTH: int = 160
 """Fixed width of the collections sidebar in pixels."""
@@ -62,7 +68,7 @@ TOP_BAR_HEIGHT: int = 56
 DEVICES_LIST_HEIGHT: int = 140
 """Fixed height of the devices list widget in the sidebar."""
 
-VAULT_DRAWER_WIDTH: int = 340
+VAULT_DRAWER_WIDTH: int = 380
 """Width of the sliding vault drawer panel in pixels."""
 
 VAULT_CATEGORIES: tuple[str, ...] = ("all", "password", "token", "key", "note", "generic")

@@ -17,10 +17,12 @@ from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -36,7 +38,10 @@ from core.security.vault import VaultLockedError
 from ui.vault.secret_card import SecretCard
 from ui.vault.secret_dialog import SecretDialog
 from ui.vault.unlock_dialog import VaultUnlockDialog
+from ui.vault.backup_dialog import VaultBackupDialog
+from ui.vault.guide_dialog import VaultGuideDialog
 from ui.vault.vault_controller import VaultController
+from ui.window_utils import prepare_dialog_for_current_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +106,9 @@ class VaultPanel(QFrame):
         root_layout.setContentsMargins(10, 10, 10, 10)
         root_layout.setSpacing(10)
 
-        # ── Header Row ──
+        # ── Header Row 1: Title + Badge + Close ──
         header = QHBoxLayout()
-        header.setSpacing(6)
+        header.setSpacing(8)
 
         self.title_lbl = QLabel("🛡️ The Vault")
         self.title_lbl.setObjectName("VaultTitle")
@@ -112,31 +117,59 @@ class VaultPanel(QFrame):
         self.badge_lbl.setObjectName("VaultBadge")
         self.badge_lbl.setProperty("unlocked", "false")
 
-        self.lock_toggle_btn = QPushButton("🔓")
-        self.lock_toggle_btn.setObjectName("VaultToolBtn")
-        self.lock_toggle_btn.setFixedSize(28, 28)
-        self.lock_toggle_btn.setToolTip("Lock / Unlock Vault")
-        self.lock_toggle_btn.clicked.connect(self._toggle_lock)
-
-        self.add_btn = QPushButton("+ Add")
-        self.add_btn.setObjectName("VaultAddBtn")
-        self.add_btn.setFixedHeight(28)
-        self.add_btn.setToolTip("Add new encrypted secret")
-        self.add_btn.clicked.connect(self._prompt_add_secret)
-
         self.close_btn = QPushButton("✕")
         self.close_btn.setObjectName("VaultToolBtn")
-        self.close_btn.setFixedSize(28, 28)
+        self.close_btn.setFixedSize(26, 26)
         self.close_btn.setToolTip("Close Vault Panel")
         self.close_btn.clicked.connect(self.hide_panel)
 
         header.addWidget(self.title_lbl)
         header.addWidget(self.badge_lbl)
         header.addStretch()
-        header.addWidget(self.lock_toggle_btn)
-        header.addWidget(self.add_btn)
         header.addWidget(self.close_btn)
         root_layout.addLayout(header)
+
+        # ── Toolbar Row 2: Add Secret + Utility Tools ──
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
+
+        self.add_btn = QPushButton("+ Add Secret")
+        self.add_btn.setObjectName("VaultAddBtn")
+        self.add_btn.setFixedHeight(28)
+        self.add_btn.setToolTip("Add new encrypted secret")
+        self.add_btn.clicked.connect(self._prompt_add_secret)
+
+        self.lock_toggle_btn = QPushButton("🔓")
+        self.lock_toggle_btn.setObjectName("VaultToolBtn")
+        self.lock_toggle_btn.setFixedSize(28, 28)
+        self.lock_toggle_btn.setToolTip("Lock / Unlock Vault")
+        self.lock_toggle_btn.clicked.connect(self._toggle_lock)
+
+        self.export_btn = QPushButton("📤")
+        self.export_btn.setObjectName("VaultToolBtn")
+        self.export_btn.setFixedSize(28, 28)
+        self.export_btn.setToolTip("Export Encrypted Vault Backup (.vault)")
+        self.export_btn.clicked.connect(self._on_export_vault)
+
+        self.import_btn = QPushButton("📥")
+        self.import_btn.setObjectName("VaultToolBtn")
+        self.import_btn.setFixedSize(28, 28)
+        self.import_btn.setToolTip("Import Encrypted Vault Backup (.vault)")
+        self.import_btn.clicked.connect(self._on_import_vault)
+
+        self.help_btn = QPushButton("❓")
+        self.help_btn.setObjectName("VaultToolBtn")
+        self.help_btn.setFixedSize(28, 28)
+        self.help_btn.setToolTip("The Vault Security & Shortcuts Guide (❓)")
+        self.help_btn.clicked.connect(self._show_guide)
+
+        toolbar.addWidget(self.add_btn)
+        toolbar.addStretch()
+        toolbar.addWidget(self.lock_toggle_btn)
+        toolbar.addWidget(self.export_btn)
+        toolbar.addWidget(self.import_btn)
+        toolbar.addWidget(self.help_btn)
+        root_layout.addLayout(toolbar)
 
         # ── Search Box ──
         self.search_box = QLineEdit()
@@ -289,6 +322,7 @@ class VaultPanel(QFrame):
 
     def _prompt_unlock(self) -> bool:
         dlg = VaultUnlockDialog(self._controller, parent=self)
+        prepare_dialog_for_current_workspace(dlg)
         try:
             return dlg.exec() == VaultUnlockDialog.DialogCode.Accepted
         finally:
@@ -310,16 +344,23 @@ class VaultPanel(QFrame):
             secret_payload=prefill_secret,
             parent=self,
         )
+        prepare_dialog_for_current_workspace(dlg)
         try:
             if dlg.exec() == SecretDialog.DialogCode.Accepted:
-                title, secret_text, category = dlg.get_data()
+                data = dlg.get_data()
+                title, secret_text, category = data
+                expires_at = data.expires_at
                 if title and secret_text:
                     dup = self._controller.find_duplicate(secret_text)
                     if dup is not None:
                         self._controller.status_message.emit(f"🛡️ Already saved as '{dup.title}'")
                         return dup.id
                     return self._save_with_relock_retry(
-                        self._controller.add_secret, title, secret_text, category=category
+                        self._controller.add_secret,
+                        title,
+                        secret_text,
+                        category=category,
+                        expires_at=expires_at,
                     )
             return None
         finally:
@@ -337,36 +378,159 @@ class VaultPanel(QFrame):
             return
 
         summary = matching[0]
+
+        # Pre-fill current secret so user can see and edit it (not type from scratch)
+        current_secret = ""
+        try:
+            current_secret = self._controller.reveal_secret(item_id) or ""
+        except Exception:
+            pass
+
         dlg = SecretDialog(
             title=summary.title,
             category=summary.category,
             item_id=item_id,
+            secret_payload=current_secret,
+            expires_at=summary.expires_at,
             parent=self,
         )
+        prepare_dialog_for_current_workspace(dlg)
         try:
             if dlg.exec() == SecretDialog.DialogCode.Accepted:
-                title, secret_text, category = dlg.get_data()
+                data = dlg.get_data()
+                title, secret_text, category = data
+                expires_at = data.expires_at
                 self._save_with_relock_retry(
                     self._controller.update_secret,
                     item_id=item_id,
                     title=title,
                     secret_text=secret_text,
                     category=category,
+                    expires_at=expires_at,
                 )
         finally:
             dlg.scrub_inputs()
             dlg.deleteLater()
 
+    def _on_export_vault(self) -> None:
+        if not self._controller.is_unlocked:
+            if not self._prompt_unlock():
+                return
+
+        dlg = VaultBackupDialog(mode="export", parent=self)
+        prepare_dialog_for_current_workspace(dlg)
+        if dlg.exec() != VaultBackupDialog.DialogCode.Accepted:
+            return
+        passphrase = dlg.get_passphrase()
+        if not passphrase:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Encrypted Vault Backup",
+            "dotghost_vault_backup.vault",
+            "Vault Backup (*.vault);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            count = self._controller.export_vault(passphrase, file_path)
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {count} secret(s) to:\n{file_path}\n\n"
+                f"🔒 Package is fully encrypted with AES-256-GCM.\n"
+                f"Keep your export passphrase safe to restore it later.",
+            )
+            self._controller.status_message.emit(f"📦 Exported {count} encrypted secrets")
+        except Exception as exc:
+            logger.error("Failed to export vault backup: %s", exc)
+            QMessageBox.critical(self, "Export Failed", f"Failed to export vault: {exc}")
+
+    def _on_import_vault(self) -> None:
+        if not self._controller.is_unlocked:
+            if not self._prompt_unlock():
+                return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Encrypted Vault Backup to Import",
+            "",
+            "Vault Backup (*.vault);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        dlg = VaultBackupDialog(mode="import", file_path=file_path, parent=self)
+        prepare_dialog_for_current_workspace(dlg)
+        if dlg.exec() != VaultBackupDialog.DialogCode.Accepted:
+            return
+        passphrase = dlg.get_passphrase()
+        if not passphrase:
+            return
+
+        try:
+            result = self._controller.import_vault(passphrase, file_path)
+            imported = result.get("imported_count", 0)
+            skipped = result.get("skipped_count", 0)
+            QMessageBox.information(
+                self,
+                "Import Complete",
+                f"Successfully verified and imported {imported} secret(s).\n"
+                f"{skipped} duplicate(s) skipped.",
+            )
+            self._controller.status_message.emit(
+                f"📥 Imported {imported} secrets ({skipped} skipped)"
+            )
+            self.refresh_list()
+        except Exception as exc:
+            logger.error("Failed to import vault backup: %s", exc)
+            QMessageBox.critical(self, "Import Failed", f"Failed to import vault: {exc}")
+
     def _handle_delete_secret(self, item_id: int) -> None:
         self._guarded(self._controller.delete_secret, item_id)
 
+    def _prompt_history_secret(self, item_id: int) -> None:
+        if not self._controller.is_unlocked:
+            if not self._prompt_unlock():
+                return
+
+        summaries = self._controller.list_secrets()
+        matching = [s for s in summaries if s.id == item_id]
+        if not matching:
+            return
+
+        from ui.vault.history_dialog import PasswordHistoryDialog
+        dlg = PasswordHistoryDialog(matching[0], self._controller, parent=self)
+        prepare_dialog_for_current_workspace(dlg)
+        try:
+            dlg.exec()
+        finally:
+            dlg.deleteLater()
+
+    def _show_guide(self) -> None:
+        """Display the comprehensive Vault security, architecture, and shortcuts guide."""
+        dlg = VaultGuideDialog(parent=self)
+        prepare_dialog_for_current_workspace(dlg)
+        try:
+            dlg.exec()
+        finally:
+            dlg.deleteLater()
+
     def refresh_list(self) -> None:
         """Clear and repopulate secret cards matching current filters."""
-        # Clear existing cards
+        # Clear existing cards and disconnect signals to avoid calling scrub on deleted widgets
         while self.cards_layout.count() > 1:
             child = self.cards_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+            widget = child.widget() if child else None
+            if widget and isinstance(widget, SecretCard):
+                try:
+                    self._controller.vault_locked.disconnect(widget.scrub_revealed)
+                except (TypeError, RuntimeError):
+                    pass
+            if widget:
+                widget.deleteLater()
 
         summaries = self._controller.list_secrets(
             category=self._active_category,
@@ -427,6 +591,33 @@ class VaultPanel(QFrame):
             e_layout.addWidget(text_lbl)
             e_layout.addWidget(add_first_btn)
 
+            # Quick Security Guide Card
+            guide_card = QFrame()
+            guide_card.setObjectName("VaultEmptyGuideCard")
+            g_layout = QVBoxLayout(guide_card)
+            g_layout.setContentsMargins(12, 12, 12, 12)
+            g_layout.setSpacing(6)
+
+            g_title = QLabel("💡 Quick Security Guide")
+            g_title.setObjectName("VaultEmptyGuideTitle")
+            g_layout.addWidget(g_title)
+
+            tips = [
+                ("⌨️", "Toggle Vault", "Press <b>Ctrl+Shift+V</b> anytime to summon or close this drawer."),
+                ("⏱️", "Auto-Scrub", "Copied secrets auto-clear from clipboard after 30 seconds."),
+                ("📜", "Version History", "Retains last 3 encrypted versions for single-click rollback."),
+                ("⏳", "Expiration", "Set expiration dates to track temporary tokens with status badges."),
+                ("📦", "Encrypted Backups", "Click <b>📤</b> in the top bar to export an AES-256-GCM (.vault) package."),
+            ]
+
+            for icon, label, text in tips:
+                tip_lbl = QLabel(f"{icon} <b>{label}:</b> {text}")
+                tip_lbl.setObjectName("VaultEmptyGuideItem")
+                tip_lbl.setWordWrap(True)
+                g_layout.addWidget(tip_lbl)
+
+            e_layout.addWidget(guide_card)
+
             self.cards_layout.insertWidget(0, empty_frame)
             return
 
@@ -435,4 +626,5 @@ class VaultPanel(QFrame):
             card = SecretCard(summary, self._controller, parent=self.cards_container)
             card.edit_requested.connect(self._prompt_edit_secret)
             card.delete_requested.connect(self._handle_delete_secret)
+            card.history_requested.connect(self._prompt_history_secret)
             self.cards_layout.insertWidget(idx, card)

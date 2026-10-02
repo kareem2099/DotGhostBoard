@@ -201,10 +201,12 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
 
     pw_hint = QLabel(
         "When set, the app will show a lock screen on startup and "
-        "allow you to lock/unlock from the \U0001f512 button or tray menu."
+        "allow you to lock/unlock from the 🔒 button or tray menu.\n"
+        "🛡️ Your Master Password also encrypts The Vault (vault.db) with a domain-separated key. "
+        "You can export an offline encrypted backup (.vault) from The Vault drawer."
     )
     pw_hint.setWordWrap(True)
-    pw_hint.setStyleSheet("color:#444; font-size:11px;")
+    pw_hint.setStyleSheet("color:#626a70; font-size:11px;")
     layout.addWidget(pw_hint)
 
     pw_btn_row = QHBoxLayout()

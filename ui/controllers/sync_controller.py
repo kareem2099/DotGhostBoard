@@ -24,6 +24,7 @@ from core.network_discovery import DotGhostDiscovery
 from core.services.sync_service import SyncService
 from core.sync_engine import SyncEngine
 from ui.pairing_dialog import PairingDialog
+from ui.window_utils import prepare_dialog_for_current_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,7 @@ class SyncController(QObject):
         if self._api_thread:
             self._api_thread.active_pairing_sessions[node_id] = dialog.session
 
+        prepare_dialog_for_current_workspace(dialog)
         if dialog.exec():
             pass
         else:
@@ -306,6 +308,7 @@ class SyncController(QObject):
             cancel_btn = msg.addButton(QMessageBox.StandardButton.Cancel)
             cancel_btn.setObjectName("BulkBtnCancel")
 
+            prepare_dialog_for_current_workspace(msg)
             msg.exec()
 
             if msg.clickedButton() in (disconnect_btn, reconnect_btn):
@@ -327,6 +330,7 @@ class SyncController(QObject):
             peer_name=device_name,
             parent=dlg_parent,
         )
+        prepare_dialog_for_current_workspace(dialog)
         if dialog.exec():
             self.status_message.emit(f"Successfully paired with {device_name}!")
             item.setText(f"🔒 {device_name}")

@@ -65,6 +65,14 @@ def attach_vault(dashboard: Dashboard, container_layout: QBoxLayout) -> tuple[Va
     )
     controller.panel_visibility_changed.connect(_on_visibility)
 
+    # When a Vault deletion also sweeps clipboard history, remove the card from the UI
+    def _on_history_item_removed(item_id: int) -> None:
+        hc = getattr(dashboard, "history_controller", None)
+        if hc and hasattr(hc, "remove_card"):
+            hc.remove_card(item_id)
+
+    controller.history_item_removed.connect(_on_history_item_removed)
+
     # Expose attributes on dashboard instance for backward compatibility and tests
     dashboard.vault_controller = controller
     dashboard.vault_panel = panel

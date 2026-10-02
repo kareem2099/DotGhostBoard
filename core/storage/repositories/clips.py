@@ -711,3 +711,53 @@ def clean_old_captures(keep: int = 100) -> int:
             )
 
     return deleted
+
+
+def auto_purge_history(max_items: int = 500, chunk: int = 50) -> int:
+    """
+    Trim the oldest unpinned, non-secret items when the total count
+    exceeds `max_items`. Removes up to `chunk` items per call to avoid
+    a large blocking DELETE on the UI thread.
+
+    Returns the number of items deleted (0 if under the limit).
+    """
+    with _db() as conn:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM clipboard_items WHERE is_pinned = 0 AND is_secret = 0"
+        ).fetchone()[0]
+
+    if total <= max_items:
+        return 0
+
+    to_remove = min(total - max_items, chunk)
+
+    with _db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, type, content, preview
+            FROM clipboard_items
+            WHERE is_pinned = 0 AND is_secret = 0
+            ORDER BY updated_at ASC
+            LIMIT ?
+            """,
+            (to_remove,),
+        ).fetchall()
+
+    if not rows:
+        return 0
+
+    for row in rows:
+        for path in (row["content"], row["preview"]):
+            if row["type"] in ("image", "video"):
+                _safe_remove_file(path)
+        thumb = os.path.join(get_thumb_dir(), f"{row['id']}.png")
+        _safe_remove_file(thumb)
+
+    ids = [row["id"] for row in rows]
+    placeholders = ",".join("?" * len(ids))
+    with _db() as conn:
+        conn.execute(
+            f"DELETE FROM clipboard_items WHERE id IN ({placeholders})", ids
+        )
+
+    return len(ids)

@@ -178,6 +178,12 @@ class SecurityService:
         password-unlock flow (e.g., restored from LockScreen dialog).
 
         Caller is responsible for ensuring `key` is a valid AES-256 key (32 bytes).
+
+        NOTE: This deliberately does NOT unlock the Vault. The Vault requires the
+        master password to derive its domain-separated KEK (via derive_vault_key).
+        Since only the Eclipse key is available here (not the raw password), the Vault
+        remains locked and the user must unlock it explicitly via VaultUnlockDialog.
+        Use unlock(password) to unlock both Eclipse session and Vault in one step.
         """
         if self._active_key is not None:
             secure_zero(self._active_key)

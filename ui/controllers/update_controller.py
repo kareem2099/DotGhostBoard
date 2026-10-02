@@ -89,9 +89,11 @@ class UpdateController(QObject):
         if not self._pending_update_info or not self._pending_asset_url:
             return
         from ui.updater_dialog import UpdaterDialog
+        from ui.window_utils import prepare_dialog_for_current_workspace
 
         dlg_parent = parent_widget or self._parent_window
         dialog = UpdaterDialog(self._pending_update_info, self._pending_asset_url, dlg_parent)
+        prepare_dialog_for_current_workspace(dialog)
         dialog.exec()
 
     def cleanup(self) -> None:

@@ -120,7 +120,10 @@ class SettingsDialog(QDialog):
 
     def _open_tag_manager(self):
         from ui.tag_manager import TagManagerDialog
-        TagManagerDialog(self).exec()
+        from ui.window_utils import prepare_dialog_for_current_workspace
+        dlg = TagManagerDialog(self)
+        prepare_dialog_for_current_workspace(dlg)
+        dlg.exec()
 
     # ── General-tab helpers (called via dialog._X() from general.py) ─────────
 

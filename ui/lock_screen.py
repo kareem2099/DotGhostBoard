@@ -11,17 +11,20 @@ Two modes:
 
 from __future__ import annotations
 
+import os
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QFrame,
+    QLabel, QPushButton, QFrame,
 )
-from PyQt6.QtCore  import Qt, QTimer
-from PyQt6.QtGui   import QKeyEvent
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QKeyEvent
 
 from core.crypto import (
     derive_key, verify_password,
     save_master_password,
 )
+from ui.widgets.password_input import PasswordInputWidget
 
 
 class LockScreen(QDialog):
@@ -36,18 +39,19 @@ class LockScreen(QDialog):
 
     def __init__(self, parent=None, *, setup: bool = False) -> None:
         super().__init__(parent)
-        self._setup    = setup
+        self._setup = setup
         self._key: bytes | None = None
         self._attempts = 0
 
         self.setWindowTitle("DotGhostBoard — Locked")
+        self.setObjectName("LockScreen")
         self.setWindowFlags(
-            Qt.WindowType.Dialog |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.FramelessWindowHint
         )
         self.setModal(True)
-        self.setFixedSize(440, 340 if setup else 300)
+        self.setFixedSize(420, 290 if setup else 235)
 
         self._build_ui()
         self._apply_style()
@@ -59,8 +63,8 @@ class LockScreen(QDialog):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(48, 36, 48, 36)
-        root.setSpacing(14)
+        root.setContentsMargins(32, 22, 32, 22)
+        root.setSpacing(10)
 
         # ── Header ──
         title = QLabel("👻  DotGhostBoard")
@@ -77,19 +81,11 @@ class LockScreen(QDialog):
         divider.setObjectName("LockDivider")
 
         # ── Password input ──
-        self.pw_input = QLineEdit()
-        self.pw_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pw_input.setPlaceholderText("Enter master password…")
-        self.pw_input.setObjectName("LockInput")
-        self.pw_input.setFixedHeight(44)
+        self.pw_input = PasswordInputWidget(placeholder="Enter master password…", parent=self)
         self.pw_input.returnPressed.connect(self._on_submit)
 
         # ── Confirm input (setup only) ──
-        self.confirm_input = QLineEdit()
-        self.confirm_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.confirm_input.setPlaceholderText("Confirm password…")
-        self.confirm_input.setObjectName("LockInput")
-        self.confirm_input.setFixedHeight(44)
+        self.confirm_input = PasswordInputWidget(placeholder="Confirm password…", parent=self)
         self.confirm_input.returnPressed.connect(self._on_submit)
         self.confirm_input.setVisible(self._setup)
 
@@ -103,7 +99,7 @@ class LockScreen(QDialog):
         btn_label = "🔐  Set Password" if self._setup else "🔓  Unlock"
         self.submit_btn = QPushButton(btn_label)
         self.submit_btn.setObjectName("LockBtn")
-        self.submit_btn.setFixedHeight(42)
+        self.submit_btn.setFixedHeight(38)
         self.submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.submit_btn.clicked.connect(self._on_submit)
 
@@ -123,68 +119,17 @@ class LockScreen(QDialog):
         root.addLayout(btn_row)
 
     def _apply_style(self) -> None:
-        self.setStyleSheet("""
-            QDialog {
-                background: #101213;
-                border: 1px solid #303438;
-                border-radius: 12px;
-            }
-
-            #LockTitle {
-                color: #e6e9ea;
-                font-size: 18px;
-                font-weight: 700;
-            }
-
-            #LockSubtitle {
-                color: #70787d;
-                font-size: 12px;
-            }
-
-            #LockDivider {
-                background: #24282b;
-                max-height: 1px;
-                border: none;
-            }
-
-            #LockInput {
-                background: #181a1c;
-                color: #e4e7e8;
-                border: 1px solid #303438;
-                border-radius: 8px;
-                padding: 8px 13px;
-                font-size: 13px;
-            }
-
-            #LockInput:focus {
-                border: 1px solid #3f7e52;
-                background: #1a1d1e;
-            }
-
-            #LockError {
-                color: #e26f6f;
-                font-size: 11px;
-                min-height: 18px;
-            }
-
-            #LockBtn {
-                background: #2bbf5c;
-                color: #08100b;
-                border: none;
-                border-radius: 7px;
-                padding: 0 30px;
-                font-weight: 700;
-                min-width: 150px;
-            }
-
-            #LockBtn:hover {
-                background: #35cf68;
-            }
-
-            #LockBtn:pressed {
-                background: #24a94f;
-            }
-        """)
+        """Apply theme from ui/ghost.qss if not already active on the application."""
+        app = QApplication.instance()
+        if not self.styleSheet() and not (app and app.styleSheet()):
+            from core.paths import resource_path
+            qss_file = resource_path("ui", "ghost.qss")
+            if os.path.exists(qss_file):
+                try:
+                    with open(qss_file, "r", encoding="utf-8") as f:
+                        self.setStyleSheet(f.read())
+                except OSError:
+                    pass
 
     # ── Logic ─────────────────────────────────────────────────────────────────
 
@@ -242,15 +187,6 @@ class LockScreen(QDialog):
 
     def _show_error(self, msg: str) -> None:
         self.error_lbl.setText(msg)
-        # Shake the input for visual feedback
-        self.pw_input.setStyleSheet(
-            self.pw_input.styleSheet() +
-            "#LockInput { border: 1px solid #e26f6f; }"
-        )
-        QTimer.singleShot(600, self._clear_shake)
-
-    def _clear_shake(self) -> None:
-        self.pw_input.setStyleSheet("")   # Restore from parent stylesheet
 
     # ── Public helpers ────────────────────────────────────────────────────────
 
