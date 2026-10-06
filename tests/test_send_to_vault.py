@@ -13,6 +13,7 @@ Covers:
 """
 
 import os
+import pytest
 from PyQt6.QtWidgets import QPushButton, QLabel
 
 from core import storage
@@ -455,8 +456,123 @@ def test_secret_intercept_when_already_in_vault(mock_dashboard):
     # Intercept candidate matching vault secret
     dash._on_secret_candidate("VaultSecretUnique99#")
 
+    assert dash.findChild(SecretDetectedToast) is None
+    assert "Already in Vault" in dash.statusBar().currentMessage()
+
+
+def test_desktop_alert_never_exposes_vault_title(mock_dashboard):
+    from unittest.mock import MagicMock
+    dash = mock_dashboard
+    password = "TestMasterPass123!"
+    if not dash.security_service.has_master_password():
+        dash.security_service.setup_master_password(password)
+    dash.vault_controller.unlock(password)
+    dash.vault_controller.add_secret("Private Bank Account", "VaultSecretUnique99#")
+    dash.hide()
+    dash.tray_manager = MagicMock()
+    dash._on_secret_candidate("VaultSecretUnique99#")
+    dash.tray_manager.show_message.assert_not_called()
+    assert "Private Bank Account" not in dash.statusBar().currentMessage()
+    assert "VaultSecretUnique99#" not in dash.statusBar().currentMessage()
+
+
+@pytest.mark.parametrize("primary", [False, True])
+def test_saved_simple_password_never_reaches_history_or_sync(mock_dashboard, primary):
+    from unittest.mock import MagicMock
+    from core.watcher import ClipboardWatcher
+    dash = mock_dashboard
+    dash.security_service.setup_master_password("TestMasterPass123!")
+    dash.vault_controller.add_secret("Known", "simple")
+    dash.vault_controller.lock(wipe_clipboard=False)
+    dash._settings["detect_passwords"] = False
+    dash.watcher = ClipboardWatcher(backend=MagicMock())
+    attach_send_to_vault(dash)
+    captured = []
+    candidates = []
+    dash.watcher.new_text_captured.connect(lambda *args: captured.append(args))
+    dash.watcher.secret_candidate_detected.connect(candidates.append)
+    dash.watcher._on_clipboard_event(ClipboardEvent(
+        "text", "simple", source_app="primary_selection" if primary else None,
+    ))
+    assert storage.get_item_by_content("simple") is None
+    assert captured == []  # This signal is also the outbound sync trigger.
+    assert candidates == []
+    assert dash.findChild(SecretDetectedToast) is None
+
+
+def test_vault_save_removes_existing_plain_and_encrypted_history(mock_dashboard):
+    from core.crypto import encrypt
+    dash = mock_dashboard
+    dash.security_service.setup_master_password("TestMasterPass123!")
+    plain_id = storage.add_item("text", "simple")
+    storage.toggle_pin(plain_id)
+    encrypted_id = storage.add_encrypted_item(encrypt("simple", dash.security_service.active_key))
+    safe_id = storage.add_item("text", "normal note")
+    dash.history_controller.reload()
+    dash.vault_controller.add_secret("Known", "simple")
+    assert storage.get_item_by_id(plain_id) is None
+    assert storage.get_item_by_id(encrypted_id) is None
+    assert plain_id not in dash.history_controller.cards
+    assert storage.get_item_by_id(safe_id) is not None
+    assert dash.vault_controller.service.match_clipboard_secret("simple") is True
+
+
+def test_cold_locked_vault_does_not_claim_new_password_or_save(mock_dashboard):
+    from unittest.mock import MagicMock
+    from core.security.vault import VaultService
+    from core.watcher import ClipboardWatcher
+    dash = mock_dashboard
+    dash.security_service.setup_master_password("TestMasterPass123!")
+    dash.vault_controller.add_secret("Known", "simple")
+    dash.security_service._vault = VaultService()
+    dash.vault_controller._service = dash.security_service.vault
+    dash.watcher = ClipboardWatcher(backend=MagicMock())
+    attach_send_to_vault(dash)
+    candidates = []
+    dash.watcher.secret_candidate_detected.connect(candidates.append)
+    dash.watcher._on_clipboard_event(ClipboardEvent("text", "simple"))
+    assert storage.get_item_by_content("simple") is None
+    assert candidates == []
+    assert dash.findChild(SecretDetectedToast) is None
+    assert "Unlock the Vault" in dash.statusBar().currentMessage()
+
+    # Unlocking enables recognition and asks the backend to re-evaluate its last text.
+    assert dash.vault_controller.unlock("TestMasterPass123!")
+    assert dash.watcher.backend.recheck_clipboard.called
+    dash.watcher._on_clipboard_event(ClipboardEvent("text", "simple"))
+    assert storage.get_item_by_content("simple") is None
+    dash.watcher._on_clipboard_event(ClipboardEvent("text", "an ordinary note"))
+    assert storage.get_item_by_content("an ordinary note") is not None
+    assert candidates == []
+
+
+def test_vault_membership_overrides_previous_keep_choice(mock_dashboard):
+    dash = mock_dashboard
+    dash.security_service.setup_master_password("TestMasterPass123!")
+    text = "KeepThenSecurePassword99!"
+    dash._on_secret_candidate(text)
     toast = dash.findChild(SecretDetectedToast)
-    assert toast is not None
-    labels = [lbl.text() for lbl in toast.findChildren(QLabel)]
-    assert any("Already Secured" in t for t in labels)
-    assert any("Found in The Vault ('Bank Password')" in t for t in labels)
+    toast._on_keep_in_history()
+    assert storage.get_item_by_content(text) is not None
+    dash.vault_controller.add_secret("Now saved", text)
+    dash._on_secret_candidate(text)
+    assert storage.get_item_by_content(text) is None
+    assert "Already in Vault" in dash.statusBar().currentMessage()
+
+
+def test_alert_click_handles_expired_candidate(mock_dashboard, monkeypatch):
+    from unittest.mock import MagicMock
+    dash = mock_dashboard
+    if not dash.security_service.has_master_password():
+        dash.security_service.setup_master_password("TestMasterPass123!")
+    dash.hide()
+    dash.tray_manager = MagicMock()
+    monkeypatch.setattr(dash, "show_and_raise", MagicMock())
+    monkeypatch.setattr(dash, "_is_locked", lambda: False)
+    dash._on_secret_candidate("NewSecretCandidate99#")
+    callback = dash.tray_manager.show_message.call_args.kwargs["action_callback"]
+    toast = dash.findChild(SecretDetectedToast)
+    toast._on_dismiss()
+    callback()
+    dash.show_and_raise.assert_called_once()
+    assert "expired" in dash.statusBar().currentMessage()

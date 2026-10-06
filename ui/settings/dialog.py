@@ -30,12 +30,14 @@ from ui.settings.pages.general import build_general_tab
 from ui.settings.pages.security import build_security_tab
 from ui.settings.pages.api import build_api_tab
 from ui.settings.pages.about import build_about_tab
+from ui.settings.pages.notifications import build_notifications_tab
 
 
 class SettingsDialog(QDialog):
     """
-    Modal settings dialog with four tabs:
+    Modal settings dialog with five tabs:
       • General  — history limits, theme, autostart, updates, tag manager
+      • Notifications — desktop alerts, categories, sound, and test preview
       • Eclipse  — master password, auto-lock, stealth, app filter
       • API      — local REST API and device identity
       • About    — app, author, license, system and project information
@@ -46,7 +48,7 @@ class SettingsDialog(QDialog):
         self.setObjectName("SettingsDialog")
         self.setWindowTitle("⚙  DotGhostBoard — Settings")
         self.setModal(True)
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(540)
         self.setMaximumWidth(560)
         self.setWindowFlags(
             Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint
@@ -74,6 +76,7 @@ class SettingsDialog(QDialog):
         self._tabs = QTabWidget()
         self._tabs.setObjectName("SettingsTabs")
         self._tabs.addTab(build_general_tab(self),  "General")
+        self._tabs.addTab(build_notifications_tab(self), "Notifications")
         self._tabs.addTab(build_security_tab(self), "🔐  Eclipse")
         self._tabs.addTab(build_api_tab(self),      "🌐  API")
         self._tabs.addTab(build_about_tab(self),    "👻  About")
@@ -166,6 +169,23 @@ class SettingsDialog(QDialog):
         self._settings["max_history"]       = self._max_history.value()
         self._settings["max_captures"]      = self._max_captures.value()
         self._settings["clear_on_exit"]     = self._clear_on_exit.isChecked()
+        self._settings["hide_on_select"]    = (
+            self._hide_on_select.isChecked() if hasattr(self, "_hide_on_select") else False
+        )
+        self._settings["monitor_primary_selection"] = (
+            self._monitor_primary.isChecked() if hasattr(self, "_monitor_primary") else False
+        )
+        self._settings["sync_primary_to_clipboard"] = (
+            self._sync_primary.isChecked() if hasattr(self, "_sync_primary") else True
+        )
+        self._settings["capture_sound_enabled"] = (
+            self._capture_sound.isChecked() if hasattr(self, "_capture_sound") else False
+        )
+        self._settings["custom_sound_path"] = getattr(self, "_custom_sound_path", "")
+        self._settings["notifications_enabled"] = self._notifications_enabled.isChecked()
+        self._settings["notifications_security"] = self._notifications_security.isChecked()
+        self._settings["notifications_updates"] = self._notifications_updates.isChecked()
+        self._settings["notification_sound_enabled"] = self._notification_sound.isChecked()
         self._settings["theme"]             = "dark"
         self._settings["auto_update_check"] = self._auto_update.isChecked()
         self._settings["update_channel"]    = self._update_channel.currentData()

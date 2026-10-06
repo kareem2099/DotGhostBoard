@@ -11,6 +11,23 @@ from core.clipboard.pipeline import ClipboardPipeline
 
 
 class TestClipboardPipeline:
+    @pytest.mark.parametrize("known, expected", [
+        (True, Action.KNOWN_SECRET),
+        (None, Action.VAULT_CHECK_REQUIRED),
+        (False, Action.SAVE_NORMAL),
+    ])
+    def test_vault_membership_precedes_heuristics(self, known, expected):
+        pipeline = ClipboardPipeline(secret_detector=lambda text: False)
+        pipeline.set_known_secret_checker(lambda text: known)
+        assert pipeline.process(ClipboardEvent("text", "simple")).action == expected
+
+    def test_failed_vault_check_cannot_save_plaintext(self):
+        def unavailable(text):
+            raise RuntimeError("Database unavailable")
+        pipeline = ClipboardPipeline()
+        pipeline.set_known_secret_checker(unavailable)
+        assert pipeline.process(ClipboardEvent("text", "secret")).action == Action.VAULT_CHECK_REQUIRED
+
     def test_normal_text_event_is_accepted(self):
         pipeline = ClipboardPipeline()
         event = ClipboardEvent(content_type="text", content="print('hello')")

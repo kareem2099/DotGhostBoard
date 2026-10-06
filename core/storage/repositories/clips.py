@@ -35,6 +35,18 @@ def _get_allowed_media_roots() -> list[str]:
     return list(dict.fromkeys(roots))
 
 
+def _get_allowed_media_prefixes() -> tuple[str, ...]:
+    """
+    Return canonical directory prefix strings (with trailing separator)
+    for all allowed media root directories.
+    """
+    roots = _get_allowed_media_roots()
+    prefixes = []
+    for r in roots:
+        prefixes.append(r if r.endswith(os.sep) else r + os.sep)
+    return tuple(prefixes)
+
+
 def _is_path_in_allowed_roots(filepath: str) -> str | None:
     """
     Resolve filepath and verify it is strictly located inside one of the allowed media roots.
@@ -47,12 +59,11 @@ def _is_path_in_allowed_roots(filepath: str) -> str | None:
     except (ValueError, OSError):
         return None
 
-    allowed_roots = _get_allowed_media_roots()
-    for root in allowed_roots:
-        if resolved == root or resolved.startswith(root + os.sep):
-            return resolved
+    prefixes = _get_allowed_media_prefixes()
+    if not resolved.startswith(prefixes):
+        return None
 
-    return None
+    return resolved
 
 
 def _get_safe_image_path(filepath: str) -> str | None:
@@ -60,8 +71,18 @@ def _get_safe_image_path(filepath: str) -> str | None:
     Validate that filepath is a legitimate regular file located strictly
     inside allowed application media directories or temporary storage.
     """
-    safe_path = _is_path_in_allowed_roots(filepath)
-    if safe_path and os.path.isfile(safe_path):
+    if not filepath or not isinstance(filepath, str):
+        return None
+    try:
+        safe_path = os.path.realpath(os.path.abspath(filepath))
+    except (ValueError, OSError):
+        return None
+
+    prefixes = _get_allowed_media_prefixes()
+    if not safe_path.startswith(prefixes):
+        return None
+
+    if os.path.isfile(safe_path):
         return safe_path
     return None
 
@@ -71,8 +92,18 @@ def _safe_remove_file(filepath: str) -> bool:
     Safely delete a file ONLY if it is strictly located inside allowed application
     media directories or temporary storage. Prevents any arbitrary file deletion.
     """
-    safe_path = _is_path_in_allowed_roots(filepath)
-    if safe_path and os.path.isfile(safe_path):
+    if not filepath or not isinstance(filepath, str):
+        return False
+    try:
+        safe_path = os.path.realpath(os.path.abspath(filepath))
+    except (ValueError, OSError):
+        return False
+
+    prefixes = _get_allowed_media_prefixes()
+    if not safe_path.startswith(prefixes):
+        return False
+
+    if os.path.isfile(safe_path):
         try:
             os.remove(safe_path)
             return True
@@ -86,6 +117,11 @@ def _get_file_hash(filepath: str) -> str | None:
     safe_path = _get_safe_image_path(filepath)
     if not safe_path:
         return None
+
+    prefixes = _get_allowed_media_prefixes()
+    if not safe_path.startswith(prefixes):
+        return None
+
     sha256 = hashlib.sha256()
     try:
         with open(safe_path, "rb") as f:
@@ -118,29 +154,31 @@ def add_item(item_type: str, content: str, preview: str = None) -> int:
     if item_type == "image":
         safe_content = _get_safe_image_path(content)
         if safe_content:
-            new_hash = _get_file_hash(safe_content)
-            if new_hash:
-                new_size = os.path.getsize(safe_content)
-                with _db() as conn:
-                    rows = conn.execute(
-                        "SELECT id, content FROM clipboard_items WHERE type = 'image' ORDER BY updated_at DESC LIMIT 100"
-                    ).fetchall()
+            prefixes = _get_allowed_media_prefixes()
+            if safe_content.startswith(prefixes):
+                new_hash = _get_file_hash(safe_content)
+                if new_hash:
+                    new_size = os.path.getsize(safe_content)
+                    with _db() as conn:
+                        rows = conn.execute(
+                            "SELECT id, content FROM clipboard_items WHERE type = 'image' ORDER BY updated_at DESC LIMIT 100"
+                        ).fetchall()
 
-                for row in rows:
-                    existing_path = _get_safe_image_path(row["content"])
-                    if existing_path:
-                        if os.path.getsize(existing_path) == new_size:
-                            if _get_file_hash(existing_path) == new_hash:
-                                # Duplicate image detected! Remove temporary newly created file safely
-                                _safe_remove_file(safe_content)
+                    for row in rows:
+                        existing_path = _get_safe_image_path(row["content"])
+                        if existing_path and existing_path.startswith(prefixes):
+                            if os.path.getsize(existing_path) == new_size:
+                                if _get_file_hash(existing_path) == new_hash:
+                                    # Duplicate image detected! Remove temporary newly created file safely
+                                    _safe_remove_file(safe_content)
 
-                                now = datetime.now().isoformat()
-                                with _db() as conn:
-                                    conn.execute(
-                                        "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
-                                        (now, row["id"]),
-                                    )
-                                return row["id"]
+                                    now = datetime.now().isoformat()
+                                    with _db() as conn:
+                                        conn.execute(
+                                            "UPDATE clipboard_items SET updated_at = ?, copy_count = copy_count + 1 WHERE id = ?",
+                                            (now, row["id"]),
+                                        )
+                                    return row["id"]
 
     # 3. New item insertion
     now = datetime.now().isoformat()

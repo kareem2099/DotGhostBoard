@@ -17,12 +17,13 @@ Code is preserved verbatim; only self.X → dialog.X substitution was applied.
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+import os
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout,
     QSpinBox, QCheckBox, QComboBox, QLabel,
     QPushButton, QFrame,
     QListWidget, QListWidgetItem, QAbstractItemView, QLineEdit,
-    QWidget,
+    QWidget, QFileDialog, QScrollArea,
 )
 from PyQt6.QtCore import Qt
 
@@ -229,6 +230,139 @@ def build_general_tab(dialog: "SettingsDialog") -> QWidget:
     )
     form.addRow("Privacy:", dialog._clear_on_exit)
 
+    # Hide window on selection / Enter (Issue #1)
+    dialog._hide_on_select = QCheckBox("Hide window on selection / Enter")
+    dialog._hide_on_select.setChecked(bool(dialog._settings.get("hide_on_select", False)))
+    dialog._hide_on_select.setToolTip(
+        "Automatically hides the window back to the background/tray\n"
+        "after pressing Enter (or double-clicking) to select/copy a clip.\n"
+        "Ideal for keyboard-centric workflows and tiling window managers (i3, Qtile, bspwm)."
+    )
+    form.addRow("Behavior:", dialog._hide_on_select)
+
+    # Monitor mouse selection (Issue #2)
+    dialog._monitor_primary = QCheckBox("Monitor mouse selection (PRIMARY clipboard)")
+    dialog._monitor_primary.setChecked(bool(dialog._settings.get("monitor_primary_selection", False)))
+    dialog._monitor_primary.setToolTip(
+        "Automatically captures text highlighted with the mouse (X11 PRIMARY selection)\n"
+        "without needing to press Ctrl+C.\n"
+        "Includes smart anti-flood debouncing and drag consolidation."
+    )
+    form.addRow("Selection:", dialog._monitor_primary)
+
+    # Sync mouse selection to Ctrl+V
+    dialog._sync_primary = QCheckBox("Sync mouse selection to Ctrl+V clipboard")
+    dialog._sync_primary.setChecked(bool(dialog._settings.get("sync_primary_to_clipboard", True)))
+    dialog._sync_primary.setToolTip(
+        "Automatically updates the system Ctrl+V clipboard when you select text with the mouse,\n"
+        "so pressing Ctrl+V immediately pastes your mouse selection."
+    )
+    form.addRow("Clipboard:", dialog._sync_primary)
+
+    # Audio feedback
+    dialog._custom_sound_path = dialog._settings.get("custom_sound_path", "")
+    dialog._capture_sound = QCheckBox("Sound feedback on capture")
+    dialog._capture_sound.setChecked(bool(dialog._settings.get("capture_sound_enabled", False)))
+    dialog._capture_sound.setToolTip(
+        "Plays a quiet, subtle audio pop whenever text or images\n"
+        "are captured into the clipboard in the background."
+    )
+
+    sound_row = QHBoxLayout()
+    sound_row.setSpacing(8)
+    form.addRow("Audio:", dialog._capture_sound)
+
+    from core.paths import resource_path
+    sound_presets = [
+        ("Ghost Pop (Default)", resource_path("data", "assets", "sounds", "ghost_pop.wav")),
+        ("Crystal Chime", resource_path("data", "assets", "sounds", "ghost_chime.wav")),
+        ("Tactile Click", resource_path("data", "assets", "sounds", "ghost_click.wav")),
+        ("Cyber Beam", resource_path("data", "assets", "sounds", "ghost_beam.wav")),
+    ]
+
+    sound_combo = QComboBox()
+    sound_combo.setFixedHeight(28)
+    sound_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    sound_combo.setMinimumContentsLength(18)
+    sound_combo.setToolTip("Choose a built-in sound preset or load an external audio file")
+    for label, path in sound_presets:
+        sound_combo.addItem(f"🎵 {label}", userData=path)
+    sound_combo.addItem("📂 Choose Custom File…", userData="__custom__")
+
+    # Match initial selection
+    curr_path = dialog._custom_sound_path or resource_path("data", "assets", "sounds", "ghost_pop.wav")
+    matched = False
+    for i, (_, path) in enumerate(sound_presets):
+        if curr_path and os.path.abspath(curr_path) == os.path.abspath(path):
+            sound_combo.setCurrentIndex(i)
+            matched = True
+            break
+    if not matched and dialog._custom_sound_path:
+        sound_combo.insertItem(len(sound_presets), f"🎵 {os.path.basename(dialog._custom_sound_path)}", userData=dialog._custom_sound_path)
+        sound_combo.setCurrentIndex(len(sound_presets))
+
+    def _on_test_sound():
+        from core.audio import play_capture_sound
+        play_capture_sound(dialog._custom_sound_path or sound_presets[0][1])
+
+    def _restore_sound_selection():
+        path = dialog._custom_sound_path or sound_presets[0][1]
+        idx = sound_combo.findData(path)
+        sound_combo.blockSignals(True)
+        sound_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        sound_combo.blockSignals(False)
+
+    def _on_sound_combo_changed(idx: int):
+        data = sound_combo.itemData(idx)
+        if data == "__custom__":
+            file_path, _ = QFileDialog.getOpenFileName(
+                dialog,
+                "Select Capture Sound File",
+                "",
+                "Audio Files (*.wav *.oga *.ogg *.mp3 *.flac);;All Files (*)",
+            )
+            if file_path:
+                from core.audio import validate_audio_file
+                valid, err = validate_audio_file(file_path)
+                if not valid:
+                    from PyQt6.QtWidgets import QMessageBox
+                    QMessageBox.warning(
+                        dialog,
+                        "Invalid Audio File",
+                        f"Cannot use this audio file for clipboard feedback:\n\n{err}\n\n"
+                        "Please choose a short UI sound effect (under 2 seconds).",
+                    )
+                    _restore_sound_selection()
+                    return
+
+                dialog._custom_sound_path = file_path
+                custom_label = f"🎵 {os.path.basename(file_path)}"
+                sound_combo.blockSignals(True)
+                # Check if custom slot already exists
+                if sound_combo.count() > len(sound_presets) + 1:
+                    sound_combo.removeItem(len(sound_presets))
+                sound_combo.insertItem(len(sound_presets), custom_label, userData=file_path)
+                sound_combo.setCurrentIndex(len(sound_presets))
+                sound_combo.blockSignals(False)
+                _on_test_sound()
+            else:
+                _restore_sound_selection()
+        elif data:
+            dialog._custom_sound_path = data
+            _on_test_sound()
+
+    sound_combo.currentIndexChanged.connect(_on_sound_combo_changed)
+
+    test_sound_btn = QPushButton("▶ Test")
+    test_sound_btn.setFixedHeight(28)
+    test_sound_btn.setToolTip("Test play current capture sound")
+    test_sound_btn.clicked.connect(_on_test_sound)
+
+    sound_row.addWidget(sound_combo, stretch=1)
+    sound_row.addWidget(test_sound_btn)
+
+    form.addRow("Sound:", sound_row)
+
     # Launch on startup (Autostart)
     from core.autostart import get_autostart_state
     current_autostart = get_autostart_state()
@@ -367,4 +501,9 @@ def build_general_tab(dialog: "SettingsDialog") -> QWidget:
     layout.addWidget(hint_frame)
 
     layout.addStretch()
-    return tab
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setWidget(tab)
+    return scroll

@@ -40,6 +40,7 @@ def wire_dashboard_controllers(dash: Dashboard) -> None:
     hc.reveal_requested.connect(dash._on_reveal_requested)
     hc.pin_suggested.connect(dash._on_pin_suggested)
     hc.item_copied_ready.connect(dash._on_item_copied_ready)
+    hc.item_activated.connect(dash._on_item_activated)
 
     dash.sync_controller.api_text_received.connect(dash._on_sync_item_received)
     dash.sync_controller.sync_received_signal.connect(dash._on_sync_item_received)
@@ -47,3 +48,15 @@ def wire_dashboard_controllers(dash: Dashboard) -> None:
     hc.status_message.connect(dash.statusBar().showMessage)
     cc.status_message.connect(dash.statusBar().showMessage)
     dash.sync_controller.status_message.connect(dash.statusBar().showMessage)
+
+    def _update_topbar_stats(stats: dict):
+        total = stats.get("total", 0)
+        pinned = stats.get("pinned", stats.get("total_pinned", 0))
+        texts = stats.get("texts", 0)
+        images = stats.get("images", 0)
+        dash.topbar.set_stats_text(
+            f"Total: {total}  |  📌 {pinned}  |  T: {texts}  I: {images}"
+        )
+
+    hc.stats_updated.connect(_update_topbar_stats)
+    hc.refresh_stats()

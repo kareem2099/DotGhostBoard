@@ -372,6 +372,23 @@ class DashboardCompatibilityMixin:
 
     def _on_update_found(self, update_info: dict, asset_url: str):
         self.topbar.set_update_visible(True)
+        tray = getattr(self, "tray_manager", None)
+        if tray and not self.isVisible():
+            def open_update():
+                self.show_and_raise()
+                if not self._is_locked():
+                    self._show_updater_dialog()
+
+            tray.show_message(
+                "DotGhostBoard — Update available",
+                "A new version is available. Open to review the release details.",
+                timeout=5000,
+                category="updates",
+                action_label="View update",
+                action_callback=open_update,
+                dedupe_key=f"update:{update_info.get('tag_name', asset_url)}",
+                once=True,
+            )
 
     def _show_updater_dialog(self):
         self.update_controller.show_updater_dialog(self)
@@ -413,6 +430,23 @@ class DashboardCompatibilityMixin:
         if getattr(self, "watcher", None):
             self.watcher.mark_self_paste()
             self.watcher.paste_item_to_clipboard(item)
+        if getattr(self, "_hide_after_secret_copy", False):
+            self._hide_after_secret_copy = False
+            self.hide()
+
+    def _on_item_activated(self, item_id: int):
+        """Called when a card is activated via Enter or double-click."""
+        if self._settings.get("hide_on_select", False):
+            item = self.history_service.get_item(item_id)
+            if (
+                item
+                and item.get("is_secret")
+                and getattr(self, "security_controller", None)
+                and self.security_controller.is_locked
+            ):
+                self._hide_after_secret_copy = True
+            else:
+                self.hide()
 
     def _on_item_moved_to_collection(
         self, item_id: int, target_coll_id: int | None

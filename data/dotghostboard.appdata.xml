@@ -75,6 +75,11 @@
   <url type="donation">https://github.com/sponsors/kareem2099</url>
   
   <releases>
+    <release version="2.1.2" date="2026-10-06">
+      <description>
+        <p>Vault clipboard protection, configurable desktop notifications, and PRIMARY selection fixes.</p>
+      </description>
+    </release>
     <release version="1.5.0" date="2026-04-15">
       <description>
         <p>Nexus release — Local Network Sync, mDNS Discovery, REST API, CLI Companion</p>

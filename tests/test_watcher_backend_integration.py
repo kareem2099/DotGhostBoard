@@ -33,6 +33,9 @@ class MockClipboardBackend:
     def mark_self_paste(self):
         self.self_pasted = True
 
+    def set_monitor_primary(self, enabled: bool):
+        self.monitor_primary = enabled
+
     def paste_item(self, item):
         self.pasted_items.append(item)
 
@@ -50,6 +53,19 @@ def isolated_storage(tmp_path, monkeypatch):
 
 
 class TestWatcherBackendIntegration:
+    def test_recheck_only_retries_unverified_clipboard(self, isolated_storage):
+        from unittest.mock import MagicMock
+        backend = MagicMock()
+        watcher = ClipboardWatcher(backend=backend)
+        watcher.recheck_clipboard()
+        backend.recheck_clipboard.assert_not_called()
+        watcher.pipeline.set_known_secret_checker(lambda text: None)
+        watcher._on_clipboard_event(ClipboardEvent("text", "pending text"))
+        watcher.recheck_clipboard()
+        watcher.recheck_clipboard()
+        backend.recheck_clipboard.assert_called_once()
+        assert storage.get_item_by_content("pending text") is None
+
     def test_watcher_start_delegates_to_backend(self, isolated_storage):
         backend = MockClipboardBackend()
         watcher = ClipboardWatcher(backend=backend)

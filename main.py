@@ -15,7 +15,8 @@ def _global_exception_handler(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = _global_exception_handler
 
-# Suppress D-Bus warnings before any Qt import
+# Suppress D-Bus and AT-SPI accessibility spam before any Qt import
+os.environ.setdefault("NO_AT_BRIDGE", "1")
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.dbus.*=false"
 if os.getenv("DOTGHOST_FORCE_WAYLAND") == "1":
     pass

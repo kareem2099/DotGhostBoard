@@ -40,6 +40,7 @@ from ui.vault.secret_dialog import SecretDialog
 from ui.vault.unlock_dialog import VaultUnlockDialog
 from ui.vault.backup_dialog import VaultBackupDialog
 from ui.vault.guide_dialog import VaultGuideDialog
+from ui.vault.csv_import_dialog import CsvImportDialog
 from ui.vault.vault_controller import VaultController
 from ui.window_utils import prepare_dialog_for_current_workspace
 
@@ -157,6 +158,12 @@ class VaultPanel(QFrame):
         self.import_btn.setToolTip("Import Encrypted Vault Backup (.vault)")
         self.import_btn.clicked.connect(self._on_import_vault)
 
+        self.csv_import_btn = QPushButton("📋")
+        self.csv_import_btn.setObjectName("VaultToolBtn")
+        self.csv_import_btn.setFixedSize(28, 28)
+        self.csv_import_btn.setToolTip("Import from CSV (Google, Edge, Firefox, Bitwarden…)")
+        self.csv_import_btn.clicked.connect(self._on_import_csv)
+
         self.help_btn = QPushButton("❓")
         self.help_btn.setObjectName("VaultToolBtn")
         self.help_btn.setFixedSize(28, 28)
@@ -168,6 +175,7 @@ class VaultPanel(QFrame):
         toolbar.addWidget(self.lock_toggle_btn)
         toolbar.addWidget(self.export_btn)
         toolbar.addWidget(self.import_btn)
+        toolbar.addWidget(self.csv_import_btn)
         toolbar.addWidget(self.help_btn)
         root_layout.addLayout(toolbar)
 
@@ -506,6 +514,21 @@ class VaultPanel(QFrame):
         prepare_dialog_for_current_workspace(dlg)
         try:
             dlg.exec()
+        finally:
+            dlg.deleteLater()
+
+    def _on_import_csv(self) -> None:
+        """Open the CSV import dialog to import passwords from Google, Edge, Firefox, etc."""
+        if not self._controller.is_unlocked:
+            if not self._prompt_unlock():
+                return
+
+        dlg = CsvImportDialog(self._controller, parent=self)
+        prepare_dialog_for_current_workspace(dlg)
+        try:
+            if dlg.exec() == CsvImportDialog.DialogCode.Accepted:
+                self.refresh_list()
+                self._controller.status_message.emit("📋 CSV import complete ✓")
         finally:
             dlg.deleteLater()
 

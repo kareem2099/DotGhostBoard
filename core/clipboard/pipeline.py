@@ -28,6 +28,10 @@ class ClipboardPipeline:
         self._app_filter_checker = app_filter_checker
         self._paranoia_checker = paranoia_checker
         self._secret_detector = secret_detector
+        self._known_secret_checker: Callable[[str], bool | None] | None = None
+
+    def set_known_secret_checker(self, checker: Callable[[str], bool | None] | None) -> None:
+        self._known_secret_checker = checker
 
     def set_app_filter_checker(self, checker: Callable[[str | None], bool] | None) -> None:
         self._app_filter_checker = checker
@@ -55,6 +59,17 @@ class ClipboardPipeline:
         # 3. Paranoia Mode (Strict early-exit: no OCR, no secret detection, no DB)
         if self._paranoia_checker is not None and self._paranoia_checker():
             return CaptureDecision(action=Action.IGNORE, reason="paranoia_mode")
+
+        # Stored Vault values are protected independently of heuristic detection.
+        if self._known_secret_checker is not None and event.content_type == "text":
+            try:
+                known = self._known_secret_checker(event.content)
+            except Exception:
+                known = None  # Never turn a failed security check into a public save.
+            if known is True:
+                return CaptureDecision(Action.KNOWN_SECRET, "already_in_vault", event)
+            if known is None:
+                return CaptureDecision(Action.VAULT_CHECK_REQUIRED, "vault_check_required", event)
 
         # 4. Secret Candidate Detection (v2.0 insertion point)
         if (

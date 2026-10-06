@@ -62,6 +62,71 @@ def test_physical_database_isolation(vault_env):
         assert "clipboard_items" not in v_tables
 
 
+def test_recognition_covers_all_pages_and_survives_auto_lock(vault_env):
+    service = VaultService()
+    service.unlock_with_key(b"k" * 32)
+    oldest = service.add_secret("Old saved password", "simple")
+    for i in range(125):
+        service.add_secret(f"Entry {i}", f"another secret {i}")
+    from core.security.vault.database import _vault_db
+    with _vault_db() as cursor:
+        cursor.execute("UPDATE vault_items SET updated_at = '2000-01-01' WHERE id = ?", (oldest,))
+    assert oldest not in [summary.id for summary in service.list_secrets()]
+    assert service.find_duplicate("simple").id == oldest
+    assert service.match_clipboard_secret("simple") is True
+    service.lock()
+    assert service._vault_dek is None
+    assert service.match_clipboard_secret("simple") is True
+    assert service.match_clipboard_secret("regular clipboard note") is False
+    with pytest.raises(VaultLockedError):
+        service.get_secret(oldest)
+
+
+def test_cold_locked_vault_requires_verification(vault_env):
+    service = VaultService()
+    service.unlock_with_key(b"k" * 32)
+    service.add_secret("Saved", "simple")
+    restarted = VaultService()
+    assert restarted.match_clipboard_secret("simple") is None
+    assert restarted.match_clipboard_secret("normal text") is None
+    restarted.unlock_with_key(b"k" * 32)
+    restarted.lock()
+    assert restarted.match_clipboard_secret("simple") is True
+    assert restarted.match_clipboard_secret("normal text") is False
+
+
+def test_recognition_tracks_updates_deletes_and_external_imports(vault_env):
+    service = VaultService()
+    service.unlock_with_key(b"k" * 32)
+    item_id = service.add_secret("Saved", "old value")
+    service.update_secret(item_id, secret_text="new value")
+    assert service.match_clipboard_secret("new value") is True
+    assert service.match_clipboard_secret("old value") is False
+    service.delete_secret(item_id)
+    assert service.match_clipboard_secret("new value") is False
+    service.lock()
+    importer = VaultService()
+    importer.unlock_with_key(b"k" * 32)
+    importer.add_secret("Imported", "imported value")
+    assert service.match_clipboard_secret("imported value") is None
+    service.unlock_with_key(b"k" * 32)
+    assert service.match_clipboard_secret("imported value") is True
+
+
+def test_recognition_normalizes_like_clipboard_without_persisting_hashes(vault_env):
+    import hashlib
+    service = VaultService()
+    service.unlock_with_key(b"k" * 32)
+    service.add_secret("Saved", "  whitespace secret  ")
+    service.lock()
+    assert service.match_clipboard_secret("whitespace secret") is True
+    from pathlib import Path
+    raw = Path(vault_env["vault_db"]).read_bytes()
+    assert b"whitespace secret" not in raw
+    assert hashlib.sha256(b"whitespace secret").hexdigest().encode() not in raw
+    assert service._recognition_key not in raw
+
+
 def test_vault_repository_crud(vault_env):
     repo = VaultRepository(vault_env["vault_db"])
 

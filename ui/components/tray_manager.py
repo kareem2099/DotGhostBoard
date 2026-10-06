@@ -9,6 +9,7 @@ and tooltip formatting. Communicates with Dashboard via semantic signals.
 """
 
 from typing import Callable, Optional
+import time
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
@@ -38,6 +39,35 @@ class DashboardTrayManager(QObject):
         self.tray: QSystemTrayIcon | None = None
         self._menu: QMenu | None = None
         self._actions: list[QAction] = []
+        self._notification_settings = {}
+        self._notice_times: dict[str, float] = {}
+        self._notification_generation = 0
+        self._tray_callback = None
+
+    def configure_notifications(self, settings: dict) -> None:
+        preferences = {key: settings.get(key, True) for key in (
+            "notifications_enabled", "notifications_security", "notifications_updates",
+            "notification_sound_enabled",
+        )}
+        if preferences == self._notification_settings:
+            return
+        self._notification_settings = preferences
+        self._notification_generation += 1
+        self._tray_callback = None
+        if not settings.get("notifications_enabled", True):
+            from core.notifications import cancel_desktop_notifications
+            cancel_desktop_notifications()
+
+    def _notifications_allowed(self, category: str) -> bool:
+        settings = self._notification_settings
+        return settings.get("notifications_enabled", True) and settings.get(
+            f"notifications_{category}", True,
+        )
+
+    def _on_message_clicked(self):
+        callback, self._tray_callback = self._tray_callback, None
+        if callback:
+            callback()
 
     @staticmethod
     def make_tray_icon() -> QIcon:
@@ -65,6 +95,7 @@ class DashboardTrayManager(QObject):
         """Initialize the QSystemTrayIcon and attach signal handlers."""
         self.tray = QSystemTrayIcon(self.make_tray_icon(), self)
         self.tray.activated.connect(self._on_tray_click)
+        self.tray.messageClicked.connect(self._on_message_clicked)
         self._menu = QMenu(self._parent_widget)
         self.tray.setContextMenu(self._menu)
         self.ensure_tray_visible()
@@ -167,6 +198,12 @@ class DashboardTrayManager(QObject):
         ),
         timeout: int = 2000,
         action_callback: Optional[Callable[[], None]] = None,
+        *,
+        category: str = "general",
+        action_label: str = "Open DotGhostBoard",
+        dedupe_key: str | None = None,
+        cooldown: float = 0,
+        once: bool = False,
     ):
         """
         Display a desktop notification.
@@ -179,15 +216,34 @@ class DashboardTrayManager(QObject):
             send_desktop_notification,
         )
 
-        cat = (
-            "secret"
-            if "secret" in title.lower() or "password" in title.lower()
-            else "general"
-        )
-        icon_path = get_default_icon_path(cat)
+        if not self._notifications_allowed(category):
+            return
+        now = time.monotonic()
+        if dedupe_key in self._notice_times:
+            if once or now - self._notice_times[dedupe_key] < cooldown:
+                return
+        if dedupe_key:
+            self._notice_times[dedupe_key] = now
+        generation = self._notification_generation
+
+        icon_path = get_default_icon_path(category)
         # Use show_requested (not toggle) so clicking a notification always
         # brings the window up — never accidentally hides it.
-        callback = action_callback or self.show_requested.emit
+        def callback():
+            if generation == self._notification_generation and self._notifications_allowed(category):
+                (action_callback or self.show_requested.emit)()
+
+        def delivered(success):
+            if generation != self._notification_generation or not self._notifications_allowed(category):
+                return
+            if success:
+                return
+            if self.tray and self.tray.isVisible() and QSystemTrayIcon.supportsMessages():
+                # Tray balloons have no notification ID: route clicks to the latest balloon.
+                self._tray_callback = callback
+                self.tray.showMessage(title, message, icon, timeout)
+            elif dedupe_key:
+                self._notice_times.pop(dedupe_key, None)
 
         sent = send_desktop_notification(
             title=title,
@@ -195,10 +251,13 @@ class DashboardTrayManager(QObject):
             icon=icon_path,
             timeout_ms=timeout,
             action_callback=callback,
+            action_label=action_label,
+            sound=self._notification_settings.get("notification_sound_enabled", True),
+            on_result=delivered,
         )
 
-        if not sent and self.tray and self.tray.isVisible():
-            self.tray.showMessage(title, message, icon, timeout)
+        if not sent:
+            delivered(False)
 
     def hide(self):
         if self.tray:

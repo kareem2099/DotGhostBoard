@@ -48,15 +48,42 @@ def get_today_stats() -> dict:
             top_copied_preview = top_row["preview"] or top_row["content"] or ""
             top_copied_count = top_row["copy_count"]
 
+        cur_all = conn.execute(
+            """
+            SELECT preview, content, copy_count
+            FROM clipboard_items
+            WHERE copy_count > 0
+              AND COALESCE(is_secret, 0) = 0
+            ORDER BY copy_count DESC, updated_at DESC
+            LIMIT 1
+            """
+        )
+        all_row = cur_all.fetchone()
+        all_time_top_preview = ""
+        all_time_top_count = 0
+        if all_row:
+            all_time_top_preview = all_row["preview"] or all_row["content"] or ""
+            all_time_top_count = all_row["copy_count"]
+
         cur4 = conn.execute("SELECT COUNT(*) as cnt FROM clipboard_items WHERE is_pinned = 1")
         total_pinned = cur4.fetchone()["cnt"]
 
+        total = conn.execute("SELECT COUNT(*) FROM clipboard_items").fetchone()[0]
+        texts = conn.execute("SELECT COUNT(*) FROM clipboard_items WHERE type = 'text'").fetchone()[0]
+        images = conn.execute("SELECT COUNT(*) FROM clipboard_items WHERE type = 'image'").fetchone()[0]
+
         return {
+            "total": total,
             "total_today": total_today,
             "total_copies": total_copies,
+            "texts": texts,
+            "images": images,
             "top_copied_preview": top_copied_preview[:25] + "…" if len(top_copied_preview) > 25 else top_copied_preview,
             "top_copied_count": top_copied_count,
+            "all_time_top_preview": all_time_top_preview[:25] + "…" if len(all_time_top_preview) > 25 else all_time_top_preview,
+            "all_time_top_count": all_time_top_count,
             "total_pinned": total_pinned,
+            "pinned": total_pinned,
         }
 
 

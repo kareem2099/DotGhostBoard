@@ -9,7 +9,7 @@ import os
 from typing import Callable, Any
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QImage
+from PyQt6.QtGui import QImage, QClipboard
 
 from ..events import ClipboardEvent
 from core import media
@@ -19,12 +19,16 @@ class QtClipboardBackend(QObject):
     """
     Monitors QApplication.clipboard() every 500ms.
     Converts raw clipboard data into ClipboardEvent instances.
+    Supports optional debounced PRIMARY mouse selection monitoring.
     """
 
     def __init__(self, parent=None, poll_interval_ms: int = 500):
         super().__init__(parent)
         self._clipboard = QApplication.clipboard()
         self._last_content: str | None = None
+        self._last_primary_content: str | None = None
+        self._monitor_primary: bool = False
+        self._sync_primary_to_clipboard: bool = True
         self._is_self_paste: bool = False
         self._on_event: Callable[[ClipboardEvent], None] | None = None
 
@@ -32,17 +36,89 @@ class QtClipboardBackend(QObject):
         self._timer.setInterval(poll_interval_ms)
         self._timer.timeout.connect(self._check_clipboard)
 
+        self._primary_debounce_timer = QTimer(self)
+        self._primary_debounce_timer.setSingleShot(True)
+        self._primary_debounce_timer.setInterval(450)
+        self._primary_debounce_timer.timeout.connect(self._on_primary_debounce_timeout)
+
+        try:
+            self._clipboard.selectionChanged.connect(self._on_selection_changed)
+        except Exception:
+            pass
+
     def set_on_event(self, callback: Callable[[ClipboardEvent], None]) -> None:
         self._on_event = callback
+
+    def set_monitor_primary(self, enabled: bool) -> None:
+        self._monitor_primary = enabled
+        if not enabled:
+            self._primary_debounce_timer.stop()
+
+    def set_sync_primary_to_clipboard(self, enabled: bool) -> None:
+        self._sync_primary_to_clipboard = enabled
+
+    def _on_selection_changed(self) -> None:
+        if not self._timer.isActive() or not self._monitor_primary or self._on_event is None:
+            return
+        self._primary_debounce_timer.start()
+
+    def _on_primary_debounce_timeout(self) -> None:
+        if not self._timer.isActive() or not self._monitor_primary or self._on_event is None:
+            return
+        try:
+            if not self._clipboard.supportsSelection():
+                return
+
+            mime = self._clipboard.mimeData(QClipboard.Mode.Selection)
+            if mime is None:
+                return
+
+            if mime.hasFormat("x-kde-passwordManagerHint"):
+                hint = bytes(mime.data("x-kde-passwordManagerHint")).decode("utf-8", errors="ignore").strip().lower()
+                if hint == "secret":
+                    return
+
+            text = self._clipboard.text(QClipboard.Mode.Selection).strip()
+            if not text or len(text) < 2:
+                return
+
+            if text == self._last_primary_content or text == self._last_content:
+                return
+
+            self._last_primary_content = text
+
+            if self._sync_primary_to_clipboard:
+                # The synced text is already known. Normal content deduplication
+                # suppresses it without swallowing the next external copy.
+                self._is_self_paste = False
+                self._last_content = text
+                self._clipboard.setText(text, QClipboard.Mode.Clipboard)
+
+            event = ClipboardEvent(
+                content_type="text",
+                content=text,
+                source_app="primary_selection",
+            )
+            self._on_event(event)
+        except Exception as e:
+            print(f"[QtClipboardBackend] Primary Selection Error: {e}")
 
     def start(self) -> None:
         self._timer.start()
 
     def stop(self) -> None:
         self._timer.stop()
+        self._primary_debounce_timer.stop()
 
     def mark_self_paste(self) -> None:
         self._is_self_paste = True
+
+    def recheck_clipboard(self) -> None:
+        """Re-evaluate previously blocked text after Vault verification becomes available."""
+        self._last_content = None
+        self._last_primary_content = None
+        if self._monitor_primary:
+            self._on_selection_changed()
 
     def paste_item(self, item: dict[str, Any]) -> None:
         self._is_self_paste = True
@@ -51,6 +127,8 @@ class QtClipboardBackend(QObject):
 
         if item_type == "text":
             self._clipboard.setText(content)
+            if self._clipboard.supportsSelection():
+                self._clipboard.setText(content, QClipboard.Mode.Selection)
         elif item_type == "image":
             image = QImage(content)
             if not image.isNull():

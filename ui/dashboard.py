@@ -268,6 +268,7 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
 
     def _setup_tray(self):
         tm = self.tray_manager = DashboardTrayManager(parent=self)
+        tm.configure_notifications(self._settings)
         tm.toggle_visibility_requested.connect(self.toggle_visibility)
         tm.show_requested.connect(self.show_and_raise)  # notification click → always show
         tm.pause_monitoring_requested.connect(self._pause_monitoring)
@@ -325,6 +326,8 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         prepare_dialog_for_current_workspace(dlg)
         if dlg.exec():
             self._settings = load_settings()
+            if getattr(self, "tray_manager", None):
+                self.tray_manager.configure_notifications(self._settings)
             self._enforce_history_limit()
             self._clean_captures()
             self._app_filter.update(
@@ -334,10 +337,24 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
             self._set_stealth(self._settings.get("stealth_mode", False))
             self.lock_btn.setVisible(has_master_password())
             self._reset_auto_lock()
+            if hasattr(self, "watcher"):
+                self.watcher.set_monitor_primary(
+                    self._settings.get("monitor_primary_selection", False)
+                )
+                self.watcher.set_sync_primary_to_clipboard(
+                    self._settings.get("sync_primary_to_clipboard", True)
+                )
+                self.watcher.set_capture_sound_enabled(
+                    self._settings.get("capture_sound_enabled", False)
+                )
             self.statusBar().showMessage("Settings saved ✓")
 
     def _start_watcher(self):
         w = self.watcher = ClipboardWatcher()
+        w.set_monitor_primary(self._settings.get("monitor_primary_selection", False))
+        w.set_sync_primary_to_clipboard(self._settings.get("sync_primary_to_clipboard", True))
+        w.set_capture_sound_enabled(self._settings.get("capture_sound_enabled", False))
+        w.primary_fragment_replaced.connect(self.history_controller.remove_card)
         w.new_text_captured.connect(self.history_controller.on_text_captured)
         w.new_text_captured.connect(
             lambda iid, text: self.sync_controller.broadcast_text(text)
@@ -367,6 +384,12 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         self._reset_auto_lock()
         hc = getattr(self, "history_controller", None)
         if hc and hc.handle_key_press(event, self._visible_cards()):
+            return
+        if event.key() == Qt.Key.Key_Escape:
+            if hasattr(self, "search_box") and self.search_box.text():
+                self.search_box.clear()
+                return
+            self.hide()
             return
         super().keyPressEvent(event)
 
@@ -434,6 +457,8 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
                 "Running in background. Click tray icon to restore.",
                 timeout=2000,
                 action_callback=self.show_and_raise,
+                dedupe_key="background",
+                once=True,
             )
             return
 

@@ -1,181 +1,214 @@
-"""
-tests/test_notifications.py
-────────────────────────────
-Unit tests for core.notifications and desktop notification dispatching.
-Covers:
-- notify-send command formatting and argument passing.
-- Interactive action callback dispatch.
-- Fallback to dbus when notify-send is absent.
-- Graceful error handling (no unhandled exceptions).
-- Integration with DashboardTrayManager.show_message.
-- Default icon resolution for categories.
-"""
+"""Notification delivery, action routing, failure recovery and mute regressions."""
+import threading
+from unittest.mock import MagicMock
 
-from unittest.mock import MagicMock, patch
+import pytest
+from PyQt6.QtCore import QThread
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QSystemTrayIcon
 
-from core.notifications import (
-    get_default_icon_path,
-    send_desktop_notification,
-)
+import core.notifications as notifications
 from ui.components.tray_manager import DashboardTrayManager
 
 
-def test_get_default_icon_path():
-    """Verify icon resolution returns valid existing path or freedesktop stock name."""
-    icon_general = get_default_icon_path("general")
-    assert isinstance(icon_general, str) and len(icon_general) > 0
-
-    with patch("os.path.exists", return_value=False):
-        assert get_default_icon_path("secret") == "dialog-password"
-        assert get_default_icon_path("warning") == "dialog-warning"
-        assert get_default_icon_path("error") == "dialog-error"
-        assert get_default_icon_path("other") == "dialog-information"
+def wait_until(qapp, condition):
+    for _ in range(100):
+        qapp.processEvents()
+        if condition():
+            return
+        QTest.qWait(10)
+    assert condition()
 
 
-def test_send_desktop_notification_notify_send_success(monkeypatch):
-    """Verify send_desktop_notification constructs expected notify-send command."""
-    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/notify-send" if cmd == "notify-send" else None)
+@pytest.fixture
+def dispatcher(qapp, monkeypatch):
+    service = notifications._NotificationDispatcher()
+    monkeypatch.setattr(notifications, '_dispatcher_instance', service)
+    monkeypatch.setattr(service, '_connect_bus', lambda: False)
+    monkeypatch.setattr(notifications.shutil, 'which', lambda name: None)
+    yield service
+    service.cancel()
+    qapp.processEvents()
+    service.deleteLater()
+    qapp.processEvents()
 
-    spawned_cmds = []
 
-    def fake_popen(cmd, *args, **kwargs):
-        spawned_cmds.append(cmd)
-        mock_proc = MagicMock()
-        return mock_proc
+def fake_native(dispatcher, monkeypatch, *, error=False):
+    from PyQt6.QtDBus import QDBusMessage, QDBusPendingCall
+    bus = MagicMock()
+    method = QDBusMessage.createMethodCall('org.test.Service', '/test', 'org.test.Service', 'Notify')
+    reply = method.createErrorReply('org.test.Error', 'Rejected') if error else method.createReply([77])
+    bus.asyncCall.side_effect = lambda *args: QDBusPendingCall.fromCompletedCall(reply)
+    dispatcher._bus = bus
+    monkeypatch.setattr(dispatcher, '_connect_bus', lambda: True)
+    return bus
 
-    monkeypatch.setattr("subprocess.Popen", fake_popen)
 
-    res = send_desktop_notification(
-        title="Test Title",
-        message="Test Body",
-        app_name="DotGhostBoard",
-        icon="dialog-password",
-        timeout_ms=3000,
-        urgency="critical",
+def fake_cli(tmp_path, monkeypatch, body):
+    executable = tmp_path / 'notify-send'
+    executable.write_text('#!/bin/sh\n' + body + '\n')
+    executable.chmod(0o700)
+    monkeypatch.setattr(notifications.shutil, 'which', lambda name: str(executable))
+    return executable
+
+
+def test_icon_resolution(monkeypatch):
+    assert notifications.get_default_icon_path()
+    monkeypatch.setattr(notifications.os.path, 'exists', lambda path: False)
+    assert notifications.get_default_icon_path('security') == 'dialog-password'
+    assert notifications.get_default_icon_path('error') == 'dialog-error'
+
+
+def test_callbacks_run_on_gui_thread_even_when_initialized_in_worker(qapp, monkeypatch):
+    monkeypatch.setattr(notifications, '_dispatcher_instance', None)
+    observed = []
+    for _ in range(2):
+        worker = threading.Thread(target=lambda: notifications._safe_dispatch_callback(
+            lambda: observed.append(QThread.currentThread() == qapp.thread())
+        ))
+        worker.start()
+        worker.join()
+        qapp.processEvents()
+    assert observed == [True, True]
+    service = notifications._dispatcher_instance
+    assert service.thread() == qapp.thread()
+    service.deleteLater()
+    qapp.processEvents()
+
+
+def test_native_delivery_and_action_lifetime(qapp, dispatcher, monkeypatch):
+    bus = fake_native(dispatcher, monkeypatch)
+    results, clicks = [], []
+    assert notifications.send_desktop_notification(
+        'Secret', 'Masked <preview>', timeout_ms=0, sound=False,
+        action_callback=lambda: clicks.append(QThread.currentThread() == qapp.thread()),
+        on_result=results.append,
     )
-
-    assert res is True
-    assert len(spawned_cmds) == 1
-    cmd = spawned_cmds[0]
-    assert cmd[0] == "/usr/bin/notify-send"
-    assert "-a" in cmd and cmd[cmd.index("-a") + 1] == "DotGhostBoard"
-    assert "-i" in cmd and cmd[cmd.index("-i") + 1] == "dialog-password"
-    assert "-t" in cmd and cmd[cmd.index("-t") + 1] == "3000"
-    assert "-u" in cmd and cmd[cmd.index("-u") + 1] == "critical"
-    assert cmd[-2] == "Test Title"
-    assert cmd[-1] == "Test Body"
-
-
-def test_send_desktop_notification_with_action_callback(monkeypatch, qapp):
-    """Verify that clicking action triggers action_callback safely."""
-    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/notify-send" if cmd == "notify-send" else None)
-
-    callback_called = []
-
-    def on_click():
-        callback_called.append(True)
-
-    class FakeProc:
-        def communicate(self, timeout=None):
-            return ("default\n", "")
-
-    def fake_popen(cmd, *args, **kwargs):
-        assert "-A" in cmd
-        assert "default=Open App" in cmd
-        return FakeProc()
-
-    monkeypatch.setattr("subprocess.Popen", fake_popen)
-
-    res = send_desktop_notification(
-        title="Secret Intercepted",
-        message="Click to open",
-        action_label="Open App",
-        action_callback=on_click,
-    )
-    assert res is True
-
-    # Process any Qt events if callback was scheduled via QTimer
-    from PyQt6.QtWidgets import QApplication
-    QApplication.processEvents()
-
-    # The background thread runs communicate and invokes callback
-    import time
-    for _ in range(20):
-        QApplication.processEvents()
-        if callback_called:
-            break
-        time.sleep(0.05)
-
-    assert len(callback_called) == 1
+    wait_until(qapp, lambda: results)
+    assert results == [True]
+    arguments = bus.asyncCall.call_args[0][0].arguments()
+    assert arguments[4] == 'Masked &lt;preview&gt;'
+    assert arguments[6]['suppress-sound'] is True
+    assert arguments[7] == 0
+    # There is no local expiry timer: actions remain until the daemon closes them.
+    dispatcher._action(77, 'default')
+    dispatcher._action(77, 'default')
+    assert clicks == [True]
 
 
-def test_send_desktop_notification_dbus_fallback(monkeypatch):
-    """Verify fallback to dbus-python when notify-send is absent."""
-    monkeypatch.setattr("shutil.which", lambda cmd: None)
-
-    mock_dbus = MagicMock()
-    mock_session_bus = MagicMock()
-    mock_dbus.SessionBus.return_value = mock_session_bus
-    mock_notify_obj = MagicMock()
-    mock_session_bus.get_object.return_value = mock_notify_obj
-    mock_iface = MagicMock()
-    mock_dbus.Interface.return_value = mock_iface
-
-    monkeypatch.setitem(__import__("sys").modules, "dbus", mock_dbus)
-
-    res = send_desktop_notification(
-        title="Dbus Title",
-        message="Dbus Message",
-        timeout_ms=4000,
-    )
-
-    assert res is True
-    assert mock_iface.Notify.called
+def test_native_close_discards_callback(qapp, dispatcher, monkeypatch):
+    fake_native(dispatcher, monkeypatch)
+    clicks, results = [], []
+    notifications.send_desktop_notification('Title', 'Body', action_callback=lambda: clicks.append(1), on_result=results.append)
+    wait_until(qapp, lambda: results)
+    dispatcher._closed(77, 2)
+    dispatcher._action(77, 'default')
+    assert clicks == []
 
 
-def test_send_desktop_notification_all_fail_graceful(monkeypatch):
-    """Verify that if both notify-send and dbus fail, function returns False without exception."""
-    monkeypatch.setattr("shutil.which", lambda cmd: None)
-    monkeypatch.setitem(__import__("sys").modules, "dbus", None)
-
-    res = send_desktop_notification(title="Fail", message="Fail")
-    assert res is False
-
-
-def test_tray_manager_show_message_integration(qapp, monkeypatch):
-    """Verify DashboardTrayManager.show_message invokes send_desktop_notification."""
-    tray_mgr = DashboardTrayManager()
-
-    dispatched = []
-
-    def fake_send(title, message, **kwargs):
-        dispatched.append((title, message, kwargs))
-        return True
-
-    monkeypatch.setattr("core.notifications.send_desktop_notification", fake_send)
-
-    tray_mgr.show_message("Secret Title", "Secret Body", timeout=4500)
-
-    assert len(dispatched) == 1
-    assert dispatched[0][0] == "Secret Title"
-    assert dispatched[0][1] == "Secret Body"
-    assert dispatched[0][2]["timeout_ms"] == 4500
-    assert callable(dispatched[0][2]["action_callback"])
+def test_native_failure_falls_back_to_cli(qapp, dispatcher, monkeypatch, tmp_path):
+    fake_native(dispatcher, monkeypatch, error=True)
+    fake_cli(tmp_path, monkeypatch, "printf '88\\ndefault\\n'")
+    results, clicks = [], []
+    notifications.send_desktop_notification('Title', 'Body', action_callback=lambda: clicks.append(1), on_result=results.append)
+    wait_until(qapp, lambda: clicks and not dispatcher._processes)
+    assert results == [True]
+    assert clicks == [1]
 
 
-def test_tray_manager_show_message_fallback_to_tray(qapp, monkeypatch):
-    """Verify that if send_desktop_notification returns False, tray.showMessage is called."""
-    tray_mgr = DashboardTrayManager()
-    tray_mgr.tray = MagicMock()
-    tray_mgr.tray.isVisible.return_value = True
+@pytest.mark.parametrize('failure', ['missing', 'exit', 'launch'])
+def test_native_and_cli_failures_are_reported(qapp, dispatcher, monkeypatch, tmp_path, failure):
+    results = []
+    if failure == 'exit':
+        fake_cli(tmp_path, monkeypatch, 'exit 2')
+    elif failure == 'launch':
+        monkeypatch.setattr(notifications.shutil, 'which', lambda name: str(tmp_path / 'missing-program'))
+    notifications.send_desktop_notification('Title', 'Body', on_result=results.append)
+    wait_until(qapp, lambda: results)
+    assert results == [False]
 
-    # Simulate native notification failure
-    monkeypatch.setattr("core.notifications.send_desktop_notification", lambda *a, **k: False)
 
-    tray_mgr.show_message("Fallback Title", "Fallback Body", timeout=2500)
+def test_cancel_drops_queued_delivery(qapp, dispatcher, monkeypatch):
+    send_cli = MagicMock()
+    monkeypatch.setattr(dispatcher, '_send_cli', send_cli)
+    notifications.send_desktop_notification('Title', 'Body')
+    notifications.cancel_desktop_notifications()
+    qapp.processEvents()
+    send_cli.assert_not_called()
 
-    assert tray_mgr.tray.showMessage.called
-    args = tray_mgr.tray.showMessage.call_args[0]
-    assert args[0] == "Fallback Title"
-    assert args[1] == "Fallback Body"
-    assert args[3] == 2500
+
+def test_cancel_closes_native_and_disables_action(qapp, dispatcher, monkeypatch):
+    bus = fake_native(dispatcher, monkeypatch)
+    results, clicks = [], []
+    notifications.send_desktop_notification('Title', 'Body', action_callback=lambda: clicks.append(1), on_result=results.append)
+    wait_until(qapp, lambda: results)
+    notifications.cancel_desktop_notifications()
+    assert bus.asyncCall.call_args[0][0].member() == 'CloseNotification'
+    dispatcher._action(77, 'default')
+    assert clicks == []
+
+
+def test_tray_fallback_after_async_failure_and_click(qapp, dispatcher, monkeypatch):
+    manager = DashboardTrayManager()
+    manager.tray = MagicMock()
+    monkeypatch.setattr(QSystemTrayIcon, 'supportsMessages', lambda: True)
+    clicks = []
+    manager.show_message('Title', 'Body', action_callback=lambda: clicks.append(1))
+    wait_until(qapp, lambda: manager.tray.showMessage.called)
+    assert manager.tray.showMessage.call_args[0][:2] == ('Title', 'Body')
+    manager._on_message_clicked()
+    manager._on_message_clicked()
+    assert clicks == [1]
+
+
+def test_tray_setup_connects_message_click(qapp, monkeypatch):
+    tray = MagicMock()
+    monkeypatch.setattr('ui.components.tray_manager.QSystemTrayIcon', MagicMock(return_value=tray))
+    manager = DashboardTrayManager()
+    manager.setup_tray()
+    tray.messageClicked.connect.assert_called_once_with(manager._on_message_clicked)
+
+
+def test_disable_and_reenable_without_restart(qapp, dispatcher, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(notifications, 'send_desktop_notification', send)
+    manager = DashboardTrayManager()
+    manager.tray = MagicMock()
+    manager.configure_notifications({'notifications_enabled': False})
+    manager.show_message('Title', 'Body')
+    send.assert_not_called()
+    manager.tray.showMessage.assert_not_called()
+    manager.configure_notifications({'notifications_enabled': True})
+    manager.show_message('Title', 'Body')
+    send.assert_called_once()
+
+
+def test_muting_prevents_delayed_fallback_and_action(qapp, dispatcher, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(notifications, 'send_desktop_notification', send)
+    manager = DashboardTrayManager()
+    manager.tray = MagicMock()
+    clicks = []
+    manager.show_message('Title', 'Body', action_callback=lambda: clicks.append(1))
+    callbacks = send.call_args.kwargs
+    manager.configure_notifications({'notifications_enabled': False})
+    callbacks['on_result'](False)
+    callbacks['action_callback']()
+    manager.tray.showMessage.assert_not_called()
+    assert clicks == []
+
+
+def test_categories_deduplication_and_sound(qapp, dispatcher, monkeypatch):
+    send = MagicMock(return_value=True)
+    monkeypatch.setattr(notifications, 'send_desktop_notification', send)
+    manager = DashboardTrayManager()
+    manager.configure_notifications({'notifications_security': False, 'notification_sound_enabled': False})
+    manager.show_message('Security', 'Body', category='security')
+    send.assert_not_called()
+    for _ in range(2):
+        manager.show_message('Background', 'Body', dedupe_key='background', once=True)
+    assert send.call_count == 1
+    assert send.call_args.kwargs['sound'] is False
+    for _ in range(2):
+        manager.show_message('Repeated', 'Body', dedupe_key='repeated', cooldown=30)
+    assert send.call_count == 2

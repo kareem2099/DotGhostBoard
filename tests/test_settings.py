@@ -18,6 +18,36 @@ import ui.settings as settings_module
 import ui.settings._io as _io_module
 
 
+@pytest.mark.parametrize("reject_file", [False, True])
+@pytest.mark.parametrize("custom_sound", [False, True])
+def test_sound_picker_restores_previous_choice(qapp, tmp_path, monkeypatch, reject_file, custom_sound):
+    from PyQt6.QtWidgets import QComboBox, QFileDialog, QMessageBox
+    from core.paths import resource_path
+    from ui.settings import SettingsDialog
+
+    previous_path = (
+        str(tmp_path / "my-custom.wav") if custom_sound
+        else resource_path("data", "assets", "sounds", "ghost_chime.wav")
+    )
+    settings = dict(_io_module._DEFAULTS, custom_sound_path=previous_path)
+    _io_module.save_settings(settings)
+    played = []
+    monkeypatch.setattr("core.audio.play_capture_sound", played.append)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (
+        (str(tmp_path / "invalid.wav"), "") if reject_file else ("", "")
+    ))
+    monkeypatch.setattr("core.audio.validate_audio_file", lambda *a: (False, "Invalid audio"))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    dialog = SettingsDialog()
+    combo = next(c for c in dialog.findChildren(QComboBox) if c.findData("__custom__") >= 0)
+    combo.setCurrentIndex(combo.findData("__custom__"))
+    assert combo.currentData() == previous_path
+    assert dialog._custom_sound_path == previous_path
+    assert played == []
+    dialog._save_and_close()
+    assert _io_module.load_settings()["custom_sound_path"] == previous_path
+
+
 @pytest.fixture(autouse=True)
 def tmp_settings_file(tmp_path):
     """Redirect SETTINGS_PATH to a fresh temp file for every test.
@@ -280,12 +310,49 @@ class TestPageBuilders:
 # SettingsDialog Shell Tests
 # ════════════════════════════════════════════
 class TestSettingsDialogShell:
+    def test_notification_preferences_persist_and_restore(self, qapp):
+        from PyQt6.QtWidgets import QPushButton
+        from ui.settings.dialog import SettingsDialog
+        dialog = SettingsDialog()
+        assert dialog._notifications_enabled.isChecked()
+        dialog._notifications_security.setChecked(False)
+        dialog._notification_sound.setChecked(False)
+        dialog._notifications_enabled.setChecked(False)
+        assert not dialog.findChild(QPushButton, "TestNotificationBtn").isEnabled()
+        assert not dialog._notifications_security.isEnabled()
+        dialog._save_and_close()
+        reopened = SettingsDialog()
+        assert not reopened._notifications_enabled.isChecked()
+        assert not reopened._notifications_security.isChecked()
+        reopened._notifications_enabled.setChecked(True)
+        assert reopened._notifications_security.isEnabled()
+        assert reopened.findChild(QPushButton, "TestNotificationBtn").isEnabled()
+        reopened._save_and_close()
+        saved = settings_module.load_settings()
+        assert saved["notifications_enabled"] is True
+        assert saved["notifications_security"] is False
+        assert saved["notification_sound_enabled"] is False
+
+    def test_notification_preview_respects_unsaved_sound_choice(self, qapp, monkeypatch):
+        from unittest.mock import MagicMock
+        from PyQt6.QtWidgets import QPushButton
+        from ui.settings.dialog import SettingsDialog
+        send = MagicMock(return_value=True)
+        monkeypatch.setattr("core.notifications.send_desktop_notification", send)
+        dialog = SettingsDialog()
+        dialog._notification_sound.setChecked(False)
+        dialog.findChild(QPushButton, "TestNotificationBtn").click()
+        assert send.call_args.kwargs["sound"] is False
+        dialog.reject()
+        assert settings_module.load_settings()["notification_sound_enabled"] is True
+
     def test_settings_dialog_tabs(self, qapp):
         from ui.settings.dialog import SettingsDialog
         dlg = SettingsDialog()
-        assert dlg._tabs.count() == 4
-        labels = [dlg._tabs.tabText(i) for i in range(4)]
+        assert dlg._tabs.count() == 5
+        labels = [dlg._tabs.tabText(i) for i in range(dlg._tabs.count())]
         assert any("General" in l for l in labels)
+        assert "Notifications" in labels
         assert any("Eclipse" in l for l in labels)
         assert any("API" in l for l in labels)
         assert any("About" in l for l in labels)

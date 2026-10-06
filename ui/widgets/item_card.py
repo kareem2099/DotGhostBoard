@@ -53,6 +53,8 @@ class ItemCard(QFrame):
     sig_reset_count = pyqtSignal(int)
     sig_send_to_vault = pyqtSignal(int)
     sig_smart_action  = pyqtSignal(int, str)   # (item_id, action_name)
+    sig_activated     = pyqtSignal(int)        # item_id (emitted on double-click selection)
+    sig_middle_clicked = pyqtSignal(int)       # item_id (emitted on middle click for PRIMARY buffer)
 
     # E003: emitted when the card asks Dashboard for the active key
     sig_reveal_requested = pyqtSignal(int)   # (item_id)
@@ -140,6 +142,27 @@ class ItemCard(QFrame):
         badge.style().unpolish(badge)
         badge.style().polish(badge)
         top_row.addWidget(badge)
+
+        # Mouse selection badge
+        raw_tags = str(item.get("tags") or "")
+        if "#mouse" in raw_tags or "mouse" in raw_tags:
+            self._mouse_badge = QLabel("🖱️ mouse")
+            self._mouse_badge.setObjectName("MouseBadge")
+            self._mouse_badge.setFixedHeight(18)
+            self._mouse_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._mouse_badge.setToolTip("Captured via mouse selection (PRIMARY clipboard)")
+            self._mouse_badge.setStyleSheet("""
+                QLabel#MouseBadge {
+                    background: #142820;
+                    color: #5af78e;
+                    border: 1px solid #23543d;
+                    border-radius: 9px;
+                    padding: 0 6px;
+                    font-size: 10px;
+                    font-weight: 600;
+                }
+            """)
+            top_row.addWidget(self._mouse_badge)
 
         # Time meta
         self._time_meta = QLabel(_format_time(item.get("created_at", "")))
@@ -605,6 +628,7 @@ class ItemCard(QFrame):
     # ──────────────────────────────────────────────────────────
     def mouseDoubleClickEvent(self, event):
         self.sig_copy.emit(self.item_id)
+        self.sig_activated.emit(self.item_id)
 
     # ──────────────────────────────────────────────────────────
     # P005: Keyboard focus
@@ -642,6 +666,13 @@ class ItemCard(QFrame):
             # 3. Any other area (Multi-select)
             self._is_dragging_handle = False
             self.sig_clicked.emit(self.item_id, QApplication.keyboardModifiers())
+            super().mousePressEvent(event)
+            return
+
+        elif event.button() == Qt.MouseButton.MiddleButton:
+            self.sig_middle_clicked.emit(self.item_id)
+            event.accept()
+            return
 
         # Pass event to parent so Text Selection keeps working
         super().mousePressEvent(event)

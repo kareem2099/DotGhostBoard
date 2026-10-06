@@ -28,8 +28,8 @@ if ! "$PYTHON_BIN" -c 'import PyInstaller, PyQt6, cryptography' >/dev/null 2>&1;
     exit 1
 fi
 
-echo "🧹 Cleaning previous compilation outputs..."
-rm -rf build dist
+# Preserve other release outputs; PyInstaller updates only this application's tree.
+
 
 if [ ! -f "data/icons/icon_256.png" ] && [ -f "scripts/generate_icon.py" ]; then
     echo "🎨 Generating icons..."
@@ -38,11 +38,14 @@ fi
 
 echo "🚀 Compiling with PyInstaller..."
 "$PYTHON_BIN" -m PyInstaller \
+    --noconfirm \
     --noconsole \
     --onedir \
-    --add-data "data:data" \
+    --add-data "data/icons:data/icons" \
+    --add-data "data/assets/sounds:data/assets/sounds" \
     --add-data "ui/ghost.qss:ui" \
     --hidden-import "PyQt6.sip" \
+    --hidden-import "PyQt6.QtDBus" \
     --hidden-import "cryptography" \
     --collect-all "cryptography" \
     --name dotghostboard-app \

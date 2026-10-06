@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dotghostboard"
-version = "2.1.0"
+version = "2.1.2"
 
 description = "Advanced clipboard manager for Linux — DotSuite"
 readme = "README.md"
@@ -51,16 +51,12 @@ dotghostboard = "main:main"
 dotghost = "cli.dotghost:main"
 
 [tool.setuptools]
+include-package-data = false
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "ui*", "data*", "cli*"]
+include = ["core*", "ui*", "data", "cli*"]
 
 [tool.setuptools.package-data]
-"*" = [
-    "*.qss",
-    "*.json",
-    "*.png",
-    "*.svg",
-    "*.gif",
-]
+ui = ["*.qss"]
+data = ["icons/*.png", "icons/*.svg", "icons/*.gif", "assets/sounds/*.wav"]

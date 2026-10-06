@@ -234,6 +234,9 @@ class GhostAPIHandler(BaseHTTPRequestHandler):
             if not sender_node_id or not payload:
                 self.send_error(400, "Missing node_id or payload")
                 return
+            if item_type != "text":
+                self._send_response(400, {"status": "error", "message": "Only 'text' items are supported for sync"})
+                return
             # Verify sender is a trusted peer
             peer = storage.get_trusted_peer(sender_node_id)
             if not peer:
@@ -245,7 +248,7 @@ class GhostAPIHandler(BaseHTTPRequestHandler):
                 self._send_response(401, {"status": "error", "message": "Decryption failed"})
                 return
             # Store (add_item handles deduplication automatically)
-            item_id = storage.add_item(item_type, plaintext)
+            item_id = storage.add_item("text", plaintext)
             # Notify UI thread-safely
             if hasattr(self.server, 'qthread_parent') and self.server.qthread_parent:
                 self.server.qthread_parent.sync_received.emit(item_id, plaintext)

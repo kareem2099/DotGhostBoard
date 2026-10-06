@@ -11,8 +11,9 @@ import logging
 from typing import Optional
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QKeyEvent, QClipboard
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QInputDialog,
     QLineEdit,
@@ -44,6 +45,7 @@ class HistoryController(QObject):
     stats_updated = pyqtSignal(dict)
     status_message = pyqtSignal(str)
     selection_changed = pyqtSignal(int)             # count of selected items
+    item_activated = pyqtSignal(int)                # item_id (emitted on Enter selection or double-click)
 
     def __init__(
         self,
@@ -93,8 +95,20 @@ class HistoryController(QObject):
     def _setup_wiring(self):
         if self._search_box:
             self._search_box.textChanged.connect(self.on_search_text_changed)
+            self._search_box.returnPressed.connect(self._on_search_box_return)
         if self._scroll_area:
             self._scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
+
+    def _on_search_box_return(self) -> None:
+        """Handle Return/Enter when user is typing in the search box."""
+        cards = self._visible_cards()
+        if not cards:
+            return
+        target_idx = self._focused_idx if (0 <= self._focused_idx < len(cards)) else 0
+        card = cards[target_idx]
+        self.set_card_focus(cards, target_idx)
+        self.on_copy(card.item_id)
+        self.item_activated.emit(card.item_id)
 
     def reload(self):
         """Clear existing cards and reload from offset 0."""
@@ -148,6 +162,8 @@ class HistoryController(QObject):
         card.sig_tag_added.connect(self.on_tag_added)
         card.sig_tag_removed.connect(self.on_tag_removed)
         card.sig_clicked.connect(self.on_card_clicked)
+        card.sig_activated.connect(self.item_activated.emit)
+        card.sig_middle_clicked.connect(self.on_card_middle_clicked)
         card.sig_send_to_vault.connect(self.send_to_vault_requested.emit)
         card.sig_reveal_requested.connect(self.reveal_requested.emit)
         card.sig_reset_count.connect(self.on_reset_count)
@@ -212,9 +228,14 @@ class HistoryController(QObject):
 
     def refresh_stats(self):
         stats = self._service.get_stats()
+        try:
+            today_stats = self._service._storage.get_today_stats()
+            combined = {**stats, **today_stats}
+        except Exception:
+            combined = stats
         if self._stats_card:
-            self._stats_card.update_stats(stats)
-        self.stats_updated.emit(stats)
+            self._stats_card.update_stats(combined)
+        self.stats_updated.emit(combined)
 
     # ── Watcher Event Receivers ───────────────────────────────────────────────
 
@@ -269,6 +290,18 @@ class HistoryController(QObject):
             return
 
         self.record_copy_result(item_id, item)
+
+    def on_card_middle_clicked(self, item_id: int):
+        """Copies item content directly to X11/Wayland PRIMARY buffer (for middle-click paste)."""
+        item = self._service.get_item(item_id)
+        if not item or item.get("is_secret"):
+            return
+        content = item.get("content", "")
+        if content:
+            cb = QApplication.clipboard()
+            if cb.supportsSelection():
+                cb.setText(content, QClipboard.Mode.Selection)
+                self.status_message.emit("Copied to PRIMARY buffer (Middle-click paste ready) 🖱️")
 
     def record_copy_result(self, item_id: int, item: dict):
         """Called when a copy operation is finalized (plaintext ready)."""
@@ -351,7 +384,7 @@ class HistoryController(QObject):
             item = self._cards_layout.itemAt(i)
             widget = item.widget() if item else None
 
-            if widget and isinstance(widget, ItemCard) and widget.isVisible():
+            if widget and isinstance(widget, ItemCard) and not widget.isHidden():
                 cards.append(widget)
 
         return cards
@@ -656,14 +689,25 @@ class HistoryController(QObject):
             self.set_card_focus(cards, new_idx)
             return True
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-            if 0 <= self._focused_idx < len(cards):
-                self.on_copy(cards[self._focused_idx].item_id)
+            target_idx = (
+                self._focused_idx
+                if (0 <= self._focused_idx < len(cards))
+                else 0
+            )
+            if 0 <= target_idx < len(cards):
+                card = cards[target_idx]
+                self.set_card_focus(cards, target_idx)
+                self.on_copy(card.item_id)
+                self.item_activated.emit(card.item_id)
                 return True
         elif key == Qt.Key.Key_Escape:
+            had_state = (self._focused_idx != -1 or bool(self._selected_ids))
             if 0 <= self._focused_idx < len(cards):
                 cards[self._focused_idx].set_focused(False)
             self._focused_idx = -1
             self.clear_selection()
+            if not had_state:
+                return False
             return True
         return False
 

@@ -6,6 +6,7 @@ a ClipboardPipeline (policy engine), and persistence/thumbnailing.
 Emits Qt signals to the dashboard on new text, image, or video captures.
 """
 
+import time
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from core import storage, media
 from core.clipboard import (
@@ -53,6 +54,9 @@ class ClipboardWatcher(QObject):
     new_video_captured = pyqtSignal(int, str)   # (id, video_path)
     thumb_ready        = pyqtSignal(int, str)   # (id, thumb_path)
     secret_candidate_detected = pyqtSignal(object) # ClipboardEvent candidate
+    known_secret_detected = pyqtSignal(object)
+    vault_check_required = pyqtSignal(object)
+    primary_fragment_replaced = pyqtSignal(int)   # (old_item_id)
 
     def __init__(
         self,
@@ -66,6 +70,11 @@ class ClipboardWatcher(QObject):
         self._backend.set_on_event(self._on_clipboard_event)
         self._thumb_workers: list = []       # keep refs so GC doesn't kill threads
         self._running: bool = False
+        self._vault_check_pending: bool = False
+        self._capture_sound_enabled: bool = False
+        self._last_primary_id: int | None = None
+        self._last_primary_text: str | None = None
+        self._last_primary_time: float = 0.0
 
     @property
     def pipeline(self) -> ClipboardPipeline:
@@ -112,19 +121,45 @@ class ClipboardWatcher(QObject):
             return
         self._backend.stop()
         self._running = False
+        self._last_primary_id = None
 
     def mark_self_paste(self):
         """Notify backend to avoid capturing the app's own paste action."""
         self._backend.mark_self_paste()
 
+    def recheck_clipboard(self):
+        if not self._vault_check_pending:
+            return
+        recheck = getattr(self._backend, "recheck_clipboard", None)
+        if recheck:
+            self._vault_check_pending = False
+            recheck()
+
     def paste_item_to_clipboard(self, item: dict):
         """Restore item back to system clipboard via backend."""
         self._backend.paste_item(item)
+
+    def set_monitor_primary(self, enabled: bool) -> None:
+        """Enable or disable primary selection monitoring on the backend."""
+        if not enabled:
+            self._last_primary_id = None
+        if hasattr(self._backend, "set_monitor_primary"):
+            self._backend.set_monitor_primary(enabled)
+
+    def set_sync_primary_to_clipboard(self, enabled: bool) -> None:
+        """Configure whether primary mouse selection is synced to system CLIPBOARD (Ctrl+V)."""
+        if hasattr(self._backend, "set_sync_primary_to_clipboard"):
+            self._backend.set_sync_primary_to_clipboard(enabled)
+
+    def set_capture_sound_enabled(self, enabled: bool) -> None:
+        """Enable or disable subtle audio feedback on capture."""
+        self._capture_sound_enabled = enabled
 
     # ─────────────────────────────────────────
     def _on_clipboard_event(self, event: ClipboardEvent) -> None:
         """Single processing funnel for all clipboard events."""
         decision = self._pipeline.process(event)
+        self._vault_check_pending = decision.action == Action.VAULT_CHECK_REQUIRED
 
         if decision.action == Action.IGNORE:
             return
@@ -132,13 +167,62 @@ class ClipboardWatcher(QObject):
         if decision.action == Action.SECRET_CANDIDATE:
             self.secret_candidate_detected.emit(decision.payload)
             return
+        if decision.action == Action.KNOWN_SECRET:
+            self.known_secret_detected.emit(decision.payload)
+            return
+        if decision.action == Action.VAULT_CHECK_REQUIRED:
+            self.vault_check_required.emit(decision.payload)
+            return
 
-        # Action.SAVE_NORMAL
+        # Smart primary selection consolidation:
+        # If user extended or refined an existing mouse selection within 3.0s, replace intermediate fragment.
+        now = time.monotonic()
+        is_primary = getattr(event, "source_app", "") == "primary_selection"
+
+        # Only freshly inserted PRIMARY fragments belong to this drag. A content
+        # match can return an older saved clip that must never be consolidated.
+        existing = storage.get_item_by_content(event.content) if is_primary else None
         item_id = storage.add_item(
             event.content_type,
             event.content,
             preview=event.preview,
         )
+
+        if is_primary and self._last_primary_id is not None and self._last_primary_id != item_id:
+            if (
+                (now - self._last_primary_time) < 3.0
+                and self._last_primary_text
+                and (
+                    event.content.startswith(self._last_primary_text)
+                    or event.content.endswith(self._last_primary_text)
+                    or self._last_primary_text.startswith(event.content)
+                )
+            ):
+                try:
+                    if storage.delete_item(self._last_primary_id):
+                        self.primary_fragment_replaced.emit(self._last_primary_id)
+                except Exception:
+                    pass
+
+        if is_primary:
+            self._last_primary_id = item_id if existing is None else None
+            self._last_primary_text = event.content
+            self._last_primary_time = now
+            try:
+                storage.add_tag(item_id, "mouse")
+            except Exception:
+                pass
+        else:
+            self._last_primary_id = None
+            self._last_primary_text = None
+            self._last_primary_time = 0.0
+
+        if self._capture_sound_enabled:
+            try:
+                from core.audio import play_capture_sound
+                play_capture_sound()
+            except Exception:
+                pass
 
         if event.content_type == "text":
             # Auto-tag new text items (non-blocking: runs in same thread, sub-ms)

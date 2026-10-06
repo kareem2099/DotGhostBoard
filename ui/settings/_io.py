@@ -30,6 +30,15 @@ _DEFAULTS: dict = {
     "clear_on_exit":              False,
     "multiselect_hint_dismissed": False,
     "update_channel":             "stable",   # Stable / Beta / Alpha
+    "hide_on_select":             False,      # Hide window on selection / Enter (Issue #1)
+    "monitor_primary_selection":  False,      # Monitor mouse selection (PRIMARY clipboard) (Issue #2)
+    "sync_primary_to_clipboard":  True,       # Sync mouse selection to system Ctrl+V clipboard
+    "capture_sound_enabled":      False,      # Audio click on capture
+    "custom_sound_path":          "",         # Custom sound file path (.wav/.oga/.mp3)
+    "notifications_enabled":      True,
+    "notifications_security":     True,
+    "notifications_updates":      True,
+    "notification_sound_enabled": True,
     # Eclipse
     "master_lock_enabled":        False,
     "auto_lock_minutes":          0,

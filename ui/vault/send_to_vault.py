@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Optional
 from core.security.detector import SecretDetector
 from core import storage
 from ui.widgets.secret_toast import SecretDetectedToast
+from ui.vault.history_protection import remove_vault_history
 
 if TYPE_CHECKING:
     from ui.dashboard import Dashboard
@@ -35,6 +36,57 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
     abs_timer: list[Optional[QTimer]] = [None]
     kept_hashes: set[str] = set()
     handled: dict[str, str] = {}
+
+    def _vault_match(text: str) -> bool | None:
+        try:
+            return dashboard.security_service.vault.match_clipboard_secret(text)
+        except Exception:
+            logger.warning("Vault recognition unavailable")
+            return None
+
+    def _on_known_secret(event):
+        text = event.content if hasattr(event, "content") else str(event)
+        remove_vault_history(dashboard, text)
+        kept_hashes.discard(hashlib.sha256(text.encode("utf-8")).hexdigest())
+        # Only dismiss the matching pending prompt; leave unrelated work intact.
+        if active_toast[0] and getattr(active_toast[0], "_candidate_text", "") == text:
+            _scrub_candidate()
+        dashboard.statusBar().showMessage("🛡️ Already in Vault — excluded from clipboard history")
+
+    def _on_vault_check_required(event):
+        dashboard.statusBar().showMessage(
+            "🔒 Unlock the Vault to check clipboard text. Nothing was added to history."
+        )
+
+        def open_vault():
+            dashboard.show_and_raise()
+            if not dashboard._is_locked():
+                dashboard.vault_panel.show_panel()
+                if not dashboard.vault_controller.is_unlocked:
+                    dashboard.vault_panel._prompt_unlock()
+
+        tray = getattr(dashboard, "tray_manager", None)
+        if tray:
+            tray.show_message(
+                "DotGhostBoard — Vault check required",
+                "Unlock the Vault to check clipboard text before it can enter history.",
+                category="security", action_label="Unlock Vault", action_callback=open_vault,
+                dedupe_key="vault_check_required", cooldown=30,
+            )
+
+    def _review_notification():
+        dashboard.show_and_raise()
+        if dashboard._is_locked():
+            return
+        toast = active_toast[0]
+        if toast and getattr(toast, "_candidate_text", ""):
+            toast.show()
+            toast.raise_()
+            toast.setFocus()
+        else:
+            dashboard.statusBar().showMessage(
+                "This security alert has already been handled or expired."
+            )
 
     def _scrub_candidate():
         if abs_timer[0]:
@@ -72,14 +124,24 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
             if tray_mgr and hasattr(tray_mgr, "show_message"):
                 tray_mgr.show_message(
                     "DotGhostBoard — Already Secured 🛡️",
-                    f"Secret already protected in {where_saved}.",
+                    "This secret is already protected. Open the app to review.",
                     timeout=4000,
+                    category="security",
+                    dedupe_key="already_secured",
+                    cooldown=30,
                 )
         dashboard.statusBar().showMessage(f"🛡️ Secret already protected in {where_saved}")
 
     def _auto_save_eclipse_fallback(cand: str):
         """Fallback: encrypt into history as an Eclipse card so data is never lost."""
         if not cand:
+            return
+        known = _vault_match(cand)
+        if known is True:
+            _on_known_secret(cand)
+            return
+        if known is None:
+            _on_vault_check_required(cand)
             return
         cand_h = hashlib.sha256(cand.encode("utf-8")).hexdigest()
         if cand_h in handled:
@@ -100,17 +162,29 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
                         "DotGhostBoard — Secret Saved 🔒",
                         "Secret auto-locked to history with Eclipse.",
                         timeout=5000,
+                        category="security",
+                        dedupe_key="secret_saved",
+                        cooldown=10,
                     )
         else:
             dashboard.statusBar().showMessage("Session locked — secret candidate discarded for security")
 
     def _on_secret_candidate(event) -> None:
         """Handle incoming secret candidate from watcher pipeline."""
-        if not dashboard._settings.get("detect_passwords", True):
-            return
-
         cand_text = str(event.content) if hasattr(event, "content") else str(event)
         if not cand_text:
+            return
+
+        # Check membership before heuristic settings, previous Keep decisions,
+        # or any plaintext/encrypted history fallback.
+        known = _vault_match(cand_text)
+        if known is True:
+            _on_known_secret(cand_text)
+            return
+        if known is None:
+            _on_vault_check_required(cand_text)
+            return
+        if not dashboard._settings.get("detect_passwords", True):
             return
 
         # ── No master password configured: save as plain text so nothing is lost ──
@@ -133,13 +207,6 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
             return
 
         where = handled.get(cand_hash)
-        if where is None:
-            vault_ctrl = getattr(dashboard, "vault_controller", None)
-            if vault_ctrl is not None:
-                dup = vault_ctrl.find_duplicate(cand_text)
-                if dup is not None:
-                    where = f"The Vault ('{dup.title}')"
-                    handled[cand_hash] = where
         if where:
             _show_already_saved(where)
             return
@@ -164,7 +231,7 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
                 prefill_category=cat,
             )
             if added_id is not None:
-                handled[cand_hash] = "The Vault"
+                handled.pop(cand_hash, None)
                 _scrub_candidate()
                 dashboard.statusBar().showMessage("🛡️ Secret saved to Vault ✓")
             else:
@@ -172,6 +239,11 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
                 _scrub_candidate()
 
         def _on_toast_keep(cand: str):
+            known = _vault_match(cand)
+            if known is not False:
+                _scrub_candidate()
+                (_on_known_secret if known else _on_vault_check_required)(cand)
+                return
             kept_hashes.add(cand_hash)
             _scrub_candidate()
             storage.add_item("text", cand)
@@ -211,6 +283,11 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
                     "DotGhostBoard — Secret Intercepted 🛡️",
                     "A password or credential was protected from public history. Open to review.",
                     timeout=5000,
+                    category="security",
+                    action_label="Review alert",
+                    action_callback=_review_notification,
+                    dedupe_key="secret_intercepted",
+                    cooldown=5,
                 )
         dashboard.statusBar().showMessage("🛡️ Secret / Password detected — not saved to public board")
 
@@ -277,10 +354,26 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
         )
 
     if hasattr(dashboard, "watcher") and dashboard.watcher:
+        dashboard.watcher.pipeline.set_known_secret_checker(_vault_match)
         dashboard.watcher.pipeline.set_secret_detector(
             lambda ev: _is_detection_enabled() and detector.is_secret(ev)
         )
         dashboard.watcher.secret_candidate_detected.connect(_on_secret_candidate)
+        dashboard.watcher.known_secret_detected.connect(_on_known_secret)
+        dashboard.watcher.vault_check_required.connect(_on_vault_check_required)
+
+    def _on_vault_ready():
+        remove_vault_history(dashboard)
+        toast = active_toast[0]
+        if toast and getattr(toast, "_candidate_text", ""):
+            if _vault_match(toast._candidate_text) is True:
+                _on_known_secret(toast._candidate_text)
+        watcher = getattr(dashboard, "watcher", None)
+        if watcher:
+            watcher.recheck_clipboard()
+
+    dashboard.vault_controller.vault_unlocked.connect(_on_vault_ready)
+    dashboard.vault_controller.secrets_changed.connect(_on_vault_ready)
 
     # Scrub candidate on session lock
     if hasattr(dashboard, "security_controller"):
@@ -288,6 +381,8 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
             if locked:
                 _scrub_candidate()
                 handled.clear()
+            else:
+                _on_vault_ready()
 
         dashboard.security_controller.lock_state_changed.connect(_on_lock_changed)
 

@@ -11,6 +11,36 @@ import pytest
 from ui.dashboard import Dashboard
 
 
+def test_saved_notification_settings_apply_immediately(mock_dashboard, monkeypatch):
+    dash = mock_dashboard
+    manager = MagicMock()
+    dash.tray_manager = manager
+    settings = dict(dash._settings, notifications_enabled=False)
+    dialog = MagicMock()
+    dialog.exec.return_value = True
+    monkeypatch.setattr("ui.dashboard.SettingsDialog", lambda parent: dialog)
+    monkeypatch.setattr("ui.dashboard.prepare_dialog_for_current_workspace", lambda dlg: None)
+    monkeypatch.setattr("ui.dashboard.load_settings", lambda: settings)
+    monkeypatch.setattr(dash, "_is_locked", lambda: False)
+    dash._open_settings()
+    manager.configure_notifications.assert_called_once_with(settings)
+
+
+@pytest.mark.parametrize("locked", [False, True])
+def test_update_notification_opens_details_after_unlock(mock_dashboard, monkeypatch, locked):
+    dash = mock_dashboard
+    dash.hide()
+    dash.tray_manager = MagicMock()
+    monkeypatch.setattr(dash, "show_and_raise", MagicMock())
+    monkeypatch.setattr(dash, "_show_updater_dialog", MagicMock())
+    monkeypatch.setattr(dash, "_is_locked", lambda: locked)
+    dash._on_update_found({"tag_name": "v9.0"}, "https://example.test/update")
+    request = dash.tray_manager.show_message.call_args.kwargs
+    assert request["category"] == "updates"
+    request["action_callback"]()
+    dash.show_and_raise.assert_called_once()
+    assert dash._show_updater_dialog.called is not locked
+
 
 
 def test_controllers_attached(mock_dashboard):

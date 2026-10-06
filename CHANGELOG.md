@@ -7,6 +7,116 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.2] — 2026-10-06
+
+### Added
+
+- Notifications settings tab with a desktop notification toggle, separate security/update
+  preferences, notification sound control, and a test button. Saved changes apply immediately.
+- Update alerts open release details; secret alerts open the current review or explain that
+  the alert has already been handled.
+
+### Fixed
+
+- Package only runtime icons and sounds, excluding local clipboard data and settings.
+
+- Check all stored Vault values before clipboard history or sync, independently of password
+  heuristics. Existing secrets no longer trigger the new-password prompt, including after
+  Vault auto-lock; confirmed duplicate history cards are removed, even when pinned.
+- Require Vault verification before saving text when a non-empty Vault has not yet been
+  unlocked in the current process. Recognition uses process-local keyed digests only;
+  no plaintext or password hashes are added to either database.
+- Dispatch notification actions on the Qt GUI thread using asynchronous Qt D-Bus, with
+  notify-send and tray fallbacks on delivery failure. Actions remain available until closed.
+- Honor notification preferences across delivery paths, suppress repeated background/security
+  alerts, and omit Vault item names from desktop notifications.
+- Stop PRIMARY selection capture and clipboard synchronization while monitoring is paused.
+- Preserve the first external copy after syncing a mouse selection to the clipboard.
+- Consolidate only newly captured PRIMARY fragments; preserve existing clips and pinned cards,
+  and save replacement text before removing its previous fragment.
+- Reject sibling directories and escaping symlinks when checking media paths for cleanup.
+- Restore the previous sound selection when custom file selection is cancelled or rejected.
+- Split audio settings into separate rows and make General settings scrollable.
+
+## [2.1.1] — 2026-10-05 — *Primary Selection, Mouse Ergonomics & Audio Feedback*
+
+> **Release Highlights:**
+>
+> Resolves GitHub Issue #2 (`[FEATURE] config option to support primary selection`). Adds full Linux X11/Wayland PRIMARY mouse selection monitoring with anti-flood debounce (450ms) and intelligent 3-way consolidation (forward selection, backward selection, and boundary recoil trimming). Automatically syncs highlighted text to the system `CLIPBOARD` buffer (`Ctrl+V`) with zero duplicate echo loops, allowing instant pasting with keyboard or mouse. Introduces card middle-click convenience to copy any card directly to the `PRIMARY` buffer for native X11 middle-click pasting. Features distinct emerald `🖱️ mouse` pill badges on cards captured via mouse drag, non-blocking subtle audio feedback on capture with 4 custom synthesized sound presets (`Ghost Pop`, `Crystal Chime`, `Tactile Click`, `Cyber Beam`) and custom audio file chooser, plus a full-featured CSV Importer wizard for The Vault supporting Bitwarden, KeePassXC, 1Password, Chrome, and generic formats. Automated test suite expanded to 547 passing tests.
+
+### Added — Primary Selection Monitoring (`core/clipboard/backends/qt_backend.py`, `core/watcher.py`, `tests/test_primary_selection.py`)
+
+- **X11 / Wayland PRIMARY Buffer Monitoring (Issue #2)**:
+  - Added `monitor_primary_selection` configuration option (default `False`). When enabled, DotGhostBoard automatically captures text highlighted with mouse selection without needing to press `Ctrl+C`.
+  - **450ms Anti-Flood Debounce (`_primary_debounce_timer`)**: Implemented single-shot timer debounce in `QtClipboardBackend` that absorbs rapid mouse move and text selection events during active mouse drags, firing only once the selection stabilizes.
+  - **3-Way Intelligent Consolidation Engine (`core/watcher.py`)**:
+    - **Forward Selection**: Extends existing card if newly selected text starts with the previous text (`new.startswith(old)`).
+    - **Backward Selection**: Prepends text if selected in reverse direction (`new.endswith(old)`).
+    - **Boundary Recoil Trimming**: Replaces previous card if micro-adjustments or word boundary snapping occur (`abs(len(new) - len(old)) <= 3`).
+    - Emits `primary_fragment_replaced(old_id, new_item)` so the dashboard swaps transient drag fragments seamlessly without scroll jumping.
+  - **Auto-Tagging `#mouse`**: All clips ingested via mouse selection are automatically tagged with `#mouse` for effortless filtering.
+
+### Added — Dynamic Primary-to-Clipboard Sync (`core/clipboard/backends/qt_backend.py`)
+
+- **Instant `Ctrl+V` Pasting for Mouse Selections**:
+  - Added `sync_primary_to_clipboard` setting (default `True`).
+  - Automatically synchronizes mouse-highlighted selections directly to the system `CLIPBOARD` buffer.
+  - Deduplicates the synchronized clipboard text without suppressing the next external copy.
+  - Updated `paste_item` to load both `CLIPBOARD` and `PRIMARY` buffers simultaneously, ensuring double-clicking or pressing Enter on a card updates all clipboard channels.
+
+### Added — Mouse Ergonomics: Badges & Middle-Click Copy (`ui/widgets/item_card.py`, `ui/controllers/history_controller.py`)
+
+- **Visual Mouse Pill Badge (`🖱️ mouse`)**:
+  - Displays a clean emerald badge on cards captured via mouse drag, immediately distinguishing them from manual `Ctrl+C` keyboard copies.
+- **Card Middle-Click to PRIMARY Buffer**:
+  - Middle-clicking any item card (`Qt.MouseButton.MiddleButton`) instantly writes its content into the Linux `PRIMARY` selection buffer (`QClipboard.Mode.Selection`).
+  - Emits a status notification: `"✓ Loaded to mouse clipboard (Middle-Click paste ready)"`.
+
+### Added — Subtle Audio Feedback & Sound Synthesizer (`core/audio.py`, `scripts/generate_sounds.py`, `ui/settings/pages/general.py`)
+
+- **Asynchronous Audio Dispatcher (`core/audio.py`)**:
+  - Non-blocking audio feedback played on clipboard capture events (`capture_sound_enabled`, default `False`).
+  - Native multi-engine audio resolution supporting `pw-play` (PipeWire), `paplay` (PulseAudio), `aplay` (ALSA), `mpv`, and `ffplay` with graceful system beep fallback.
+- **4 Custom Synthesized Ghost UI Sound Presets**:
+  - **`Ghost Pop (Default)`**: Soft, warm bubble pop with pitch sweep and exponential decay (75ms).
+  - **`Crystal Chime`**: Two-tone harmonic bell chime (A5 880Hz + E6 1320Hz, 90ms).
+  - **`Tactile Click`**: Crisp mechanical switch click with snappy transient (35ms).
+  - **`Cyber Beam`**: Futuristic dual sine ping (C6 1046Hz + G6 1568Hz, 80ms).
+- **Pure Python Audio Synthesizer (`scripts/generate_sounds.py`)**:
+  - Generates mathematically pure 16-bit 44.1kHz PCM WAV files using standard library `wave` and `math` (zero external dependencies).
+- **Interactive Settings Controls**:
+  - Audio preset selector dropdown in **Settings ⚙️ → General**.
+  - `📂 Choose Custom File…` file picker supporting `.wav`, `.mp3`, `.ogg`, `.oga`, and `.flac` with automatic file size (< 1.5MB) and duration validation (< 2.0s) to prevent long audio files from being selected.
+  - Subprocess execution timeout clamp (1.5s) ensuring external players (`mpv`, `pw-play`, `paplay`, `aplay`) cannot run unbounded in the background.
+  - `▶ Test` button to preview sounds instantly with zero latency.
+
+### Added — Vault CSV Importer (`core/security/vault/csv_importer.py`, `ui/vault/csv_import_dialog.py`)
+
+- **Multi-Format Password Vault Importer**:
+  - Full CSV import wizard supporting Bitwarden, KeePassXC, 1Password, Google Chrome, and generic CSV formats.
+  - Interactive column auto-mapping, preview table, and duplicate skipping policy.
+
+### Restored & Enhanced — Comprehensive History Statistics (`core/storage/repositories/stats.py`, `ui/widgets/stats_header.py`, `ui/controllers/coordination.py`)
+
+- **Restored Lifetime Global Statistics in Feed Header Card**:
+  - Re-introduced total clip count (`📦 Total: {total}`) and lifetime copy executions (`⚡ Copies: {total_copies}` across all clips) to `StatsHeaderCard`.
+  - Full stats banner: `📦 Total: X  •  📋 Today: Y  •  ⚡ Copies: Z  •  📍 Pinned: P  •  🔥 Top: ... (×N)`.
+- **Restored Live TopBar Status Indicator**:
+  - Reconnected `TopBarWidget.set_stats_text()` to `HistoryController.stats_updated` via `coordination.py`.
+  - TopBar header continuously reflects lifetime database metrics: `Total: {total}  |  📌 {pinned}  |  T: {texts}  I: {images}`.
+  - Initial stats broadcast triggered immediately on dashboard initialization.
+
+### Fixed — Terminal AT-SPI Warning Suppression (`main.py`, `scripts/run_i3_sim.sh`)
+
+- Set `NO_AT_BRIDGE=1` environment guard before Qt initialization to suppress noisy GTK AT-SPI warnings in headless or minimal desktop environments without AT-SPI D-Bus registry services.
+
+### Tested
+
+- 16 new automated unit and integration tests in `tests/test_primary_selection.py` validating debouncing, fragment consolidation, sync, audio playback, badges, middle-click buffer assignment, and audio file validation.
+- Full test suite passes with **547 passing tests** (100% pass rate).
+
+---
+
 ## [2.1.0] — 2026-10-02 — *Leviathan (Smart Auto-Tagging, Contextual Actions, Vault Backup & Expiry)*
 
 > **Codename:** Leviathan — Power-User Productivity & Vault Intelligence Release

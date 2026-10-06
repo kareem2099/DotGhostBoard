@@ -1,13 +1,14 @@
 # 👻 DotGhostBoard
 
-> Advanced clipboard manager for Kali Linux — part of the **DotSuite** toolkit.
+> Advanced clipboard manager for Kali Linux — part of the [**DotSuite**](https://www.dotsuite.dev/en) toolkit.
 
-![Version](https://img.shields.io/badge/version-v2.1.0-238636?style=flat-square&labelColor=0f0f0f)
+[![Ecosystem - DotSuite](https://img.shields.io/badge/Ecosystem-DotSuite-00b4d8?style=flat-square&labelColor=333333)](https://www.dotsuite.dev/en)
+![Version](https://img.shields.io/badge/version-v2.1.2-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Leviathan-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-522%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-589%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -41,6 +42,13 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **App icon** — Auto-generated neon ghost icon via `scripts/generate_icon.py`
 - **Dark Neon UI** — Custom QSS theme built for dark desktops
 - **Settings panel** — ⚙ Max history limit, privacy clear-on-exit, theme toggle
+- **Desktop notifications** — Settings → Notifications → Enable desktop notifications → Save.
+  Changes apply immediately; security alerts, update alerts, and notification sounds can be
+  controlled separately. Disabling desktop notifications keeps secret protection active.
+- **Vault-aware clipboard protection** — Passwords already stored in the Vault stay out of
+  clipboard history and sync, even with heuristic password detection disabled. Open a
+  non-empty Vault once after starting the app to enable verification; until then, text is
+  withheld from history. Protection continues after the Vault auto-locks.
 - **Keyboard navigation** — `↑`/`↓` to move between cards, `Enter` to copy, `Esc` to clear focus
 - **Double-click to paste** — Double-click any card to copy it instantly
 - **Standalone autostart** — `scripts/setup_autostart.py` sets up boot entry without bash
@@ -100,6 +108,12 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Dynamic Auto-Purge History** — Configurable history threshold dynamically enforced from Settings, auto-purging oldest unpinned items while respecting pin immunity.
 - **Unified Password Input & Masking (`PasswordInputWidget`)** — Reusable password input with integrated `👁️ / 🙈` eye toggle, unified design system, and compact, balanced spacing across both App Session Lock and Vault Unlock screens.
 - **Modern Typography & Aesthetic** — Clean sans-serif UI typography (`Inter` / `Noto Sans`), muted dark-slate theme, refined card padding, compact 26×26 action buttons, and customizable shortcuts button in Settings.
+- **Mouse Selection Monitoring (PRIMARY Selection)** — Optional automatic capture of text highlighted with the mouse (X11 `PRIMARY` selection, Issue #2) with 450ms anti-flood debouncing and smart 3-way consolidation (forward append, backward prepend, recoil boundary trimming).
+- **Dynamic Primary-to-Clipboard Sync** — Automatically synchronizes mouse-highlighted text to the system `CLIPBOARD` buffer (`Ctrl+V`) without echo loops, so selecting text with mouse immediately enables pasting via `Ctrl+V` across any application.
+- **Card Middle-Click to PRIMARY** — Middle-clicking any item card (`Qt.MouseButton.MiddleButton`) instantly copies its contents into the Linux `PRIMARY` selection buffer for native X11 middle-click pasting.
+- **Mouse Clip Badge (`🖱️ mouse`)** — Distinct emerald pill badge rendered on cards captured via mouse drag to easily differentiate from manual `Ctrl+C` keyboard copies.
+- **Subtle Audio Feedback** — Configurable non-blocking sound feedback on clipboard capture with 4 built-in synthesized presets (`Ghost Pop`, `Crystal Chime`, `Tactile Click`, `Cyber Beam`) and custom audio file chooser (`.wav`, `.mp3`, `.ogg`, `.flac`).
+- **Vault Multi-Format CSV Importer** — Dedicated wizard for The Vault supporting Bitwarden, KeePassXC, 1Password, Google Chrome, and generic CSV credential exports with preview table and duplicate protection.
 
 **Native Desktop Integration:**
 DotGhostBoard integrates seamlessly with desktop environment dock and app launcher.
@@ -130,6 +144,7 @@ DotGhostBoard/
 │   ├── updater.py                   # GitHub auto-updater engine
 │   ├── app_filter.py                # App whitelist/blacklist (Eclipse)
 │   ├── media.py                     # Image/video handler
+│   ├── audio.py                     # Non-blocking audio dispatcher (pw-play, paplay, aplay, mpv)
 │   ├── clipboard/                   # Clipboard pipeline & backend abstraction
 │   │   ├── events.py                # ClipboardEvent, CaptureDecision, Action enum
 │   │   ├── pipeline.py              # Pure policy engine (no Qt dependency)
@@ -178,6 +193,7 @@ DotGhostBoard/
 │   │   ├── secret_dialog.py         # Add/Edit secret modal
 │   │   ├── history_dialog.py        # Password history viewer & version revert modal
 │   │   ├── backup_dialog.py         # Passphrase modal for encrypted export & import (.vault)
+│   │   ├── csv_import_dialog.py     # CSV credential import wizard modal (Bitwarden, KeePassXC)
 │   │   ├── unlock_dialog.py         # Vault master password unlock dialog
 │   │   └── send_to_vault.py         # Bridge from clipboard cards to Vault
 │   ├── widgets/                     # Modular widget package
@@ -208,11 +224,13 @@ DotGhostBoard/
 │   └── settings.json            # Bundled default settings template
 ├── scripts/
 │   ├── generate_icon.py         # Draws ghost icon at 16/32/48/64/128/256px
+│   ├── generate_sounds.py       # Wave audio synthesizer generating custom UI feedback presets
 │   ├── install.sh               # Autostart + shortcut + CLI symlinker
 │   ├── setup_shortcuts.py       # Desktop shortcut configurator (GNOME/XFCE)
 │   ├── build_appimage.sh        # AppImage builder
 │   └── setup_autostart.py       # Standalone Python autostart installer
 ├── tests/
+│   ├── test_primary_selection.py# Primary selection, mouse ergonomics & audio tests
 │   ├── test_api.py              # REST API & Sync tests
 │   ├── test_autostart.py        # Autostart manager tests
 │   ├── test_eclipse.py          # Encryption & Security tests
@@ -284,7 +302,7 @@ python3 main.py
 
 ### Option C — pip install (PyPI)
 
-> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v1.5.7.
+> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v2.1.2.
 
 ```bash
 # Planned for PyPI release
@@ -329,10 +347,10 @@ chmod +x scripts/build_appimage.sh
 
 ```bash
 # Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_1.5.7_amd64.deb
+wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_2.1.2_amd64.deb
 
 # Install via apt
-sudo apt install ./dotghostboard_1.5.7_amd64.deb
+sudo apt install ./dotghostboard_2.1.2_amd64.deb
 
 # Run
 dotghostboard
@@ -375,6 +393,8 @@ sudo apt remove dotghostboard
 | Action | How |
 |--------|-----|
 | Copy anything | Just use `Ctrl+C` anywhere — DotGhostBoard captures it automatically |
+| Mouse Selection (PRIMARY) | Highlight text with mouse — captured automatically when enabled in Settings |
+| Middle-Click to PRIMARY | Middle-click any card to copy directly to Linux PRIMARY buffer for middle-click paste |
 | Toggle window | Press `Ctrl+Alt+V` from anywhere to show or hide the dashboard |
 | Spotlight search | Press `Ctrl+Alt+Space` from anywhere for instant floating quick search |
 | Focus search | Press `Ctrl+F` inside the dashboard to search history |
@@ -418,28 +438,12 @@ DotGhostBoard automatically adheres to the **Extended Window Manager Hints (EWMH
 ## Running Tests
 
 ```bash
-python3 -m pytest
+QT_QPA_PLATFORM=offscreen DOTGHOST_FORCE_WAYLAND=1 python3 -m pytest
 ```
 
-Expected output:
-```
-tests/test_api.py .....                                                  [  1%]
-tests/test_autostart.py .................                                [  3%]
-tests/test_auto_tagger.py ...........                                    [  5%]
-tests/test_eclipse.py .................................                  [ 11%]
-tests/test_ipc_spotlight.py ..........                                   [ 13%]
-tests/test_media.py ...........................                          [ 19%]
-tests/test_password_generator.py ......                                  [ 20%]
-tests/test_storage.py ................................                   [ 26%]
-tests/test_vault.py ........                                             [ 27%]
-tests/test_vault_history.py .....                                        [ 28%]
-tests/test_vault_ui.py ................................................. [ 38%]
-tests/test_watcher_backend_integration.py .......                        [ 40%]
-tests/test_window_manager.py ...................                          [ 44%]
-....                                                                     [ 96%]
-tests/test_updater_core.py .................................             [100%]
-
-511 passed
+Latest verification (headless Qt):
+```text
+589 passed
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -468,6 +472,8 @@ tests/test_updater_core.py .................................             [100%]
 | v2.0.0 | Cerberus | ✅ Released | The Vault UI, Zero-Log Secret Detector, FreeDesktop Notifications, 2.0.0 Icon Architecture (470 tests) |
 | v2.0.1 | Cerberus | ✅ Released | Tiling Window Manager EWMH Migration (Qtile/Openbox), Workspace Toggle Fix, Vault & Notification Hardening (489 tests) |
 | v2.1.0 | Leviathan | ✅ Released | Smart Auto-Tagging, Contextual Card Actions, Vault Generator, Password History, Vault Export/Import, Secret Expiry, Vault Sweep, Auto-Purge (522 tests) |
+| v2.1.2 | Leviathan | Prepared locally | Vault clipboard protection, configurable notifications, PRIMARY fixes, runtime-only packaging (589 tests) |
+| v2.1.1 | Leviathan | ✅ Released | Primary Selection (Issue #2), Mouse Ergonomics & Badges, Middle-Click to PRIMARY, UI Audio Feedback & Sound Synthesizer, Vault CSV Importer (546 tests) |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
 
@@ -475,7 +481,7 @@ Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)
 
 ## Acknowledgments
 
-Special thanks to **[@knodalyte](https://github.com/knodalyte)** for reporting GitHub Issue [#1](https://github.com/kareem2099/DotGhostBoard/issues/1) ("[BUG] does not behave well under tiling window manager") and providing valuable diagnostic feedback that enabled native EWMH cross-workspace migration.
+Special thanks to **[@knodalyte](https://github.com/knodalyte)** for reporting GitHub Issue [#1](https://github.com/kareem2099/DotGhostBoard/issues/1) ("[BUG] does not behave well under tiling window manager") and GitHub Issue [#2](https://github.com/kareem2099/DotGhostBoard/issues/2) ("[FEATURE] config option to support primary selection"), driving key power-user capabilities across window managers and mouse workflows.
 
 ---
 
@@ -493,7 +499,9 @@ Apache 2.0 — see [`LICENSE`](LICENSE) for details.
 
 ## Part of DotSuite
 
-DotGhostBoard is one tool in the **DotSuite** collection — a set of lightweight, privacy-focused productivity tools built for Linux power users.
+DotGhostBoard is one tool in the **[DotSuite](https://www.dotsuite.dev/en)** collection — a suite of modern, lightweight, and privacy-focused productivity tools built for Linux power users.
+
+🌐 **Ecosystem Website:** [https://www.dotsuite.dev/en](https://www.dotsuite.dev/en)
 
 > DotEnv · DotCommand · DotSense · DotFetch · DotShare · DotScramble · **DotGhostBoard**
 

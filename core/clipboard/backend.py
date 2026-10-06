@@ -33,3 +33,11 @@ class ClipboardBackend(Protocol):
     def paste_item(self, item: dict[str, Any]) -> None:
         """Restore item back to the system clipboard."""
         ...
+
+    def set_monitor_primary(self, enabled: bool) -> None:
+        """Configure whether primary mouse selection is monitored."""
+        ...
+
+    def set_sync_primary_to_clipboard(self, enabled: bool) -> None:
+        """Configure whether primary mouse selection is synced to system CLIPBOARD (Ctrl+V)."""
+        ...

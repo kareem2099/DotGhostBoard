@@ -3,7 +3,7 @@
 import os
 import sys
 
-APP_VERSION = "v2.1.0"
+APP_VERSION = "v2.1.2"
 APP_CODENAME = "Leviathan"
 
 GITHUB_REPO = "kareem2099/DotGhostBoard"

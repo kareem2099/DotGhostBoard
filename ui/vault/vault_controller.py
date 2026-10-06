@@ -307,18 +307,7 @@ class VaultController(QObject):
         Returns VaultSummary if found, None if not found or if Vault is locked.
         Safe against offline brute-force attacks by keeping search in-memory only.
         """
-        if not self.is_unlocked:
-            return None
-        import hmac
-        needle = plaintext.encode("utf-8")
-        for s in self._service.list_secrets(category=None):
-            try:
-                other = self._service.get_secret(s.id)
-            except Exception:
-                continue
-            if other is not None and hmac.compare_digest(other.encode("utf-8"), needle):
-                return s
-        return None
+        return self._service.find_duplicate(plaintext)
 
     def copy_text(self, text: str, auto_clear_seconds: int = 30) -> bool:
         """
