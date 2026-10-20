@@ -5,13 +5,14 @@ Encrypted backup and restore subsystem for The Vault (.vault package).
 
 Format:
   [4-byte MAGIC: "DGBV"]
-  [1-byte VERSION: 1]
+  [1-byte VERSION: 2; legacy version 1 remains readable]
   [16-byte SALT]
   [12-byte GCM NONCE]
   [Ciphertext + 16-byte GCM Auth Tag]
 
 Key Derivation:
-  PBKDF2-HMAC-SHA256 (100,000 iterations) with independent per-backup salt.
+  Version 2: Argon2id (64 MiB, 3 passes, 1 lane) with independent per-backup salt.
+  Legacy version 1 PBKDF2-HMAC-SHA256 (100,000 iterations) remains readable.
 
 Payload (pre-encryption):
   JSON object containing version, export timestamp, and encrypted items with history & expiry.
@@ -31,20 +32,27 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from core.security.vault.service import VaultLockedError
+from core.security.passwords import derive_password_key, validate_new_password
+import base64
 
 if TYPE_CHECKING:
     from core.security.vault.service import VaultService
 
 MAGIC = b"DGBV"
-BACKUP_FORMAT_VERSION = 1
-MIN_PASSPHRASE_LEN = 8
+BACKUP_FORMAT_VERSION = 2
+MIN_PASSPHRASE_LEN = 12
 KDF_ITERATIONS = 100_000
 NONCE_SIZE = 12
 SALT_SIZE = 16
 
 
-def _derive_backup_key(passphrase: str, salt: bytes) -> bytes:
-    """Derive 256-bit AES key from backup passphrase and salt using PBKDF2."""
+def _derive_backup_key(passphrase: str, salt: bytes, version: int = BACKUP_FORMAT_VERSION) -> bytes:
+    """Read legacy PBKDF2 backups; write Argon2id backups with bounded parameters."""
+    if version == 2:
+        return derive_password_key(passphrase, {
+            "algorithm": "argon2id", "memory_kib": 65536, "iterations": 3,
+            "lanes": 1, "salt": base64.b64encode(salt).decode("ascii"),
+        })
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -65,9 +73,7 @@ def export_vault_package(service: VaultService, passphrase: str) -> bytes:
     if not service.is_unlocked:
         raise VaultLockedError("Cannot export locked vault. Unlock first.")
 
-    passphrase = passphrase.strip()
-    if len(passphrase) < MIN_PASSPHRASE_LEN:
-        raise ValueError(f"Export passphrase must be at least {MIN_PASSPHRASE_LEN} characters.")
+    validate_new_password(passphrase)
 
     # 1. Gather all secrets, their history, and expiry
     summaries = service.list_secrets()
@@ -88,8 +94,8 @@ def export_vault_package(service: VaultService, passphrase: str) -> bytes:
                 "history": history_plaintexts,
                 "expires_at": s.expires_at,
             })
-        except Exception:
-            continue
+        except Exception as exc:
+            raise ValueError("Backup aborted: an encrypted item could not be read.") from exc
 
     # 2. Package into JSON bundle
     payload = {
@@ -105,32 +111,15 @@ def export_vault_package(service: VaultService, passphrase: str) -> bytes:
     salt = os.urandom(SALT_SIZE)
     key = _derive_backup_key(passphrase, salt)
     nonce = os.urandom(NONCE_SIZE)
-    header_aad = MAGIC + bytes([BACKUP_FORMAT_VERSION])
-    ciphertext = AESGCM(key).encrypt(nonce, payload_bytes, header_aad)
+    header = MAGIC + bytes([BACKUP_FORMAT_VERSION]) + salt + nonce
+    ciphertext = AESGCM(key).encrypt(nonce, payload_bytes, header)
 
     # 4. Formulate file format
-    header = header_aad + salt + nonce
     return header + ciphertext
 
 
-def import_vault_package(
-    service: VaultService,
-    package_bytes: bytes,
-    passphrase: str,
-) -> dict[str, int]:
-    """
-    Decrypt a .vault package and import items into the active unlocked Vault.
-
-    Returns:
-        dict with {"imported_count": int, "skipped_count": int, "total_items": int}
-
-    Raises:
-        VaultLockedError: If the target vault is locked.
-        ValueError: If magic header is invalid, version unsupported, or passphrase wrong.
-    """
-    if not service.is_unlocked:
-        raise VaultLockedError("Cannot import into locked vault. Unlock first.")
-
+def decrypt_vault_package(package_bytes: bytes, passphrase: str) -> dict:
+    """Authenticate and validate a manual backup without needing the source Vault."""
     # Check minimum header size: 4 (magic) + 1 (ver) + 16 (salt) + 12 (nonce) + 16 (GCM tag)
     min_size = len(MAGIC) + 1 + SALT_SIZE + NONCE_SIZE + 16
     if len(package_bytes) < min_size:
@@ -140,7 +129,7 @@ def import_vault_package(
         raise ValueError("Invalid Vault backup header: not a DotGhostBoard .vault file.")
 
     file_version = package_bytes[4]
-    if file_version != BACKUP_FORMAT_VERSION:
+    if file_version not in (1, BACKUP_FORMAT_VERSION):
         raise ValueError(f"Unsupported .vault backup version {file_version}.")
 
     salt_start = 5
@@ -154,8 +143,8 @@ def import_vault_package(
     ciphertext = package_bytes[nonce_end:]
 
     # Derive key and attempt GCM authenticated decryption
-    key = _derive_backup_key(passphrase.strip(), salt)
-    header_aad = package_bytes[:salt_start]
+    key = _derive_backup_key(passphrase.strip() if file_version == 1 else passphrase, salt, file_version)
+    header_aad = package_bytes[:salt_start] if file_version == 1 else package_bytes[:nonce_end]
     try:
         plaintext_bytes = AESGCM(key).decrypt(nonce, ciphertext, header_aad)
     except Exception as exc:
@@ -166,7 +155,34 @@ def import_vault_package(
     except Exception as exc:
         raise ValueError("Corrupted backup payload: invalid JSON structure.") from exc
 
+    if not isinstance(payload, dict) or payload.get("version") != file_version:
+        raise ValueError("Invalid backup payload version.")
     items = payload.get("items", [])
+    if not isinstance(items, list) or len(items) > 100_000:
+        raise ValueError("Invalid backup item collection.")
+    # Validate the complete authenticated payload before writing any entries.
+    for item in items:
+        if (not isinstance(item, dict)
+                or not isinstance(item.get('title', ''), str)
+                or not isinstance(item.get('secret', ''), str)
+                or not isinstance(item.get('category', 'generic'), str)
+                or not isinstance(item.get('history', []), list)
+                or not all(isinstance(value, str) for value in item.get('history', []))
+                or (item.get('expires_at') is not None and not isinstance(item['expires_at'], str))):
+            raise ValueError('Invalid backup entry structure; no entries were imported.')
+    return payload
+
+
+def import_vault_package(service: VaultService, package_bytes: bytes, passphrase: str) -> dict[str, int]:
+    """Authenticate a manual backup and merge its entries into an unlocked Vault."""
+    if not service.is_unlocked:
+        raise VaultLockedError("Cannot import into locked vault. Unlock first.")
+    payload = decrypt_vault_package(package_bytes, passphrase)
+    with service.recovery.batch('import'):
+        return _import_payload(service, payload['items'])
+
+
+def _import_payload(service, items):
     imported_count = 0
     skipped_count = 0
 
@@ -203,19 +219,8 @@ def import_vault_package(
                 secret_text=secret,
                 category=category,
                 expires_at=expires_at,
+                history=list(reversed([value for value in history[:3] if value and value != secret])),
             )
-            # Restore past history entries in chronological order
-            if history and hasattr(service, "_repo"):
-                for old_val in reversed(history[:3]):
-                    if old_val and old_val != secret:
-                        try:
-                            # Encrypt with active DEK and add history entry
-                            key = service._require_unlocked()
-                            from core.crypto import encrypt
-                            old_cipher = encrypt(old_val, key)
-                            service._repo.add_history_entry(new_id, old_cipher, max_entries=3)
-                        except Exception:
-                            pass
 
             imported_count += 1
             existing_items.append((title.lower(), category.lower(), secret))

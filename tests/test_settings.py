@@ -18,6 +18,31 @@ import ui.settings as settings_module
 import ui.settings._io as _io_module
 
 
+@pytest.mark.parametrize("minutes", [0, 5, 30, 60, 10])
+def test_dashboard_idle_timeout_selection_persists(qapp, tmp_settings_file, minutes):
+    from ui.settings import SettingsDialog
+
+    _io_module.save_settings(dict(_io_module._DEFAULTS, auto_lock_minutes=minutes))
+    dialog = SettingsDialog()
+    assert dialog._auto_lock_combo.currentData() == minutes
+    dialog._save_and_close()
+    assert _io_module.load_settings()["auto_lock_minutes"] == minutes
+    reopened = SettingsDialog()
+    reopened._auto_lock_combo.setCurrentIndex(reopened._auto_lock_combo.findData(0))
+    reopened._save_and_close()
+    assert _io_module.load_settings()["auto_lock_minutes"] == 0
+
+
+def test_dashboard_idle_lock_disabled_by_default(qapp, tmp_settings_file):
+    from ui.settings import SettingsDialog
+
+    dialog = SettingsDialog()
+    assert _io_module._DEFAULTS["auto_lock_minutes"] == 0
+    assert dialog._auto_lock_combo.currentData() == 0
+    assert [dialog._auto_lock_combo.itemData(i) for i in range(dialog._auto_lock_combo.count())] == [0, 5, 30, 60]
+    dialog.close()
+
+
 @pytest.mark.parametrize("reject_file", [False, True])
 @pytest.mark.parametrize("custom_sound", [False, True])
 def test_sound_picker_restores_previous_choice(qapp, tmp_path, monkeypatch, reject_file, custom_sound):
@@ -276,7 +301,7 @@ class TestPageBuilders:
         assert hasattr(dlg, "_pw_status_lbl")
         assert hasattr(dlg, "_set_pw_btn")
         assert hasattr(dlg, "_rm_pw_btn")
-        assert hasattr(dlg, "_auto_lock_spin")
+        assert hasattr(dlg, "_auto_lock_combo")
         assert hasattr(dlg, "_stealth_check")
         assert hasattr(dlg, "_app_filter_editor")
         dlg.close()
@@ -349,10 +374,11 @@ class TestSettingsDialogShell:
     def test_settings_dialog_tabs(self, qapp):
         from ui.settings.dialog import SettingsDialog
         dlg = SettingsDialog()
-        assert dlg._tabs.count() == 5
+        assert dlg._tabs.count() == 6
         labels = [dlg._tabs.tabText(i) for i in range(dlg._tabs.count())]
         assert any("General" in l for l in labels)
         assert "Notifications" in labels
+        assert 'Recovery' in labels
         assert any("Eclipse" in l for l in labels)
         assert any("API" in l for l in labels)
         assert any("About" in l for l in labels)

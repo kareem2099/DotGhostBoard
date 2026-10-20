@@ -47,6 +47,9 @@ def _load_or_create_salt() -> bytes:
             )
         return data
 
+    if os.path.exists(_VERIFY_FILE):
+        raise RuntimeError('Eclipse salt is missing; refusing to replace an existing credential salt.')
+
     # Generate fresh 256-bit salt only if file does not exist
     salt = os.urandom(32)
     with open(_SALT_FILE, "wb") as f:
@@ -82,11 +85,22 @@ def derive_vault_key(password: str) -> bytes:
     Derive a domain-separated 256-bit AES key for The Vault (v2.x) from *password*.
 
     Uses HKDF-SHA256 with info context b"dotghostboard:vault:v2" over the base key.
-    This guarantees that the Vault encryption key is cryptographically independent
-    from the Eclipse encryption key (ghost.db), even when using the same master password.
+    The contexts use different keys. In shared-password mode the Vault key remains
+    derivable from the Eclipse session key; it is not an independent credential.
+    """
+    return derive_vault_key_from_session_key(derive_key(password))
+
+
+def derive_vault_key_from_session_key(base_key: bytes) -> bytes:
+    """Apply the existing Vault HKDF to an authenticated Eclipse session key.
+
+    Produces exactly the same KEK as derive_vault_key(password), without retaining
+    the password or changing the Vault's encryption format.
     """
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    base_key = derive_key(password)
+
+    if len(base_key) != 32:
+        raise ValueError("An Eclipse session key must contain exactly 32 bytes.")
     hkdf = HKDF(
         algorithm=hashes.SHA256(),
         length=32,
@@ -107,7 +121,7 @@ def secure_zero(buf: bytearray) -> None:
 
 # ── AES-256-GCM ───────────────────────────────────────────────────────────────
 
-def encrypt(plaintext: str, key: bytes) -> str:
+def encrypt(plaintext: str, key: bytes, associated_data: bytes | None = None) -> str:
     """
     Encrypt *plaintext* string with AES-256-GCM.
 
@@ -117,11 +131,11 @@ def encrypt(plaintext: str, key: bytes) -> str:
     Returns a URL-safe base64 string safe to store in SQLite TEXT columns.
     """
     nonce      = os.urandom(_NONCE_SIZE)
-    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), None)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), associated_data)
     return base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii")
 
 
-def decrypt(token: str, key: bytes) -> str:
+def decrypt(token: str, key: bytes, associated_data: bytes | None = None) -> str:
     """
     Decrypt a token produced by encrypt().
 
@@ -131,7 +145,7 @@ def decrypt(token: str, key: bytes) -> str:
     try:
         raw            = base64.urlsafe_b64decode(token.encode("ascii"))
         nonce, ct      = raw[:_NONCE_SIZE], raw[_NONCE_SIZE:]
-        plaintext_bytes = AESGCM(key).decrypt(nonce, ct, None)
+        plaintext_bytes = AESGCM(key).decrypt(nonce, ct, associated_data)
         return plaintext_bytes.decode("utf-8")
     except Exception as exc:
         raise ValueError("Decryption failed — wrong key or corrupted data") from exc
@@ -153,20 +167,30 @@ def save_master_password(password: str) -> None:
     to encrypt a known sentinel string.
 
     Raises:
-        ValueError — if password is shorter than 6 characters.
+        ValueError — if the new password fails the 12-character policy.
     """
-    password = password.strip()
-    if len(password) < 6:
-        raise ValueError("Master password must be at least 6 characters.")
+    from core.security.passwords import validate_new_password
+    validate_new_password(password)
     key   = derive_key(password)
     token = encrypt(_VERIFY_TOKEN, key)
     os.makedirs(_CFG_DIR, mode=0o700, exist_ok=True)
-    with open(_VERIFY_FILE, "w", encoding="ascii") as f:
-        f.write(token)
+    write_verifier(token)
+
+
+def write_verifier(token: str) -> None:
+    """Atomically replace a verifier; never leave a truncated file on write failure."""
+    import tempfile
+    descriptor, temporary = tempfile.mkstemp(prefix=".verifier-", dir=_CFG_DIR)
     try:
-        os.chmod(_VERIFY_FILE, 0o600)
-    except OSError:
-        pass
+        with os.fdopen(descriptor, "w", encoding="ascii") as f:
+            os.fchmod(f.fileno(), 0o600)
+            f.write(token)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, _VERIFY_FILE)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def verify_password(password: str) -> bool:

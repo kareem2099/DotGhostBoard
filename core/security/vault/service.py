@@ -1,316 +1,275 @@
-"""
-core/security/vault/service.py
-──────────────────────────────
-High-level service managing The Vault session lifecycle and envelope encryption.
-"""
+"""Vault session lifecycle, authenticated encrypted records and password envelopes."""
 
 from __future__ import annotations
 
-import os
-import base64
 import hmac
+import os
 import threading
 from typing import Optional
-from core.crypto import (
-    derive_vault_key,
-    encrypt,
-    decrypt,
-    verify_password,
-    secure_zero,
-)
+from core.crypto import verify_password, secure_zero
 from core.security.vault.repository import VaultRepository
 from core.security.vault.models import VaultSummary
+from core.security.vault.csv_importer import password_from_vault_payload
+from core.security.vault.credentials import VaultCredentials
+from core.security.vault.protected_records import ProtectedRecords, decode_record, decode_history
 
 
 class VaultLockedError(RuntimeError):
-    """Raised when an operation requires an unlocked Vault session."""
-    pass
+    """An operation requires an unlocked Vault."""
+
+
+class VaultUnlockError(RuntimeError):
+    """The Vault key envelope could not be read or authenticated safely."""
 
 
 class VaultService:
-    """
-    Manages session unlock state, key lifecycle, and encrypted CRUD for The Vault.
-
-    Uses envelope encryption: entries are encrypted with a random Data Encryption Key (DEK),
-    which is stored wrapped by a Key Encryption Key (KEK) derived from the Master Password.
-    This enables instant, safe password rotation without re-encrypting existing vault entries.
-    Provides best-effort scrubbing of mutable in-memory key buffers on lock.
-    """
-
     def __init__(self, repository: Optional[VaultRepository] = None):
         self._repo = repository or VaultRepository()
+        self._credentials = VaultCredentials(self._repo)
+        self._records = ProtectedRecords(self._repo)
         self._vault_dek: Optional[bytearray] = None
-        self._is_unlocked: bool = False
-        # Process-local recognition only: never persist password hashes or retain
-        # the DEK for matching after auto-lock. This key cannot decrypt the Vault.
+        self._is_unlocked = False
         self._recognition_key = os.urandom(32)
-        self._recognition: dict[int, tuple[str, bytes]] = {}
+        self._recognition: dict[int, tuple[str, str, tuple[bytes, ...]]] = {}
         self._recognition_lock = threading.RLock()
+        self._recognition_ready = False
+        self._recovery = None
 
     @property
-    def is_unlocked(self) -> bool:
+    def recovery(self):
+        if self._recovery is None:
+            from core.security.vault.recovery import RecoveryManager
+            self._recovery = RecoveryManager(self)
+        return self._recovery
+
+    def reload_after_recovery(self):
+        self.lock()
+        self._recovery = None
+        with self._recognition_lock:
+            self._recognition.clear()
+            self._recognition_key = os.urandom(32)
+            self._recognition_ready = False
+
+    @property
+    def is_unlocked(self):
         return self._is_unlocked and self._vault_dek is not None
 
-    def _unwrap_or_create_dek(self, vault_kek: bytes) -> bytes:
-        """Unwrap stored DEK or create and wrap a fresh random 256-bit DEK."""
-        wrapped = self._repo.get_metadata("wrapped_dek")
-        if wrapped is None:
-            if self._repo.count_items() > 0:
-                raise RuntimeError(
-                    "Vault contains encrypted items but wrapped DEK is missing."
-                )
-            raw_dek = os.urandom(32)
-            dek_b64 = base64.urlsafe_b64encode(raw_dek).decode("ascii")
-            wrapped = encrypt(dek_b64, vault_kek)
-            self._repo.set_metadata("wrapped_dek", wrapped)
-            return raw_dek
-        else:
-            dek_b64 = decrypt(wrapped, vault_kek)
-            return base64.urlsafe_b64decode(dek_b64.encode("ascii"))
-
-    def unlock(self, password: str) -> bool:
-        """
-        Verify master password, derive Vault KEK, and unwrap Vault DEK.
-        Returns True if unlocked successfully, False otherwise.
-        """
-        if not verify_password(password):
-            return False
-
-        kek = derive_vault_key(password)
+    @property
+    def independent_password(self):
         try:
-            dek = self._unwrap_or_create_dek(kek)
-            self._vault_dek = bytearray(dek)
-            self._is_unlocked = True
-            self.match_clipboard_secret("")
+            return self._credentials.independent
+        except Exception as exc:
+            raise VaultUnlockError('The Vault credential configuration could not be read safely.') from exc
+
+    @property
+    def recognition_ready(self):
+        return self._recognition_ready or self.count() == 0
+
+    def _unwrap_or_create_dek(self, vault_kek):
+        return self._credentials.unwrap(vault_kek)
+
+    def unlock(self, password):
+        try:
+            if not self.independent_password and not verify_password(password):
+                return False
+            self.unlock_with_key(self._credentials.key_for_password(password))
             return True
         except Exception:
             self.lock()
             return False
 
-    def unlock_with_key(self, vault_kek: bytes) -> None:
-        """Directly unlock with a pre-derived vault KEK (used by SecurityService coordinator)."""
+    def unlock_with_key(self, vault_kek):
         self.lock()
-        dek = self._unwrap_or_create_dek(vault_kek)
-        self._vault_dek = bytearray(dek)
-        self._is_unlocked = True
-        self.match_clipboard_secret("")
-
-    def rewrap_dek(self, old_kek: bytes, new_kek: bytes) -> bool:
-        """
-        Rotate master password by re-wrapping the Vault DEK with the new KEK.
-        Does NOT touch or re-encrypt individual vault items.
-        """
-        wrapped = self._repo.get_metadata("wrapped_dek")
-        if wrapped is None:
-            if self._repo.count_items() > 0:
-                return False
-            return True
-
         try:
-            dek_b64 = decrypt(wrapped, old_kek)
-            new_wrapped = encrypt(dek_b64, new_kek)
-            self._repo.set_metadata("wrapped_dek", new_wrapped)
-            if self._is_unlocked:
-                raw_dek = base64.urlsafe_b64decode(dek_b64.encode("ascii"))
-                if self._vault_dek is not None:
-                    secure_zero(self._vault_dek)
-                self._vault_dek = bytearray(raw_dek)
+            dek = self._unwrap_or_create_dek(vault_kek)
+            self._vault_dek = bytearray(dek)
+            self._is_unlocked = True
+            if self._records.needs_migration():
+                self.recovery.before_change('migration')
+            self._records.migrate(dek)
+            self._recognition_ready = self.match_clipboard_secret('') is False
+            self.recovery.tick()
+        except Exception as exc:
+            self.lock()
+            raise VaultUnlockError('The Vault key or encrypted records could not be opened safely.') from exc
+
+    def configure_password(self, dashboard_password, new_password=None, current_password=None):
+        """Authenticate both sides before changing modes; never persist alternate keys."""
+        self.recovery.before_change('password')
+        self._credentials.configure(dashboard_password, new_password, current_password)
+        self.lock()
+        with self._recognition_lock:
+            self._recognition.clear()
+            self._recognition_key = os.urandom(32)
+            self._recognition_ready = False
+        if not self.unlock(new_password if new_password is not None else dashboard_password):
+            raise VaultUnlockError('Credentials were updated, but the Vault could not be reopened.')
+        self.recovery.after_change()
+
+    def rewrap_dek(self, old_kek, new_kek):
+        # An independent Vault must not be tied to Dashboard password rotation.
+        if self.independent_password:
+            return True
+        if self._repo.get_metadata('wrapped_dek') is None:
+            return self.count() == 0
+        try:
+            dek = self._credentials.unwrap(old_kek)
+            self._credentials.write(dek, new_kek, self._credentials.config())
             return True
         except Exception:
             return False
 
-    def reset_empty_envelope(self) -> None:
-        """Safely delete wrapped DEK metadata only if vault is completely empty."""
-        if self.count() != 0:
-            raise RuntimeError("Cannot reset envelope on non-empty Vault.")
+    def reset_empty_envelope(self):
+        if self.count():
+            raise RuntimeError('Cannot reset envelope on non-empty Vault.')
         self.lock()
-        self._repo.delete_metadata("wrapped_dek")
+        self._repo.delete_metadata('wrapped_dek')
+        self._repo.delete_metadata('credential_config')
+        self._recognition_ready = False
 
-    def lock(self) -> None:
-        """Lock the vault and scrub the DEK buffer from memory."""
+    def lock(self):
+        if self._recovery is not None:
+            self._recovery.lock()
         if self._vault_dek is not None:
             secure_zero(self._vault_dek)
             self._vault_dek = None
         self._is_unlocked = False
 
-    def _require_unlocked(self) -> bytes:
-        if not self.is_unlocked or self._vault_dek is None:
-            raise VaultLockedError("Vault is locked. Unlock before accessing secrets.")
+    def _require_unlocked(self):
+        if not self.is_unlocked:
+            raise VaultLockedError('Vault is locked. Unlock before accessing secrets.')
         return bytes(self._vault_dek)
 
-    def add_secret(
-        self,
-        title: str,
-        secret_text: str,
-        category: str = "generic",
-        expires_at: Optional[str] = None,
-    ) -> int:
-        """Encrypt and persist secret text to vault.db."""
+    def add_secret(self, title, secret_text, category='generic', expires_at=None, history=()):
         key = self._require_unlocked()
-        ciphertext = encrypt(secret_text, key)
-        item_id = self._repo.add_item(
-            title=title,
-            ciphertext=ciphertext,
-            category=category,
-            expires_at=expires_at,
-        )
-        self._remember_secret(item_id, ciphertext, secret_text)
+        if not title.strip() or not secret_text:
+            raise ValueError('Secret title and content cannot be empty.')
+        item_id = self._records.add(key, secret_text, title.strip(), category.strip().lower(), expires_at, history)
+        self._remember_secret(self._repo.get_item(item_id), secret_text, category)
+        self.recovery.after_change()
         return item_id
 
-    def _secret_digest(self, plaintext: str) -> bytes:
-        # Clipboard capture normalizes surrounding whitespace in the same way.
-        return hmac.digest(self._recognition_key, plaintext.strip().encode("utf-8"), "sha256")
+    def _secret_digest(self, plaintext):
+        return hmac.digest(self._recognition_key, plaintext.strip().encode('utf-8'), 'sha256')
 
-    def _remember_secret(self, item_id: int, ciphertext: str, plaintext: str) -> None:
+    def _remember_secret(self, item, plaintext, category):
+        values = [plaintext]
+        if category.strip().lower() == 'password':
+            password = password_from_vault_payload(plaintext)
+            if password:
+                values.append(password)
         with self._recognition_lock:
-            self._recognition[item_id] = (ciphertext, self._secret_digest(plaintext))
+            self._recognition[item.id] = (item.ciphertext, item.category,
+                                          tuple(self._secret_digest(value) for value in values))
 
-    def match_clipboard_secret(self, plaintext: str) -> bool | None:
-        """True: stored secret; False: checked non-secret; None: unlock required.
-
-        Inspect every page, including changes made through imports/other service
-        instances. Cached keyed digests survive auto-lock, but never go to disk.
-        A cold locked Vault cannot establish a negative match safely.
-        """
+    def match_clipboard_secret(self, plaintext):
         needle = self._secret_digest(plaintext)
-        seen = set()
-        matched = False
-        complete = True
-        offset = 0
+        seen, matched, complete, offset = set(), False, True, 0
         with self._recognition_lock:
             while True:
                 items = self._repo.list_items(limit=100, offset=offset)
                 for item in items:
                     seen.add(item.id)
                     cached = self._recognition.get(item.id)
-                    if cached is None or cached[0] != item.ciphertext:
+                    if cached is None or cached[:2] != (item.ciphertext, item.category):
                         self._recognition.pop(item.id, None)
                         if self.is_unlocked:
                             try:
-                                value = decrypt(item.ciphertext, self._require_unlocked())
-                                self._remember_secret(item.id, item.ciphertext, value)
+                                payload = decode_record(item, self._require_unlocked())
+                                self._remember_secret(item, payload['secret'], payload['category'])
                             except Exception:
                                 complete = False
                         else:
                             complete = False
                         cached = self._recognition.get(item.id)
-                    if cached and hmac.compare_digest(cached[1], needle):
+                    if cached and any(hmac.compare_digest(digest, needle) for digest in cached[2]):
                         matched = True
                 if len(items) < 100:
                     break
                 offset += len(items)
-            self._recognition = {
-                item_id: value for item_id, value in self._recognition.items() if item_id in seen
-            }
+            self._recognition = {item_id: value for item_id, value in self._recognition.items() if item_id in seen}
         return True if matched else (False if complete else None)
 
-    def find_duplicate(self, plaintext: str) -> Optional[VaultSummary]:
-        """Find an exact duplicate across all pages, while unlocked."""
+    def find_duplicate(self, plaintext):
         if not self.is_unlocked:
             return None
-        needle = plaintext.encode("utf-8")
-        offset = 0
-        while True:
-            summaries = self._repo.list_summaries(limit=100, offset=offset)
-            for summary in summaries:
-                try:
-                    other = self.get_secret(summary.id)
-                except Exception:
-                    continue
-                if other is not None and hmac.compare_digest(other.encode("utf-8"), needle):
-                    return summary
-            if len(summaries) < 100:
-                return None
-            offset += len(summaries)
+        for summary in self.list_secrets():
+            value = self.get_secret(summary.id)
+            if value is not None and hmac.compare_digest(value.encode(), plaintext.encode()):
+                return summary
+        return None
 
-    def get_secret(self, item_id: int) -> Optional[str]:
-        """Fetch and decrypt secret payload."""
+    def get_secret(self, item_id):
         key = self._require_unlocked()
         item = self._repo.get_item(item_id)
-        if not item:
-            return None
-        return decrypt(item.ciphertext, key)
+        return decode_record(item, key)['secret'] if item else None
 
-    def update_secret(
-        self,
-        item_id: int,
-        title: Optional[str] = None,
-        secret_text: Optional[str] = None,
-        category: Optional[str] = None,
-        save_history: bool = True,
-        expires_at: Optional[str] = None,
-    ) -> bool:
-        """Update an existing secret, preserving previous ciphertext in history if secret_text changes."""
+    def update_secret(self, item_id, title=None, secret_text=None, category=None, save_history=True, expires_at=None):
         key = self._require_unlocked()
-        ciphertext = None
+        item = self._repo.get_item(item_id)
+        if item is None:
+            return False
+        payload = decode_record(item, key)
+        self.recovery.before_change('edit')
+        previous = payload['secret'] if save_history and secret_text is not None and secret_text != payload['secret'] else None
+        if title is not None:
+            payload['title'] = title.strip()
         if secret_text is not None:
-            if save_history:
-                existing_item = self._repo.get_item(item_id)
-                if existing_item and existing_item.ciphertext:
-                    try:
-                        existing_plain = decrypt(existing_item.ciphertext, key)
-                        if existing_plain != secret_text:
-                            self._repo.add_history_entry(item_id, existing_item.ciphertext, max_entries=3)
-                    except Exception:
-                        pass
-            ciphertext = encrypt(secret_text, key)
-
-        updated = self._repo.update_item(
-            item_id=item_id,
-            title=title,
-            ciphertext=ciphertext,
-            category=category,
-            expires_at=expires_at,
-        )
-        if updated and ciphertext is not None:
-            self._remember_secret(item_id, ciphertext, secret_text)
+            payload['secret'] = secret_text
+        if category is not None:
+            payload['category'] = category.strip().lower()
+        if expires_at is not None:
+            payload['expires_at'] = expires_at or None
+        updated = self._records.update(item_id, payload, key, previous)
+        if updated:
+            self._remember_secret(self._repo.get_item(item_id), payload['secret'], payload['category'])
+            self.recovery.after_change()
         return updated
 
-    def get_secret_history(self, item_id: int, limit: int = 3) -> list[dict]:
-        """Fetch and decrypt historical secret versions for an item."""
-        key = self._require_unlocked()
-        records = self._repo.get_history(item_id, limit=limit)
-        results = []
-        for r in records:
-            try:
-                plaintext = decrypt(r["ciphertext"], key)
-                results.append({
-                    "id": r["id"],
-                    "vault_item_id": r["vault_item_id"],
-                    "plaintext": plaintext,
-                    "created_at": r["created_at"],
-                })
-            except Exception:
-                pass
-        return results
+    def add_secret_history(self, item_id, plaintext):
+        result = self._records.add_history(item_id, plaintext, self._require_unlocked())
+        self.recovery.after_change()
+        return result
 
-    def restore_secret_history(self, item_id: int, history_id: int) -> bool:
-        """Restore a historical secret value as the current active secret."""
+    def get_secret_history(self, item_id, limit=3):
         key = self._require_unlocked()
-        records = self._repo.get_history(item_id, limit=10)
-        target = next((r for r in records if r["id"] == history_id), None)
-        if not target:
-            return False
-        plaintext = decrypt(target["ciphertext"], key)
-        # Update with save_history=True so the replaced current secret is preserved
-        return self.update_secret(item_id, secret_text=plaintext, save_history=True)
+        return [{**record, 'plaintext': decode_history(record, key)}
+                for record in self._repo.get_history(item_id, limit=limit)]
 
-    def count_secret_history(self, item_id: int) -> int:
-        """Return count of historical versions."""
+    def restore_secret_history(self, item_id, history_id):
+        self._require_unlocked()
+        target = next((record for record in self.get_secret_history(item_id, limit=10) if record['id'] == history_id), None)
+        return self.update_secret(item_id, secret_text=target['plaintext']) if target else False
+
+    def count_secret_history(self, item_id):
         return self._repo.count_history(item_id)
 
-    def delete_secret(self, item_id: int) -> bool:
-        """Delete secret from vault.db."""
+    def delete_secret(self, item_id):
         self._require_unlocked()
-        return self._repo.delete_item(item_id)
+        self.recovery.before_change('delete')
+        deleted = self._repo.delete_item(item_id)
+        if deleted:
+            self.recovery.after_change(removed_ids=(item_id,))
+        return deleted
 
-    def list_secrets(self, category: Optional[str] = None) -> list[VaultSummary]:
-        """
-        List summaries of stored secrets (metadata: title, category, timestamps).
-        Safe to call even while locked to show available entries.
-        """
-        return self._repo.list_summaries(category=category)
+    def list_secrets(self, category=None):
+        summaries, offset = [], 0
+        while True:
+            items = self._repo.list_items(limit=100, offset=offset)
+            for item in items:
+                if self.is_unlocked:
+                    payload = decode_record(item, self._require_unlocked())
+                    if category and payload['category'] != category:
+                        continue
+                    title, actual_category, expiry = payload['title'], payload['category'], payload['expires_at']
+                else:
+                    if category:
+                        continue
+                    title, actual_category, expiry = 'Protected item', 'generic', None
+                summaries.append(VaultSummary(item.id, title, actual_category, item.created_at, item.updated_at, expiry))
+            if len(items) < 100:
+                return summaries
+            offset += len(items)
 
-    def count(self, category: Optional[str] = None) -> int:
-        """Return total number of items stored in the vault."""
-        return self._repo.count_items(category=category)
+    def count(self, category=None):
+        return len(self.list_secrets(category)) if category else self._repo.count_items()

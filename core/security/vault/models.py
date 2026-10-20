@@ -60,7 +60,8 @@ class VaultItem(_ExpiryMixin):
 
     def decrypt_payload(self, key: bytes) -> str:
         """Decrypt ciphertext using the domain-separated vault key."""
-        return decrypt(self.ciphertext, key)
+        from core.security.vault.protected_records import decode_record
+        return decode_record(self, key)["secret"]
 
     def to_dict(self) -> dict:
         return {

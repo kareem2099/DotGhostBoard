@@ -71,7 +71,7 @@ def test_recognition_covers_all_pages_and_survives_auto_lock(vault_env):
     from core.security.vault.database import _vault_db
     with _vault_db() as cursor:
         cursor.execute("UPDATE vault_items SET updated_at = '2000-01-01' WHERE id = ?", (oldest,))
-    assert oldest not in [summary.id for summary in service.list_secrets()]
+    assert oldest not in [summary.id for summary in service._repo.list_summaries(limit=50)]
     assert service.find_duplicate("simple").id == oldest
     assert service.match_clipboard_secret("simple") is True
     service.lock()
@@ -202,14 +202,14 @@ def test_vault_service_session_lifecycle_and_encryption(vault_env):
     assert updated is True
     assert service.get_secret(item_id) == "ghp_NEW_TOKEN_STRING"
 
-    # Metadata summary list works even while locked!
+    # Locked listing hides encrypted metadata.
     service.lock()
     assert service.is_unlocked is False
 
     summaries = service.list_secrets()
     assert len(summaries) == 1
-    assert summaries[0].title == "GitHub PAT"
-    assert summaries[0].category == "token"
+    assert summaries[0].title == "Protected item"
+    assert summaries[0].category == "generic"
 
     # But getting plaintext fails when locked
     with pytest.raises(VaultLockedError):
@@ -217,13 +217,13 @@ def test_vault_service_session_lifecycle_and_encryption(vault_env):
 
 
 def test_vault_schema_versioning_and_downgrade_rejection(vault_env):
-    """Ensure vault.db has user_version = 1 and rejects future schema versions."""
+    """Ensure vault.db has user_version = 2 and rejects future schema versions."""
     import sqlite3
     db_path = vault_env["vault_db"]
 
     with sqlite3.connect(db_path) as conn:
         ver = conn.execute("PRAGMA user_version;").fetchone()[0]
-        assert ver == 1
+        assert ver == 2
 
         # Simulate future schema from v3.0
         conn.execute("PRAGMA user_version = 99;")
@@ -304,3 +304,48 @@ def test_vault_empty_database_can_create_new_dek(vault_env):
     dek = service._unwrap_or_create_dek(kek)
     assert len(dek) == 32
     assert service._repo.get_metadata("wrapped_dek") is not None
+
+
+@pytest.mark.parametrize('metadata', [
+    {'username': 'example-user'}, {'url': 'https://example.test'}, {'notes': 'private notes'},
+    {'username': 'example-user', 'url': 'https://example.test', 'notes': 'private notes\nsecond line'},
+])
+@pytest.mark.parametrize('password', ['simple', 'multi\nline-password'])
+def test_csv_password_field_recognized_from_legacy_records(vault_env, metadata, password):
+    from core.crypto import encrypt
+    from core.security.vault.csv_importer import CsvEntry
+
+    fields = {'username': '', **metadata}
+    entry = CsvEntry(title='Imported account', password=password, **fields)
+    service = VaultService()
+    service.unlock_with_key(b'k' * 32)
+    # Existing imports have only an encrypted text payload, without new markers/schema.
+    service._repo.add_item(entry.title, encrypt(entry.vault_secret_text, service._require_unlocked()), category='password')
+    service.lock()
+    restarted = VaultService()
+    restarted.unlock_with_key(b'k' * 32)
+    assert restarted.match_clipboard_secret(password) is True
+    assert restarted.match_clipboard_secret(entry.vault_secret_text) is True
+    for value in metadata.values():
+        assert restarted.match_clipboard_secret(value) is False
+    restarted.lock()
+    assert restarted.match_clipboard_secret(password) is True
+    assert restarted._vault_dek is None
+
+
+def test_csv_password_recognition_tracks_edits_category_and_deletion(vault_env):
+    service = VaultService()
+    service.unlock_with_key(b'k' * 32)
+    item_id = service.add_secret('Imported', 'old-password\nusername: example-user', category='password')
+    assert service.match_clipboard_secret('old-password') is True
+    assert service.update_secret(item_id, secret_text='new-password\nusername: example-user')
+    assert service.match_clipboard_secret('old-password') is False
+    assert service.match_clipboard_secret('new-password') is True
+    assert service.update_secret(item_id, category='note')
+    assert service.match_clipboard_secret('new-password') is False
+    assert service.match_clipboard_secret('new-password\nusername: example-user') is True
+    assert service.update_secret(item_id, category='password')
+    assert service.match_clipboard_secret('new-password') is True
+    assert service.delete_secret(item_id)
+    service.lock()
+    assert service.match_clipboard_secret('new-password') is False

@@ -51,7 +51,7 @@ class LockScreen(QDialog):
             | Qt.WindowType.FramelessWindowHint
         )
         self.setModal(True)
-        self.setFixedSize(420, 290 if setup else 235)
+        self.setFixedSize(420, 290)
 
         self._build_ui()
         self._apply_style()
@@ -117,6 +117,22 @@ class LockScreen(QDialog):
         root.addWidget(self.error_lbl)
         root.addStretch()
         root.addLayout(btn_row)
+        if not self._setup:
+            recovery_btn = QPushButton('Restore from backup…')
+            recovery_btn.clicked.connect(self._open_recovery)
+            root.addWidget(recovery_btn)
+
+    def _open_recovery(self):
+        from ui.vault.recovery_dialog import RecoveryDialog
+        dialog = RecoveryDialog(parent=self)
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                if dialog.opened_new_profile:
+                    self.reject()
+                else:
+                    self._show_error('Vault restored. Sign in with your Dashboard password.')
+        finally:
+            dialog.deleteLater()
 
     def _apply_style(self) -> None:
         """Apply theme from ui/ghost.qss if not already active on the application."""
@@ -146,8 +162,8 @@ class LockScreen(QDialog):
             self._handle_unlock(password)
 
     def _handle_setup(self, password: str) -> None:
-        if len(password) < 6:
-            self._show_error("Password must be at least 6 characters.")
+        if len(password) < 12:
+            self._show_error("Password must be at least 12 characters.")
             return
 
         confirm = self.confirm_input.text()
@@ -187,6 +203,11 @@ class LockScreen(QDialog):
 
     def _show_error(self, msg: str) -> None:
         self.error_lbl.setText(msg)
+
+    def accept(self) -> None:
+        self.pw_input.clear()
+        self.confirm_input.clear()
+        super().accept()
 
     # ── Public helpers ────────────────────────────────────────────────────────
 

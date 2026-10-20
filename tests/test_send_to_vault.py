@@ -576,3 +576,31 @@ def test_alert_click_handles_expired_candidate(mock_dashboard, monkeypatch):
     callback()
     dash.show_and_raise.assert_called_once()
     assert "expired" in dash.statusBar().currentMessage()
+
+
+@pytest.mark.parametrize('primary', [False, True])
+def test_imported_password_removed_from_dashboard_and_excluded_after_auto_lock(mock_dashboard, primary):
+    from unittest.mock import MagicMock
+    from core.watcher import ClipboardWatcher
+    from core.security.vault.csv_importer import CsvEntry
+
+    dash = mock_dashboard
+    dash.security_service.setup_master_password('TestMasterPass123!')
+    dash._settings['detect_passwords'] = False
+    dash.watcher = ClipboardWatcher(backend=MagicMock())
+    attach_send_to_vault(dash)
+    captured, candidates = [], []
+    dash.watcher.new_text_captured.connect(lambda iid, text: captured.append(text))
+    dash.watcher.secret_candidate_detected.connect(candidates.append)
+    entry = CsvEntry(title='Imported account', username='example-user', password='simple', url='https://example.test')
+    existing_id = storage.add_item('text', entry.password)
+    storage.toggle_pin(existing_id)
+    dash.history_controller.reload()
+    dash.vault_controller.add_secret(entry.title, entry.vault_secret_text, category='password')
+    assert storage.get_item_by_id(existing_id) is None
+    assert existing_id not in dash.history_controller.cards
+    dash.vault_controller.lock(wipe_clipboard=False)
+    dash.watcher._on_clipboard_event(ClipboardEvent('text', entry.password, source_app='primary_selection' if primary else None))
+    assert storage.get_item_by_content(entry.password) is None
+    assert captured == candidates == []
+    assert dash.findChild(SecretDetectedToast) is None

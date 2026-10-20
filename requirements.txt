@@ -1,6 +1,6 @@
 PyQt6
 Pillow
-cryptography
+cryptography>=44
 packaging
 zeroconf
 requests

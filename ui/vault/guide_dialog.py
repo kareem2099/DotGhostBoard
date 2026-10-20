@@ -105,18 +105,18 @@ class VaultGuideDialog(QDialog):
             ]
         ))
 
-        # ── Section 2: Zero-Knowledge Architecture ──
+        # ── Section 2: Encryption and credential separation ──
         c_layout.addWidget(self._make_section_card(
-            "🔐", "Zero-Knowledge Cryptographic Architecture",
+            "🔐", "Encryption & Password Modes",
             [
                 ("Envelope Encryption",
-                 "Secrets are encrypted with a 256-bit DEK, wrapped by a KEK derived from your Master Password."),
+                 "Secrets and private metadata use a random 256-bit data key wrapped with the configured Vault password."),
                 ("AES-256-GCM",
-                 "Industry-standard authenticated encryption guarantees confidentiality and tamper detection."),
-                ("PBKDF2-HMAC-SHA256",
-                 "100,000 hashing rounds protect your Master Password against brute-force attacks."),
-                ("Zero Plaintext on Disk",
-                 "vault.db stores zero plaintext items. Secrets exist decrypted only in RAM while unlocked."),
+                 "Authenticated encryption protects payloads at rest and detects changes to encrypted records."),
+                ("Shared or Independent Password",
+                 "Shared mode uses Dashboard PBKDF2-SHA256 (600,000 rounds) and HKDF. An independent password uses Argon2id (64 MiB, 3 passes). Choose it in Settings → Eclipse."),
+                ("Private Metadata",
+                 "Titles, categories, expiry, secrets, and history are encrypted. Counts and creation/update timestamps remain visible."),
             ]
         ))
 
@@ -125,11 +125,11 @@ class VaultGuideDialog(QDialog):
             "⏱️", "Ephemeral Memory & Auto-Scrubbing",
             [
                 ("30-Second Clipboard Wipe",
-                 "Any secret copied to your clipboard is automatically zeroed out after 30 seconds to prevent leaks."),
+                 "Copied secrets are cleared after 30 seconds if the clipboard still contains that value."),
                 ("15-Second Reveal Scrub",
                  "Revealing with 👁️ shows plaintext and automatically re-masks it after 15 seconds."),
                 ("Immediate Drawer Scrub",
-                 "Closing the drawer immediately wipes all revealed plaintexts from memory."),
+                 "Closing the drawer hides revealed text. Memory scrubbing is best effort; other apps may still read clipboard contents."),
             ]
         ))
 
@@ -163,8 +163,8 @@ class VaultGuideDialog(QDialog):
                  "Exports all secrets into an AES-256-GCM package (.vault) secured with an export passphrase."),
                 ("Import (📥)",
                  "Restores secrets from a backup file, decrypts safely, and skips duplicates automatically."),
-                ("Zero Plaintext Leakage",
-                 "Backup files contain zero unencrypted data and can be safely archived in cold storage."),
+                ("Backup Passphrase",
+                 "New backups use Argon2id (64 MiB, 3 passes). Keep the passphrase safe; a forgotten passphrase cannot be recovered."),
             ]
         ))
 

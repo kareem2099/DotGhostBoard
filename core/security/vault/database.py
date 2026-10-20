@@ -18,7 +18,7 @@ _DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".config", "dotghostboard"
 _USER_DATA = os.getenv("DOTGHOST_HOME", _DEFAULT_HOME)
 VAULT_DB_PATH = os.path.join(_USER_DATA, "vault.db")
 
-VAULT_SCHEMA_VERSION = 1
+VAULT_SCHEMA_VERSION = 2
 
 
 def get_vault_db_path() -> str:

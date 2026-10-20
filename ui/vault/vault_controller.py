@@ -40,6 +40,7 @@ class VaultController(QObject):
     secret_copied = pyqtSignal(int)          # item_id
     history_item_removed = pyqtSignal(int)  # item_id removed from clipboard history by vault sweep
     status_message = pyqtSignal(str)
+    recovery_backup_failed = pyqtSignal()
     panel_visibility_changed = pyqtSignal(bool)
 
     def __init__(
@@ -58,6 +59,22 @@ class VaultController(QObject):
         self._idle_timer = QTimer(self)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self.lock)
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.setInterval(60_000)
+        self._recovery_timer.timeout.connect(self._check_recovery)
+        self._recovery_timer.start()
+        self._last_recovery_error = ''
+
+    def _check_recovery(self):
+        self._service.recovery.tick()
+        self._report_recovery_error()
+
+    def _report_recovery_error(self):
+        error = self._service.recovery.error
+        if error and error != self._last_recovery_error:
+            self.status_message.emit('⚠ ' + error)
+            self.recovery_backup_failed.emit()
+        self._last_recovery_error = error
 
     @property
     def service(self) -> VaultService:
@@ -79,12 +96,17 @@ class VaultController(QObject):
         """
         success = self._service.unlock(password)
         if success:
-            self.touch()
-            self.vault_unlocked.emit()
+            self.on_session_unlocked()
             self.status_message.emit("🔓 The Vault unlocked ✓")
         else:
             self.status_message.emit("⚠ Failed to unlock The Vault: Incorrect password.")
         return success
+
+    def on_session_unlocked(self) -> None:
+        """Adopt a Vault opened by session authentication, including its timer/UI."""
+        if self.is_unlocked:
+            self.touch()
+            self.vault_unlocked.emit()
 
     def lock(self, *, wipe_clipboard: bool = True) -> None:
         """
@@ -127,6 +149,7 @@ class VaultController(QObject):
         )
         self.secrets_changed.emit()
         self.status_message.emit(f"Secret '{clean_title}' encrypted & saved ✓")
+        self._report_recovery_error()
         return item_id
 
     def update_secret(
@@ -158,6 +181,7 @@ class VaultController(QObject):
         if success:
             self.secrets_changed.emit()
             self.status_message.emit("Secret updated ✓")
+        self._report_recovery_error()
         return success
 
     def delete_secret(self, item_id: int) -> bool:
@@ -287,7 +311,7 @@ class VaultController(QObject):
     ) -> list[VaultSummary]:
         """
         Retrieve secret metadata summaries with optional category and search filter.
-        Safe to call even when locked (metadata remains unencrypted).
+        Locked listings expose placeholders; private metadata requires the Vault key.
         """
         cat = category.strip().lower() if category and category != "all" else None
         summaries = self._service.list_secrets(category=cat)

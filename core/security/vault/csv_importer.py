@@ -209,6 +209,19 @@ class CsvEntry:
 
 # ── Per-source Row Extractor ──────────────────────────────────────────────────
 
+def password_from_vault_payload(plaintext: str) -> Optional[str]:
+    """Read the password part of the existing CSV-import payload format.
+
+    Metadata follows the password as labelled lines. Keep any newlines inside
+    the password, and never index usernames, URLs or notes as separate secrets.
+    This also supports records imported before password-field recognition existed.
+    """
+    boundaries = [
+        position for label in ("username", "url", "notes")
+        if (position := plaintext.find(f"\n{label}: ")) > 0
+    ]
+    return plaintext[:min(boundaries)] if boundaries else None
+
 def _extract_row(row: dict, source: str) -> Optional[CsvEntry]:
     def g(key: str) -> str:
         for k, v in row.items():

@@ -31,7 +31,7 @@ from ui.widgets.password_input import PasswordInputWidget
 class VaultUnlockDialog(QDialog):
     """
     Dedicated unlock dialog for The Vault.
-    Authenticates against Master Password to unwrap the Vault DEK.
+    Authenticates with the configured shared or independent Vault password.
     """
 
     def __init__(
@@ -59,6 +59,7 @@ class VaultUnlockDialog(QDialog):
         QTimer.singleShot(80, self.pw_input.setFocus)
 
     def _build_ui(self) -> None:
+        independent = self._controller.service.independent_password
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 22, 32, 22)
         layout.setSpacing(10)
@@ -69,8 +70,8 @@ class VaultUnlockDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         subtitle = QLabel(
-            "Enter Master Password to unlock encrypted secrets.\n"
-            "Secrets are protected with AES-256-GCM and zero plaintext."
+            ("Enter your independent Vault password.\n" if independent else "Enter Master Password to unlock encrypted secrets.\n") +
+            "Secrets are encrypted at rest with AES-256-GCM."
         )
         subtitle.setObjectName("VaultUnlockSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -81,9 +82,9 @@ class VaultUnlockDialog(QDialog):
         divider.setObjectName("VaultUnlockDivider")
 
         # Password Input Row with Eye Toggle
-        self.pw_input = PasswordInputWidget(placeholder="Master Password…", parent=self)
+        self.pw_input = PasswordInputWidget(placeholder="Vault Password…" if independent else "Master Password…", parent=self)
         self.pw_input.returnPressed.connect(self._on_submit)
-        self.pw_input.setToolTip("Enter your Master Password (configured in Settings ⚙)")
+        self.pw_input.setToolTip("Enter the Vault password configured in Settings → Eclipse.")
 
         # Error label
         self.error_lbl = QLabel("")
@@ -106,7 +107,7 @@ class VaultUnlockDialog(QDialog):
         self.submit_btn.setObjectName("VaultUnlockSubmitBtn")
         self.submit_btn.setFixedHeight(38)
         self.submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.submit_btn.setToolTip("Verify Master Password and decrypt Vault (Enter)")
+        self.submit_btn.setToolTip("Verify password and decrypt Vault (Enter)")
         self.submit_btn.clicked.connect(self._on_submit)
 
         btn_layout.addWidget(self.cancel_btn)
@@ -165,7 +166,7 @@ class VaultUnlockDialog(QDialog):
             self._attempts += 1
             self.pw_input.clear()
             self.pw_input.setFocus()
-            msg = "Incorrect Master Password."
+            msg = "Incorrect Vault password or Vault data unavailable."
             if self._attempts >= 3:
                 msg += f" ({self._attempts} failed attempts)"
             self.error_lbl.setText(msg)

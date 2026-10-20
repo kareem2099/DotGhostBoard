@@ -4,7 +4,8 @@ core/security/vault/repository.py
 Data access layer for The Vault (vault_items table).
 
 Repository persists encrypted secret payloads.
-Non-secret listing metadata such as title/category remains plaintext by design.
+Legacy rows can contain plaintext metadata. VaultService stores private metadata
+inside authenticated payloads and leaves generic placeholders in these columns.
 """
 
 from __future__ import annotations
@@ -269,6 +270,14 @@ class VaultRepository:
                 VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """, (key, value))
+
+    def set_metadata_many(self, values: dict[str, str]) -> None:
+        """Commit a credential configuration and wrapped key together."""
+        with _vault_db(self._db_path) as cur:
+            cur.executemany(
+                "INSERT INTO vault_metadata(key,value) VALUES (?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", values.items(),
+            )
 
     def delete_metadata(self, key: str) -> bool:
         """Remove metadata entry."""

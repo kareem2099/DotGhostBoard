@@ -14,6 +14,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QMessageBox, QWidget
 
 from core.services.security_service import SecurityService
+from core.security.vault import VaultUnlockError
 from ui.lock_screen import LockScreen
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class SecurityController(QObject):
         super().__init__(parent)
         self._service = service
         self._parent_window = parent_window
+        self.vault_unlock_callback = None
 
         self._auto_lock_timer = QTimer(self)
         self._auto_lock_timer.setSingleShot(True)
@@ -75,14 +77,18 @@ class SecurityController(QObject):
     def active_key(self) -> Optional[bytes]:
         return self._service.active_key
 
-    def set_active_key(self, key: Optional[bytes]) -> None:
+    def set_active_key(self, key: Optional[bytes]) -> bool:
         """Explicitly set or clear the session encryption key."""
         if key is None:
             self._service.lock()
         else:
             self._service.set_session_key(key)
+            if self.vault_unlock_callback and not self.vault_unlock_callback():
+                self.lock()
+                return False
 
         self.lock_state_changed.emit(self.is_locked)
+        return True
 
     def prompt_unlock(self, parent_widget: Optional[QWidget] = None) -> bool:
         """
@@ -95,7 +101,26 @@ class SecurityController(QObject):
         prepare_dialog_for_current_workspace(dlg)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             key = dlg.get_key()
-            self.set_active_key(key)
+            if key is None:
+                return False
+            try:
+                if self.set_active_key(key) is False:
+                    return False
+            except VaultUnlockError:
+                logger.warning("Could not open the Vault key", exc_info=True)
+                self.lock()
+                message = (
+                    "The Vault key is damaged or unavailable. DotGhostBoard remains locked. "
+                    "Your Vault has not been reset or deleted. Check your Vault file and backups."
+                )
+                self.status_message.emit(f"⚠ {message}")
+                QMessageBox.warning(dlg_parent, "Could not open The Vault", message)
+                return False
+            except (ValueError, RuntimeError):
+                logger.warning("Could not unlock the session and Vault", exc_info=True)
+                self.lock()
+                self.status_message.emit("⚠ Could not unlock DotGhostBoard and the Vault. Both remain locked.")
+                return False
             self.status_message.emit("🔓 Unlocked")
             return True
         return False

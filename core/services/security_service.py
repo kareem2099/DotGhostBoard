@@ -11,6 +11,7 @@ from typing import Optional
 from core import crypto, storage
 from core.crypto import secure_zero
 from core.security.vault import VaultService
+from core.security.passwords import validate_new_password
 
 
 class SecurityService:
@@ -45,6 +46,7 @@ class SecurityService:
             raise RuntimeError(
                 "Master password already exists; use change_master_password()."
             )
+        validate_new_password(password)
         self._crypto.save_master_password(password)
         if not self.unlock(password):
             raise RuntimeError("Failed to unlock session after password setup.")
@@ -65,15 +67,36 @@ class SecurityService:
         if not self.verify_master_password(old_password):
             return False, "Current master password is incorrect."
 
-        new_password = new_password.strip()
-        if len(new_password) < 6:
-            return False, "New master password must be at least 6 characters."
+        try:
+            validate_new_password(new_password)
+        except ValueError as exc:
+            return False, str(exc)
+
+        try:
+            self._vault.recovery.before_change('password')
+        except ValueError as exc:
+            return False, str(exc)
 
         old_eclipse_key = self._crypto.derive_key(old_password)
         new_eclipse_key = self._crypto.derive_key(new_password)
 
         old_vault_kek = self._crypto.derive_vault_key(old_password)
         new_vault_kek = self._crypto.derive_vault_key(new_password)
+
+        try:
+            if not self._vault.independent_password and self._vault._repo.get_metadata("wrapped_dek"):
+                self._vault._credentials.unwrap(old_vault_kek)
+            if self._vault.independent_password:
+                try:
+                    self._vault._credentials.unwrap(self._vault._credentials.key_for_password(new_password))
+                except ValueError:
+                    pass
+                else:
+                    return False, "Choose a Dashboard password different from the independent Vault password."
+            old_envelope = self._vault._repo.get_metadata("wrapped_dek")
+            old_config = self._vault._repo.get_metadata("credential_config")
+        except Exception:
+            return False, "Could not validate the Vault key. Password was not changed."
 
         # 1. Re-encrypt Eclipse secret items in ghost.db
         reencrypted_count = self._storage.reencrypt_all_secret_items(old_eclipse_key, new_eclipse_key)
@@ -87,7 +110,19 @@ class SecurityService:
             return False, "Failed to re-wrap Vault key. Password change aborted."
 
         # 3. Save new master password verifier
-        self._crypto.save_master_password(new_password)
+        try:
+            self._crypto.save_master_password(new_password)
+        except Exception:
+            # A failed verifier write must not strand the encrypted stores.
+            if old_envelope is not None:
+                values = {"wrapped_dek": old_envelope}
+                if old_config is not None:
+                    values["credential_config"] = old_config
+                self._vault._repo.set_metadata_many(values)
+                if old_config is None:
+                    self._vault._repo.delete_metadata("credential_config")
+            self._storage.reencrypt_all_secret_items(new_eclipse_key, old_eclipse_key)
+            return False, "Password change could not be saved; the previous password is still active."
 
         # 4. Update in-memory session if unlocked
         if not self.is_locked:
@@ -127,6 +162,7 @@ class SecurityService:
         self.lock()
         self._crypto.remove_master_password()
         self._vault.reset_empty_envelope()
+        self._vault.recovery.disable()
 
         return True, count, f"Master password removed. {count} item(s) decrypted."
 
@@ -159,32 +195,30 @@ class SecurityService:
         if not self._crypto.verify_password(password):
             return False
 
-        # 1. Derive and store Eclipse key
-        eclipse_key = self._crypto.derive_key(password)
-        self._active_key = bytearray(eclipse_key)
-
-        # 2. Derive domain-separated Vault KEK and unlock Vault DEK
-        vault_kek = self._crypto.derive_vault_key(password)
-        self._vault.unlock_with_key(vault_kek)
-
-        self._is_locked = False
-        self.touch()
+        self.set_session_key(self._crypto.derive_key(password))
         return True
 
     def set_session_key(self, key: bytes) -> None:
         """
-        Set an externally-derived Eclipse key and mark the session as unlocked.
+        Restore an authenticated session and unlock both Dashboard and Vault.
         Used by SecurityController when a key is obtained outside the normal
         password-unlock flow (e.g., restored from LockScreen dialog).
 
         Caller is responsible for ensuring `key` is a valid AES-256 key (32 bytes).
 
-        NOTE: This deliberately does NOT unlock the Vault. The Vault requires the
-        master password to derive its domain-separated KEK (via derive_vault_key).
-        Since only the Eclipse key is available here (not the raw password), the Vault
-        remains locked and the user must unlock it explicitly via VaultUnlockDialog.
-        Use unlock(password) to unlock both Eclipse session and Vault in one step.
+        The existing Vault KEK is an HKDF of this same Eclipse key. Initialize
+        Vault recognition before publishing the unlocked session, so capture can
+        immediately exclude stored secrets. If unwrapping fails, keep both locked.
         """
+        try:
+            if len(key) != 32:
+                raise ValueError("An Eclipse session key must contain exactly 32 bytes.")
+            if self.has_master_password() and not self._vault.independent_password:
+                vault_kek = self._crypto.derive_vault_key_from_session_key(key)
+                self._vault.unlock_with_key(vault_kek)
+        except Exception:
+            self.lock()
+            raise
         if self._active_key is not None:
             secure_zero(self._active_key)
         self._active_key = bytearray(key)

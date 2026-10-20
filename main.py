@@ -112,6 +112,57 @@ SERVER_NAME = os.path.join(_runtime_dir, f"dotghostboard-{_uid}-{_profile_hash}.
 LOCK_FILE_PATH = os.path.join(_runtime_dir, f"dotghostboard-{_uid}-{_profile_hash}.lock")
 
 
+def _create_dashboard(*, startup_locked: bool, active_key: bytes | None, _allow_recovery=True):
+    """Report an unreadable Vault at startup without resetting encrypted data."""
+    from core.security.vault import VaultUnlockError
+    from PyQt6.QtWidgets import QMessageBox
+    from ui.dashboard import Dashboard
+    from core.services.security_service import SecurityService
+
+    try:
+        service = SecurityService()
+        if active_key is not None:
+            service.set_session_key(active_key)
+            if service.vault.independent_password:
+                from ui.vault.vault_controller import VaultController
+                from ui.vault.unlock_dialog import VaultUnlockDialog
+                controller = VaultController(service.vault)
+                dialog = VaultUnlockDialog(controller)
+                try:
+                    from ui.window_utils import prepare_dialog_for_current_workspace
+                    prepare_dialog_for_current_workspace(dialog)
+                    if dialog.exec() != dialog.DialogCode.Accepted:
+                        service.lock()
+                        return None
+                finally:
+                    controller._idle_timer.stop()
+                    controller._recovery_timer.stop()
+                    dialog.deleteLater()
+        return Dashboard(startup_locked=startup_locked, security_service=service)
+    except VaultUnlockError:
+        logging.getLogger("DotGhostBoard").error("Startup Vault unlock failed", exc_info=True)
+        from core.security.vault.recovery import config_path
+        if _allow_recovery and config_path().exists():
+            from ui.vault.recovery_dialog import RecoveryDialog
+            dialog = RecoveryDialog()
+            try:
+                from ui.window_utils import prepare_dialog_for_current_workspace
+                prepare_dialog_for_current_workspace(dialog)
+                if dialog.exec() == dialog.DialogCode.Accepted and not dialog.opened_new_profile:
+                    return _create_dashboard(startup_locked=startup_locked, active_key=active_key, _allow_recovery=False)
+                return None
+            finally:
+                dialog.deleteLater()
+        QMessageBox.critical(
+            None, "Could not open The Vault",
+            "DotGhostBoard could not read or unlock the Vault key.\n\n"
+            "The key data may be damaged or unavailable. The app will close safely; "
+            "your Vault has not been reset or deleted.\n\n"
+            "Check your Vault file and backups before trying again.",
+        )
+        return None
+
+
 def main():
     _cleanup_old_appimage()
 
@@ -124,6 +175,7 @@ def main():
             "  -s, --spotlight            Show or toggle Spotlight search overlay\n"
             "  -t, --toggle               Toggle dashboard visibility\n"
             "  --show                     Show dashboard window\n"
+            "  --recover                  Open Vault recovery before signing in\n"
             "  -m, --minimized, --tray,   Start minimized to system tray\n"
             "      --startup, --background\n\n"
             "Environment Variables:\n"
@@ -168,7 +220,9 @@ def main():
             sys.exit(0)
 
         # Forward command over IPC socket: 'spotlight', 'toggle', or default 'show'
-        if is_spotlight_mode:
+        if '--recover' in sys.argv:
+            cmd = b'recover'
+        elif is_spotlight_mode:
             cmd = b"spotlight"
         elif is_toggle_mode:
             cmd = b"toggle"
@@ -228,6 +282,20 @@ def main():
         active_key = None
         startup_locked = False
 
+        from core.security.vault.recovery_restore import needs_recovery
+        if '--recover' in sys.argv or needs_recovery():
+            from ui.vault.recovery_dialog import RecoveryDialog
+            from ui.window_utils import prepare_dialog_for_current_workspace
+            recovery = RecoveryDialog()
+            prepare_dialog_for_current_workspace(recovery)
+            try:
+                if recovery.exec() != recovery.DialogCode.Accepted:
+                    sys.exit(1)
+                if recovery.opened_new_profile:
+                    sys.exit(0)
+            finally:
+                recovery.deleteLater()
+
         if has_master_password():
             if is_startup_mode:
                 # On system boot/autostart, do not block login with a modal window.
@@ -243,9 +311,9 @@ def main():
                 active_key = lock.get_key()
 
         # ── Dashboard ──────────────────────────────────────────────────────
-        from ui.dashboard import Dashboard
-
-        window = Dashboard(startup_locked=startup_locked, active_key=active_key)
+        window = _create_dashboard(startup_locked=startup_locked, active_key=active_key)
+        if window is None:
+            sys.exit(1)
 
         if is_spotlight_mode:
             window.show_spotlight()
@@ -267,6 +335,9 @@ def main():
                         window.show_spotlight()
                     elif message == "toggle":
                         window.toggle_visibility()
+                    elif message == 'recover':
+                        from ui.vault.wiring import open_recovery
+                        open_recovery(window)
             finally:
                 client.disconnectFromServer()
                 client.deleteLater()

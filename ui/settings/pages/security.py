@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout,
-    QSpinBox, QCheckBox, QLabel,
+    QComboBox, QCheckBox, QLabel,
     QPushButton, QFrame, QScrollArea, QWidget,
     QInputDialog, QLineEdit, QMessageBox,
 )
@@ -40,107 +40,123 @@ if TYPE_CHECKING:
 # (were SettingsDialog methods; now standalone to keep dialog.py thin)
 # ══════════════════════════════════════════════════════════════
 
-def setup_master_password(dialog: "SettingsDialog") -> None:
-    """Set or change the master password. Verifies old password first if one exists."""
-    from core.crypto import (
-        has_master_password,
-        save_master_password,
-        verify_password,
-    )
+def _service(dialog):
+    parent = dialog.parent() if hasattr(dialog, "parent") else None
+    service = getattr(parent, "security_service", None)
+    if service is None:
+        from core.services import SecurityService
+        service = getattr(dialog, "_password_service", None) or SecurityService()
+    dialog._password_service = service
+    return service
 
-    had_pw = has_master_password()
 
-    # Verify current password before allowing a change
-    if had_pw:
-        old_pw, ok = QInputDialog.getText(
-            dialog, "Verify Current Password",
-            "Enter your current master password:",
-            QLineEdit.EchoMode.Password,
-        )
+def _password(dialog, title, prompt):
+    return QInputDialog.getText(dialog, title, prompt, QLineEdit.EchoMode.Password)
+
+
+def _sync_session(dialog):
+    parent = dialog.parent()
+    if parent and hasattr(parent, "security_controller"):
+        parent.security_controller.set_active_key(_service(dialog).active_key)
+        parent.topbar.set_lock_visible(_service(dialog).has_master_password())
+    refresh_eclipse_pw_ui(dialog)
+    _refresh_vault_password_ui(dialog)
+
+
+def setup_master_password(dialog):
+    """Route every settings action through the coordinator, never raw verifier writes."""
+    service = _service(dialog)
+    old_password = None
+    if service.has_master_password():
+        old_password, ok = _password(dialog, "Current Dashboard Password", "Current Dashboard password:")
         if not ok:
             return
-        if not verify_password(old_pw):
-            QMessageBox.warning(
-                dialog, "Wrong Password",
-                "Current password is incorrect."
-            )
+        if not service.verify_master_password(old_password):
+            QMessageBox.warning(dialog, "Wrong Password", "Current Dashboard password is incorrect.")
             return
-
-    # Get new password
-    new_pw, ok = QInputDialog.getText(
-        dialog, "Set Master Password",
-        "New master password  (minimum 6 characters):",
-        QLineEdit.EchoMode.Password,
-    )
-    if not ok or not new_pw.strip():
-        return
-
-    # Confirm
-    confirm, ok = QInputDialog.getText(
-        dialog, "Confirm Password",
-        "Confirm new master password:",
-        QLineEdit.EchoMode.Password,
-    )
+    new_password, ok = _password(dialog, "Dashboard Password", "New Dashboard password (at least 12 characters):")
     if not ok:
         return
-    if new_pw != confirm:
+    confirm, ok = _password(dialog, "Confirm Password", "Confirm new Dashboard password:")
+    if not ok:
+        return
+    if new_password != confirm:
         QMessageBox.warning(dialog, "Mismatch", "Passwords do not match.")
         return
-
     try:
-        save_master_password(new_pw)
-    except ValueError as exc:
-        QMessageBox.warning(dialog, "Invalid Password", str(exc))
+        if old_password is None:
+            service.setup_master_password(new_password)
+        else:
+            success, message = service.change_master_password(old_password, new_password)
+            if not success:
+                raise ValueError(message)
+    except Exception as exc:
+        QMessageBox.warning(dialog, "Password Not Changed", str(exc))
         return
-
-    QMessageBox.information(
-        dialog, "Password Set",
-        "Master password set successfully.\n\n"
-        "To encrypt an item, right-click its card and choose\n"
-        "\U0001f510 Mark as Secret."
-    )
-    refresh_eclipse_pw_ui(dialog)
+    _sync_session(dialog)
+    QMessageBox.information(dialog, "Password Updated", "Dashboard password updated. Your encrypted data was preserved.")
 
 
-def remove_master_password(dialog: "SettingsDialog") -> None:
-    """Decrypt all secret items and remove the master password."""
-    from core.crypto import verify_password, remove_master_password as _rm, derive_key
-    import core.storage as storage
-
-    pw, ok = QInputDialog.getText(
-        dialog, "Confirm Removal",
-        "Enter your master password to remove it:",
-        QLineEdit.EchoMode.Password,
-    )
-    if not ok or not pw.strip():
+def remove_master_password(dialog):
+    service = _service(dialog)
+    password, ok = _password(dialog, "Remove Dashboard Password", "Current Dashboard password:")
+    if not ok:
         return
-    if not verify_password(pw):
-        QMessageBox.warning(
-            dialog, "Wrong Password", "Master password is incorrect."
-        )
+    success, count, message = service.remove_master_password(password)
+    if not success:
+        QMessageBox.warning(dialog, "Password Not Removed", message)
         return
-
-    # Decrypt all secret items before removing the key
-    key   = derive_key(pw)
-    count = storage.decrypt_all_secret_items(key)
-    if count == -1:
-        QMessageBox.critical(
-            dialog, "Decryption Failed",
-            "Could not decrypt one or more items.\n"
-            "Master password was NOT removed."
-        )
-        return
-
-    _rm()
     dialog._settings["master_lock_enabled"] = False
-    dialog._settings["auto_lock_minutes"]   = 0
-    dialog._auto_lock_spin.setValue(0)
+    dialog._settings["auto_lock_minutes"] = 0
+    dialog._auto_lock_combo.setCurrentIndex(dialog._auto_lock_combo.findData(0))
+    _sync_session(dialog)
+    QMessageBox.information(dialog, "Password Removed", message)
 
-    QMessageBox.information(
-        dialog, "Password Removed",
-        f"Master password removed.\n{count} item(s) decrypted."
-    )
-    refresh_eclipse_pw_ui(dialog)
+
+def _refresh_vault_password_ui(dialog):
+    independent = _service(dialog).vault.independent_password
+    dialog._independent_vault_check.blockSignals(True)
+    dialog._independent_vault_check.setChecked(independent)
+    dialog._independent_vault_check.blockSignals(False)
+    dialog._independent_vault_check.setEnabled(_service(dialog).has_master_password())
+    dialog._change_vault_password_btn.setEnabled(independent)
+
+
+def configure_vault_password(dialog, independent):
+    service = _service(dialog)
+    try:
+        dashboard_password, ok = _password(dialog, "Confirm Dashboard Password", "Current Dashboard password:")
+        if not ok:
+            return
+        if not service.verify_master_password(dashboard_password):
+            raise ValueError("Incorrect Dashboard password.")
+        current_vault = None
+        if service.vault.independent_password:
+            current_vault, ok = _password(dialog, "Current Vault Password", "Current independent Vault password:")
+            if not ok:
+                return
+        new_vault = None
+        if independent:
+            new_vault, ok = _password(dialog, "Independent Vault Password", "New Vault password (at least 12 characters; different from Dashboard):")
+            if not ok:
+                return
+            confirm, ok = _password(dialog, "Confirm Vault Password", "Confirm the new Vault password:")
+            if not ok:
+                return
+            if new_vault != confirm:
+                raise ValueError("Vault passwords do not match.")
+        service.vault.configure_password(dashboard_password, new_vault, current_vault)
+        parent = dialog.parent()
+        if parent and hasattr(parent, "vault_controller"):
+            parent.vault_controller.on_session_unlocked()
+        QMessageBox.information(dialog, "Vault Password Updated", "Vault password settings updated. Your secrets were preserved.")
+    except Exception as exc:
+        QMessageBox.warning(dialog, "Vault Password Not Changed", str(exc))
+    finally:
+        parent = dialog.parent()
+        if parent and hasattr(parent, "vault_controller") and not service.vault.is_unlocked:
+            parent.vault_controller.lock()
+        _refresh_vault_password_ui(dialog)
 
 
 def refresh_eclipse_pw_ui(dialog: "SettingsDialog") -> None:
@@ -202,7 +218,7 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
     pw_hint = QLabel(
         "When set, the app will show a lock screen on startup and "
         "allow you to lock/unlock from the 🔒 button or tray menu.\n"
-        "🛡️ Your Master Password also encrypts The Vault (vault.db) with a domain-separated key. "
+        "🛡️ By default, your Master Password also unlocks The Vault. You can choose an independent Vault password below. "
         "You can export an offline encrypted backup (.vault) from The Vault drawer."
     )
     pw_hint.setWordWrap(True)
@@ -224,7 +240,7 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
     dialog._rm_pw_btn.setObjectName("EclipseBtnDanger")
     dialog._rm_pw_btn.setToolTip(
         "Remove the master password.\n"
-        "\u26a0 All encrypted items will be permanently decrypted first."
+        "The Vault must be empty. Encrypted Dashboard items will be decrypted first."
     )
     dialog._rm_pw_btn.setEnabled(has_pw)
     dialog._rm_pw_btn.clicked.connect(
@@ -238,34 +254,54 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
 
     layout.addWidget(dialog._hsep())
 
+    layout.addWidget(dialog._section_label("🛡️  Vault Password"))
+    dialog._independent_vault_check = QCheckBox("Use a separate password for The Vault")
+    dialog._independent_vault_check.setObjectName("IndependentVaultPassword")
+    layout.addWidget(dialog._independent_vault_check)
+    vault_hint = QLabel(
+        "Off by default: Dashboard and Vault share one password. With a separate password, "
+        "sign in to Dashboard, then unlock the Vault before capture starts. "
+        "Password changes apply immediately; Cancel does not undo them."
+    )
+    vault_hint.setWordWrap(True)
+    vault_hint.setStyleSheet("color:#8a9296; font-size:11px;")
+    layout.addWidget(vault_hint)
+    dialog._change_vault_password_btn = QPushButton("Change Vault Password…")
+    dialog._change_vault_password_btn.setObjectName("EclipseBtn")
+    layout.addWidget(dialog._change_vault_password_btn)
+    _refresh_vault_password_ui(dialog)
+    dialog._independent_vault_check.toggled.connect(lambda enabled: configure_vault_password(dialog, enabled))
+    dialog._change_vault_password_btn.clicked.connect(lambda: configure_vault_password(dialog, True))
+    layout.addWidget(dialog._hsep())
+
     # \u2500\u2500 Auto-lock \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    layout.addWidget(dialog._section_label("\u23f1  Auto-Lock"))
+    layout.addWidget(dialog._section_label("\u23f1  Dashboard Auto-Lock"))
 
     lock_hint = QLabel(
-        "Automatically lock the session after N minutes of inactivity. "
-        "Set to 0 to disable.  Requires a master password."
+        "Disabled by default. Optionally lock the whole app after inactivity. "
+        "Requires a Master Password. The Vault keeps its separate idle lock."
     )
     lock_hint.setWordWrap(True)
-    lock_hint.setStyleSheet("color:#444; font-size:11px;")
+    lock_hint.setStyleSheet("color:#8a9296; font-size:11px;")
     layout.addWidget(lock_hint)
 
     lock_form = QFormLayout()
     lock_form.setSpacing(10)
     lock_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-    dialog._auto_lock_spin = QSpinBox()
-    dialog._auto_lock_spin.setRange(0, 480)
-    dialog._auto_lock_spin.setSingleStep(5)
-    dialog._auto_lock_spin.setValue(
-        dialog._settings.get("auto_lock_minutes", 0)
-    )
-    lock_row = QHBoxLayout()
-    lock_row.setSpacing(8)
-    lock_row.addWidget(dialog._auto_lock_spin, stretch=1)
-    lock_suffix = QLabel("min  (0 = disabled)")
-    lock_suffix.setStyleSheet("color: #8a9296; font-size: 13px;")
-    lock_row.addWidget(lock_suffix)
-    lock_form.addRow("Lock after:", lock_row)
+    dialog._auto_lock_combo = QComboBox()
+    for label, minutes in [("Disabled (default)", 0), ("5 minutes", 5),
+                           ("30 minutes", 30), ("1 hour", 60)]:
+        dialog._auto_lock_combo.addItem(label, minutes)
+    try:
+        saved_minutes = max(0, int(dialog._settings.get("auto_lock_minutes", 0)))
+    except (TypeError, ValueError):
+        saved_minutes = 0
+    if dialog._auto_lock_combo.findData(saved_minutes) < 0:
+        # Preserve an explicitly chosen timeout from older versions on Save.
+        dialog._auto_lock_combo.addItem(f"{saved_minutes} minutes (saved setting)", saved_minutes)
+    dialog._auto_lock_combo.setCurrentIndex(dialog._auto_lock_combo.findData(saved_minutes))
+    lock_form.addRow("Lock after inactivity:", dialog._auto_lock_combo)
     layout.addLayout(lock_form)
 
     layout.addWidget(dialog._hsep())

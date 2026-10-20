@@ -120,20 +120,23 @@ def test_expiry_persistence_in_service_and_repository(expiry_vault_env):
     assert len(summaries) == 1
     assert summaries[0].expires_at == exp_ts
 
-    # Verify item
+    # Expiry is private metadata inside the authenticated payload, not a SQL column.
     item = service._repo.get_item(item_id)
-    assert item.expires_at == exp_ts
+    assert item.expires_at is None
+    assert exp_ts not in item.ciphertext
 
     # Update expiration date
     new_exp_ts = "2028-06-30T23:59:59"
     service.update_secret(item_id, expires_at=new_exp_ts)
     updated_item = service._repo.get_item(item_id)
-    assert updated_item.expires_at == new_exp_ts
+    assert updated_item.expires_at is None
+    assert service.list_secrets()[0].expires_at == new_exp_ts
 
     # Remove expiration date
     service.update_secret(item_id, expires_at="")
     cleared_item = service._repo.get_item(item_id)
     assert cleared_item.expires_at is None
+    assert service.list_secrets()[0].expires_at is None
 
 
 def test_secret_dialog_expiry_controls(qapp):

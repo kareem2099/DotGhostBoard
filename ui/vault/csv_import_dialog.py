@@ -67,6 +67,15 @@ class _ImportWorker(QThread):
         self._entries = entries
 
     def run(self):
+        try:
+            with self._controller.service.recovery.batch('import'):
+                imported, failed = self._run_import()
+            self._controller._report_recovery_error()
+            self.finished.emit(imported, failed)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+    def _run_import(self):
         imported = 0
         failed = 0
         total = len(self._entries)
@@ -79,10 +88,10 @@ class _ImportWorker(QThread):
                 )
                 imported += 1
             except Exception as exc:
-                logger.warning("CSV import: skipped '%s': %s", entry.title, exc)
+                logger.warning("CSV import: skipped entry %s: %s", i + 1, exc)
                 failed += 1
             self.progress.emit(int((i + 1) / total * 100))
-        self.finished.emit(imported, failed)
+        return imported, failed
 
 
 class CsvImportDialog(QDialog):

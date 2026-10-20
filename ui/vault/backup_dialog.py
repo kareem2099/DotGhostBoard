@@ -2,8 +2,7 @@
 ui/vault/backup_dialog.py
 ─────────────────────────
 Modal dialogs for exporting and importing encrypted Vault packages (.vault).
-Clearly explains AES-256-GCM authenticated encryption, PBKDF2 100k rounds,
-and guarantees zero plaintext leakage.
+Explains AES-256-GCM backups and the current Argon2id passphrase derivation.
 
 v2.1.0 Leviathan — Vault Backup & Restore.
 """
@@ -102,7 +101,7 @@ class VaultBackupDialog(QDialog):
         info_layout.setSpacing(6)
 
         info_title = QLabel(
-            "🔐 Military-Grade Authenticated Encryption (AES-256-GCM)"
+            "🔐 Authenticated Encryption (AES-256-GCM)"
             if is_export
             else "🔒 Authenticated Cryptographic Decryption"
         )
@@ -112,8 +111,8 @@ class VaultBackupDialog(QDialog):
         if is_export:
             bullets = [
                 ("• All secrets, passwords, history, and expiry are encrypted.", "normal"),
-                ("• Key derived via PBKDF2-HMAC-SHA256 (100k rounds) + salt.", "normal"),
-                ("• Zero plaintext stored: 100% safe for USB or cloud backup.", "normal"),
+                ("• Argon2id derives the key with 64 MiB memory and 3 passes.", "normal"),
+                ("• The backup file is encrypted; choose a strong passphrase.", "normal"),
                 ("⚠️ Remember this passphrase — without it, the backup cannot be opened!", "warn"),
             ]
         else:
@@ -135,7 +134,7 @@ class VaultBackupDialog(QDialog):
         layout.addWidget(info_frame)
 
         # ── Password Inputs ──
-        pw_label = QLabel("Backup Passphrase:" if not is_export else "Create Backup Passphrase (min 8 chars):")
+        pw_label = QLabel("Backup Passphrase:" if not is_export else f"Create Backup Passphrase (min {MIN_PASSPHRASE_LEN} chars):")
         pw_label.setObjectName("VaultBackupLabel")
         layout.addWidget(pw_label)
 
@@ -201,15 +200,15 @@ class VaultBackupDialog(QDialog):
         self._error_lbl.setText("")
 
     def _on_submit(self) -> None:
-        pw = self._pw_input.text().strip()
+        pw = self._pw_input.text()
 
         if self._mode == "export":
-            if len(pw) < MIN_PASSPHRASE_LEN:
+            if len(pw) < MIN_PASSPHRASE_LEN or not pw.strip():
                 self._error_lbl.setText(f"Passphrase must be at least {MIN_PASSPHRASE_LEN} characters.")
                 self._pw_input.setFocus()
                 return
 
-            confirm = self._confirm_input.text().strip() if self._confirm_input else ""
+            confirm = self._confirm_input.text() if self._confirm_input else ""
             if pw != confirm:
                 self._error_lbl.setText("Passphrases do not match. Please re-check.")
                 if self._confirm_input:
@@ -226,6 +225,20 @@ class VaultBackupDialog(QDialog):
 
     def get_passphrase(self) -> Optional[str]:
         return self._passphrase
+
+    def accept(self) -> None:
+        self._clear_inputs()
+        super().accept()
+
+    def reject(self) -> None:
+        self._passphrase = None
+        self._clear_inputs()
+        super().reject()
+
+    def _clear_inputs(self) -> None:
+        self._pw_input.clear()
+        if self._confirm_input:
+            self._confirm_input.clear()
 
     def _apply_style(self) -> None:
         """Apply theme from ui/ghost.qss if not already active on the application."""

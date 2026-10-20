@@ -51,7 +51,8 @@ QSS_PATH = resource_path("ui", "ghost.qss")
 
 class Dashboard(DashboardCompatibilityMixin, QMainWindow):
     def __init__(
-        self, startup_locked: bool = False, active_key: bytes | None = None
+        self, startup_locked: bool = False, active_key: bytes | None = None,
+        security_service: SecurityService | None = None,
     ):
         super().__init__()
         self.setWindowTitle("DotGhostBoard")
@@ -61,7 +62,11 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
 
         self._settings: dict = load_settings()
         self.collection_service = CollectionService()
-        self.security_service = SecurityService()
+        self.security_service = security_service or SecurityService()
+        if active_key is not None:
+            # Authenticate before creating UI or starting background services.
+            # Startup can report an unreadable Vault without leaving workers running.
+            self.security_service.set_session_key(active_key)
         self.history_service = HistoryService()
         self.sync_service = SyncService(
             local_node_id=self._settings.get("node_id", ""),
@@ -91,6 +96,7 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
 
         self._load_stylesheet()
         self._build_ui()
+        self.security_controller.vault_unlock_callback = self._unlock_independent_vault
         self._setup_tray()
         self._start_watcher()
         attach_send_to_vault(self)
@@ -105,8 +111,11 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
 
         if self._settings.get("auto_update_check", True):
             self.check_for_updates()
-        if active_key is not None:
-            self.security_controller.set_active_key(active_key)
+        if active_key is not None or self.security_service.active_key is not None:
+            if not self._unlock_independent_vault():
+                self.security_controller.lock()
+            else:
+                self.security_controller.lock_state_changed.emit(self.security_controller.is_locked)
         elif startup_locked:
             self.security_controller.lock()
 
@@ -179,6 +188,7 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         self.search_box.setPlaceholderText(
             "Search clips, tags, or collections…"
         )
+        self.search_box.textEdited.connect(self._reset_auto_lock)
         search_frame = QFrame()
         search_frame.setStyleSheet("padding: 8px 12px;")
         search_layout = QHBoxLayout(search_frame)
@@ -222,11 +232,17 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
 
     def _is_locked(self) -> bool:
         if hasattr(self, "security_controller"):
-            return self._startup_locked or self.security_controller.is_locked
+            vault = self.security_service.vault
+            return (self._startup_locked or self.security_controller.is_locked
+                    or (vault.independent_password and not vault.recognition_ready))
         return bool(
             self._startup_locked
             or (has_master_password() and self._active_key is None)
         )
+
+    def _unlock_independent_vault(self):
+        vault = self.security_service.vault
+        return not vault.independent_password or vault.is_unlocked or self.vault_panel._prompt_unlock()
 
     def set_active_key(self, key: bytes | None) -> None:
         self._active_key = key
@@ -241,21 +257,27 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         self._update_tray_menu_and_tooltip()
 
     def _on_lock_state_changed(self, is_locked: bool):
+        vc = getattr(self, "vault_controller", None)
         if is_locked:
-            vc = getattr(self, "vault_controller", None)
-            if vc and vc.is_unlocked:
+            # The service may already have scrubbed the DEK; the controller must
+            # still stop its timers, clear copied secrets and refresh the panel.
+            if vc:
                 vc.lock()
             if getattr(self, "watcher", None):
                 self.watcher.stop()
             if getattr(self, "sync_controller", None):
                 self.sync_controller.stop_all()
         else:
+            self._startup_locked = False
+            if vc:
+                vc.on_session_unlocked()
             w = getattr(self, "watcher", None)
             if w and not self._is_monitoring_paused:
                 self.watcher.start()
             self._start_api_server()
             self._start_discovery()
             self._init_sync_engine()
+        self._reset_auto_lock()
         self._update_tray_menu_and_tooltip()
 
     # ══════════════════════════════════════════
@@ -417,8 +439,6 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         if hasattr(self, "security_controller"):
             if not self.security_controller.prompt_unlock(self):
                 return False
-            self._startup_locked = False
-            self.set_active_key(self.security_controller.active_key)
         else:
             dlg = LockScreen(setup=False)
             prepare_dialog_for_current_workspace(dlg)

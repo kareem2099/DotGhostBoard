@@ -3,12 +3,13 @@
 > Advanced clipboard manager for Kali Linux — part of the [**DotSuite**](https://www.dotsuite.dev/en) toolkit.
 
 [![Ecosystem - DotSuite](https://img.shields.io/badge/Ecosystem-DotSuite-00b4d8?style=flat-square&labelColor=333333)](https://www.dotsuite.dev/en)
-![Version](https://img.shields.io/badge/version-v2.1.2-238636?style=flat-square&labelColor=0f0f0f)
+
+![Version](https://img.shields.io/badge/version-v2.1.3-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Leviathan-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
 ![Platform](https://img.shields.io/badge/platform-Linux-238636?style=flat-square&labelColor=0f0f0f)
-![Tests](https://img.shields.io/badge/tests-589%20passed-238636?style=flat-square&labelColor=0f0f0f)
+![Tests](https://img.shields.io/badge/tests-694%20passed-238636?style=flat-square&labelColor=0f0f0f)
 ![License](https://img.shields.io/badge/license-Apache--2.0-238636?style=flat-square&labelColor=0f0f0f)
 
 ---
@@ -45,10 +46,25 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Desktop notifications** — Settings → Notifications → Enable desktop notifications → Save.
   Changes apply immediately; security alerts, update alerts, and notification sounds can be
   controlled separately. Disabling desktop notifications keeps secret protection active.
-- **Vault-aware clipboard protection** — Passwords already stored in the Vault stay out of
-  clipboard history and sync, even with heuristic password detection disabled. Open a
-  non-empty Vault once after starting the app to enable verification; until then, text is
-  withheld from history. Protection continues after the Vault auto-locks.
+- **Unified unlock and Vault-aware protection** — By default, enter your Master Password once
+  to unlock both Dashboard and Vault. Settings → Eclipse → Vault Password can enable an
+  independent password, requested immediately after Dashboard authentication. Capture waits
+  for both steps. Secret recognition is initialized before capture resumes, so
+  ordinary text is recorded immediately and stored Vault values stay out of history and
+  sync even with heuristic detection disabled. The Vault still auto-locks independently
+  after its idle timeout; recognition continues until the application exits. Locking the
+  whole session locks both. Unified unlock is included in v2.1.3.
+- **Dashboard auto-lock** — Optional in Settings → Eclipse: Disabled (default), 5 minutes,
+  30 minutes, or 1 hour of inactivity. The Vault keeps its separate idle lock.
+- **Imported-password protection** — The password field of CSV-imported records is also
+  recognized independently of the full username/URL/notes record, including existing
+  imports. An unreadable Vault key displays an error and exits safely without resetting data.
+- **Backup & Recovery** — Settings → Recovery lets you select entries or enable All items / Auto Sync.
+  The latest encrypted copy updates after changes; daily, weekly, or monthly versions are
+  retained separately from safety/manual copies. Choose a folder and backup passphrase,
+  preview and restore versions, or recover into a new profile if the original is lost.
+  Scheduled work runs while the app and Vault are unlocked and catches up on unlock.
+  [Setup, retention, failure handling, and restore guide](docs/vault-recovery.md).
 - **Keyboard navigation** — `↑`/`↓` to move between cards, `Enter` to copy, `Esc` to clear focus
 - **Double-click to paste** — Double-click any card to copy it instantly
 - **Standalone autostart** — `scripts/setup_autostart.py` sets up boot entry without bash
@@ -102,7 +118,7 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
 - **Contextual Smart Actions** — Inline card actions tailored to content type: `🔗 Open Link` in browser, `{ } Format JSON` with indentation, `✉ Compose` email, `📡 Copy IP`, or `🛡 → Vault` to securely encrypt credentials.
 - **Built-in Vault Password & Token Generator** — Cryptographically strong password/token generator in Add/Edit Secret dialog (`⚡ Generate`) with customizable length, symbols, and live Shannon entropy strength bar.
 - **Vault Password History** — Retains last 3 previous encrypted password versions (`vault_item_history`) with single-click reveal, copy, or revert via dedicated `📜` history modal dialog.
-- **Vault Encrypted Export & Import (`.vault`)** — Standalone AES-256-GCM encrypted backup packages protected by high-iteration PBKDF2-HMAC-SHA256 (100,000 rounds); exports all secrets, 3-version history, and expiry dates with zero disk plaintext leaks and intelligent duplicate resolution.
+- **Vault Encrypted Export & Import (`.vault`)** — New AES-256-GCM backup packages use Argon2id (64 MiB, 3 passes, 1 lane). Legacy PBKDF2 backups remain readable. Exports include all secrets, 3-version history, and expiry dates.
 - **Secret Expiration Dates & Status Badges** — Optional expiration dates on vault items (`30d`, `90d`, `180d`, `1y`, or custom date picker) with live visual card status badges (`⛔ EXPIRED`, `⚠️ Xd left`, `⏳ YYYY-MM-DD`).
 - **Vault Plaintext History Sweep** — Deleting or scrubbing a secret from The Vault automatically purges any lingering unencrypted plaintext copies from clipboard history.
 - **Dynamic Auto-Purge History** — Configurable history threshold dynamically enforced from Settings, auto-purging oldest unpinned items while respecting pin immunity.
@@ -254,17 +270,19 @@ DotGhostBoard/
 | Python     | 3.11+    |
 | PyQt6      | 6.6.0+   |
 | Pillow     | 10.0.0+  |
-| cryptography | 41.0.0+ |
+| cryptography | 44.0.0+ (Argon2id support) |
 | pytest     | 7.0.0+   |
 
 ---
 
 ## 📥 Download
 
-- 🐧 **[AppImage](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Portable Linux build
-- 📦 **[DEB](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Debian / Ubuntu / Kali
-- 📦 **[Arch package](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — `.pkg.tar.zst`
-- 🗜️ **[Portable tarball](https://github.com/kareem2099/DotGhostBoard/releases/latest)** — Extract & run anywhere
+Packages below are for **v2.1.3**. Download links become available when the GitHub release is published.
+
+- 🐧 **[AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/DotGhostBoard-2.1.3-x86_64.AppImage)** — Portable Linux build
+- 📦 **[DEB](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.deb)** — Debian / Ubuntu / Kali
+- 📦 **[Arch package](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard-2.1.3-1-x86_64.pkg.tar.zst)** — `.pkg.tar.zst`
+- 🗜️ **[Portable tarball](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.tar.gz)** — Extract & run anywhere
 
 ---
 
@@ -302,7 +320,7 @@ python3 main.py
 
 ### Option C — pip install (PyPI)
 
-> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for v2.1.2.
+> **Note:** PyPI package publication is planned; use DEB, AppImage, or Git clone for the published release.
 
 ```bash
 # Planned for PyPI release
@@ -312,11 +330,11 @@ dotghostboard
 
 ### Option D — AppImage (Portable)
 
-Download the `.AppImage` from [Releases](https://github.com/kareem2099/DotGhostBoard/releases), then:
+Download the [v2.1.3 AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/DotGhostBoard-2.1.3-x86_64.AppImage), then:
 
 ```bash
-chmod +x DotGhostBoard-*.AppImage
-./DotGhostBoard-*.AppImage
+chmod +x DotGhostBoard-2.1.3-x86_64.AppImage
+./DotGhostBoard-2.1.3-x86_64.AppImage
 ```
 
 No installation required. Runs on compatible 64-bit Linux distributions.
@@ -346,11 +364,11 @@ chmod +x scripts/build_appimage.sh
 **Quick install from Releases:**
 
 ```bash
-# Download the latest .deb from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/latest/download/dotghostboard_2.1.2_amd64.deb
+# Download v2.1.3 from GitHub Releases
+wget https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.deb
 
 # Install via apt
-sudo apt install ./dotghostboard_2.1.2_amd64.deb
+sudo apt install ./dotghostboard_2.1.3_amd64.deb
 
 # Run
 dotghostboard
@@ -412,15 +430,20 @@ sudo apt remove dotghostboard
 
 The Vault (`Ctrl+Shift+V`) is a physically isolated, encrypted credential storage engine (`vault.db`).
 
-* **Envelope Encryption**: Secrets are encrypted with a per-database Data Encryption Key (DEK), wrapped with a domain-separated Key Encryption Key (KEK) derived from your Master Password via HKDF-SHA256.
+* **Envelope Encryption**: A random 256-bit Data Encryption Key (DEK) encrypts secrets, titles, categories, expiry dates, and history. Record and history IDs are authenticated to detect ciphertext swapping. Creation/update timestamps, counts, and database structure remain visible. Legacy records migrate after a successful unlock; older app builds cannot read the upgraded format.
+* **Password Modes**: Shared mode (default) wraps the DEK using HKDF-SHA256 over the Dashboard key derived with PBKDF2-HMAC-SHA256 (600,000 rounds). An optional independent Vault password uses Argon2id (64 MiB, 3 passes, 1 lane; random 16-byte salt), with no Dashboard-password fallback. Changing modes verifies the required current passwords and preserves the DEK and secrets. New passwords require at least 12 characters; legacy passwords remain usable for authentication.
 * **Streamlined Two-Row Drawer**: Slide-out drawer with dedicated title/badge status row and independent action toolbar (`+ Add Secret`, Lock/Unlock, Export, Import, Tips).
 * **Empty State Onboarding**: Informative tips card explaining quick shortcuts (`Ctrl+Shift+V`), 30-second clipboard scrubbing, 3-version history, and expiration monitoring.
-* **Encrypted Export (`.vault`)**: Clicking `📤 Export` packages all secrets, 3-version password histories, categories, timestamps, and expiration dates into a standalone binary file.
+* **Encrypted Export (`.vault`)**: Clicking `📤 Export` packages all secrets, 3-version password histories, categories, expiration dates, and an export timestamp into a standalone binary file.
   - **Cipher**: `AES-256-GCM` (authenticated encryption with 96-bit random nonce and 128-bit authentication tag).
-  - **Key Derivation**: `PBKDF2-HMAC-SHA256` with **100,000 rounds** and an independent, per-backup 16-byte random salt.
-  - **Zero Plaintext**: Absolutely zero unencrypted text is written to disk. The resulting `.vault` package is safe to store in the cloud, on USB drives, or transfer across systems.
+  - **Key Derivation**: Version 2 uses **Argon2id (64 MiB, 3 passes, 1 lane)** with a per-backup 16-byte random salt. Import still supports version 1 PBKDF2-HMAC-SHA256 backups (100,000 rounds).
+  - **Encrypted File**: The application writes an encrypted package. Protection depends on a strong passphrase and a secure device; this does not protect against malware reading an unlocked process, OS swap, or clipboard contents.
   - **Passphrase Security**: Protected by an independent passphrase chosen at export. Passphrases are never stored; backups cannot be decrypted if the passphrase is forgotten.
 * **Authenticated Import**: Clicking `📥 Import` prompts for the backup passphrase, verifies the package's cryptographic integrity tag, and imports secrets into your Vault while automatically skipping exact duplicates.
+
+These password-mode, private-metadata, and backup-v2 changes are included in v2.1.3.
+See the [security model and migration notes](docs/security-model.md) for exact guarantees,
+remaining limits, and files required for recovery.
 
 ### Window Manager & Multi-Workspace Compatibility
 
@@ -443,7 +466,7 @@ QT_QPA_PLATFORM=offscreen DOTGHOST_FORCE_WAYLAND=1 python3 -m pytest
 
 Latest verification (headless Qt):
 ```text
-589 passed
+694 passed
 ```
 
 <img src="data/assets/tests-passed.png" width="100%" alt="Tests Output" />
@@ -472,7 +495,8 @@ Latest verification (headless Qt):
 | v2.0.0 | Cerberus | ✅ Released | The Vault UI, Zero-Log Secret Detector, FreeDesktop Notifications, 2.0.0 Icon Architecture (470 tests) |
 | v2.0.1 | Cerberus | ✅ Released | Tiling Window Manager EWMH Migration (Qtile/Openbox), Workspace Toggle Fix, Vault & Notification Hardening (489 tests) |
 | v2.1.0 | Leviathan | ✅ Released | Smart Auto-Tagging, Contextual Card Actions, Vault Generator, Password History, Vault Export/Import, Secret Expiry, Vault Sweep, Auto-Purge (522 tests) |
-| v2.1.2 | Leviathan | Prepared locally | Vault clipboard protection, configurable notifications, PRIMARY fixes, runtime-only packaging (589 tests) |
+| v2.1.3 | Leviathan | Current version | Independent Vault password, encrypted recovery versions, unified unlock, searchable selection, responsive recovery operations |
+| v2.1.2 | Leviathan | ✅ Released | Vault clipboard protection, configurable notifications, PRIMARY fixes, runtime-only packaging (589 tests) |
 | v2.1.1 | Leviathan | ✅ Released | Primary Selection (Issue #2), Mouse Ergonomics & Badges, Middle-Click to PRIMARY, UI Audio Feedback & Sound Synthesizer, Vault CSV Importer (546 tests) |
 
 Full details in [`roadmap(v2.x).md`](roadmap(v2.x).md)

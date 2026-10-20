@@ -21,6 +21,17 @@ if TYPE_CHECKING:
     from ui.dashboard import Dashboard
 
 
+def open_recovery(dashboard):
+    from ui.vault.recovery_dialog import RecoveryDialog
+    from ui.window_utils import prepare_dialog_for_current_workspace
+    dialog = RecoveryDialog(service=dashboard.security_service, dashboard=dashboard, parent=dashboard)
+    prepare_dialog_for_current_workspace(dialog)
+    try:
+        dialog.exec()
+    finally:
+        dialog.deleteLater()
+
+
 def attach_vault(dashboard: Dashboard, container_layout: QBoxLayout) -> tuple[VaultController, VaultPanel]:
     """
     Instantiate and attach The Vault controller, drawer panel, shortcut, and signals
@@ -28,6 +39,16 @@ def attach_vault(dashboard: Dashboard, container_layout: QBoxLayout) -> tuple[Va
     """
     controller = VaultController(vault_service=dashboard.security_service.vault, parent=dashboard)
     controller.status_message.connect(dashboard.statusBar().showMessage)
+
+    def recovery_warning():
+        tray = getattr(dashboard, 'tray_manager', None)
+        if tray:
+            tray.show_message('Vault backup needs attention',
+                'A recovery copy could not be saved. Open Settings → Recovery to check the backup folder.',
+                category='security', dedupe_key='recovery-failure', cooldown=300,
+                action_callback=dashboard._open_settings, action_label='Open settings')
+
+    controller.recovery_backup_failed.connect(recovery_warning)
 
     panel = VaultPanel(controller=controller, parent=dashboard)
     panel.hide()

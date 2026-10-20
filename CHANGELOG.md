@@ -7,6 +7,71 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.3] — 2026-10-20
+
+### Added
+
+- Search recovery items with bulk selection limited to visible results, preserving hidden selections.
+- Run recovery setup, manual copies, backup verification, and restoration in background
+  workers with modal progress, duplicate-action protection, and idle timer coordination.
+
+- Recovery settings with explicit item selection or all-items Auto Sync, an immediately
+  updated encrypted latest copy, daily/weekly/monthly schedules, destination selection,
+  last-success/error status, and independent retention for scheduled and safety/manual versions.
+- Self-contained Argon2id/AES-GCM recovery archives with a backup passphrase; locally wrap
+  the archive key with the Vault DEK and scrub it on lock. Checkpoint edits, deletion,
+  password changes, imports, and migrations; batch imports and retry pending work on unlock.
+- Preview/authenticate recovery versions and manual `.vault` packages before replacing
+  a Vault. Preserve original database/sidecars and credential copies, or create a new profile
+  without original credentials. Add startup recovery, login recovery, and the `--recover` option.
+- Detect disconnected/changed backup destinations, publish failures through security
+  notification preferences, and block unsafe destructive changes when safety copies fail.
+- Preserve the last good copy when unexpected record disappearance is detected, even
+  if a new item keeps the total count unchanged. Preserve the previous selection before
+  narrowing recovery scope or changing its password in the same backup directory.
+
+- Optional independent Vault password in Settings → Eclipse, with Argon2id (64 MiB,
+  3 passes, 1 lane), a random salt, and no Dashboard-key fallback. Shared password remains
+  the default. Independent mode asks for the Vault password immediately after Dashboard
+  authentication, before capture and background services start; cancellation leaves both locked.
+- Authenticate current passwords before switching Vault modes or rotating credentials.
+  Require at least 12 characters for newly created passwords while preserving legacy login.
+- Encrypt Vault titles, categories, and expiry alongside secrets; authenticate item/history IDs
+  and credential configuration. Migrate legacy encrypted records after successful unlock and
+  clear old live SQLite pages; locked listings use generic placeholders. Timestamps and counts
+  remain visible. The upgraded schema cannot be opened with older application builds.
+- Export backup format 2 with Argon2id and authenticated headers; retain legacy backup import.
+  Include every Vault page, abort unreadable exports, preserve passphrase whitespace, and
+  clear backup dialog fields on acceptance/cancellation.
+- Verify the current source with 694 passing tests, including 36 recovery regressions,
+  independent-password login, Settings actions, migration, backup compatibility, and
+  local API/window-manager integration.
+
+### Fixed
+
+- Route Settings password changes through SecurityService so Eclipse data and the shared
+  Vault key are rotated with the verifier. Preserve an independent Vault during Dashboard
+  password rotation, atomically replace the verifier, and roll back ordinary verifier-write
+  failures. Block master-password removal while the Vault contains secrets.
+- Handle malformed credential configuration as a safe Vault startup error without resetting
+  encrypted data. Reject unsupported KDF parameters before allocating derivation resources.
+
+- Unlock Dashboard and Vault together from a single Master Password entry, including
+  startup and background-session unlock. Derive the existing Vault KEK from the authenticated
+  session key and initialize secret recognition before restarting capture.
+- Start the Vault idle timer and update its UI when session authentication opens it.
+  Vault auto-lock remains independent; session lock clears both sets of keys, Vault
+  timers, copied-secret cleanup state, and revealed UI. Clear accepted password fields.
+- Offer Dashboard idle-lock presets (disabled by default, 5 minutes, 30 minutes, or
+  1 hour), preserve previously saved custom durations, and start enabled timers at
+  authentication. Typing in Dashboard search refreshes the idle timeout.
+- Recognize the password component of existing CSV-import records, including after
+  Vault auto-lock. Keep full-record matching, exclude usernames/URLs/notes from the
+  component index, and invalidate recognition when content or category changes.
+- Report damaged, missing, or invalid-length Vault key envelopes with a clear startup
+  error and safe exit before UI/background services start. Never reset or delete Vault
+  contents on authentication failure; report failures during in-app unlock as well.
+
 ## [2.1.2] — 2026-10-06
 
 ### Added

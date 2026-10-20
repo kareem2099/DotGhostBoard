@@ -31,14 +31,16 @@ from ui.settings.pages.security import build_security_tab
 from ui.settings.pages.api import build_api_tab
 from ui.settings.pages.about import build_about_tab
 from ui.settings.pages.notifications import build_notifications_tab
+from ui.settings.pages.recovery import RecoverySettingsPage
 
 
 class SettingsDialog(QDialog):
     """
-    Modal settings dialog with five tabs:
+    Modal settings dialog with six tabs:
       • General  — history limits, theme, autostart, updates, tag manager
       • Notifications — desktop alerts, categories, sound, and test preview
       • Eclipse  — master password, auto-lock, stealth, app filter
+      • Recovery — selected/live backups, dated versions, and recovery
       • API      — local REST API and device identity
       • About    — app, author, license, system and project information
     """
@@ -78,6 +80,8 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(build_general_tab(self),  "General")
         self._tabs.addTab(build_notifications_tab(self), "Notifications")
         self._tabs.addTab(build_security_tab(self), "🔐  Eclipse")
+        self._recovery_page = RecoverySettingsPage(self)
+        self._tabs.addTab(self._recovery_page, 'Recovery')
         self._tabs.addTab(build_api_tab(self),      "🌐  API")
         self._tabs.addTab(build_about_tab(self),    "👻  About")
         root.addWidget(self._tabs)
@@ -165,6 +169,10 @@ class SettingsDialog(QDialog):
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save_and_close(self):
+        if self.property('recoveryBusy'):
+            return
+        if self._recovery_page.dirty and not self._recovery_page.apply_settings():
+            return
         # General
         self._settings["max_history"]       = self._max_history.value()
         self._settings["max_captures"]      = self._max_captures.value()
@@ -191,7 +199,7 @@ class SettingsDialog(QDialog):
         self._settings["update_channel"]    = self._update_channel.currentData()
 
         # Eclipse
-        self._settings["auto_lock_minutes"] = self._auto_lock_spin.value()
+        self._settings["auto_lock_minutes"] = self._auto_lock_combo.currentData()
         self._settings["stealth_mode"]      = self._stealth_check.isChecked()
         self._settings["app_filter_mode"]   = self._app_filter_editor.get_mode()
         self._settings["app_filter_list"]   = self._app_filter_editor.get_app_list()
@@ -212,3 +220,14 @@ class SettingsDialog(QDialog):
     def settings(self) -> dict:
         """Returns the last saved settings dict (after accept())."""
         return self._settings
+
+    def done(self, result):
+        if self.property('recoveryBusy'):
+            return
+        # Parent-owned settings dialogs can outlive exec(); do not retain a
+        # cancelled recovery passphrase in their password input widgets.
+        page = getattr(self, '_recovery_page', None)
+        if page is not None:
+            page.new_password.clear()
+            page.confirm_password.clear()
+        super().done(result)

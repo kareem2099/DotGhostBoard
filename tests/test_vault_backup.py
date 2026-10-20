@@ -146,7 +146,7 @@ def test_import_corrupted_file_raises_error(backup_vault_env):
     # Verify that tampering with version or header fails authentication
     service.add_secret("Secret", "tamper_proof_value")
     package = export_vault_package(service, "Passphrase123!")
-    tampered_ver = package[:4] + b"\x02" + package[5:]
+    tampered_ver = package[:4] + b"\x03" + package[5:]
     with pytest.raises(ValueError):
         import_vault_package(service, tampered_ver, "Passphrase123!")
 
@@ -158,10 +158,10 @@ def test_import_duplicate_skipping_policy(backup_vault_env):
     service.unlock("MasterPass123!")
 
     service.add_secret("Existing Item", "identical_secret_payload", category="password")
-    package_bytes = export_vault_package(service, "Pass12345!")
+    package_bytes = export_vault_package(service, "Passphrase12345!")
 
     # Import back into same vault
-    result = import_vault_package(service, package_bytes, "Pass12345!")
+    result = import_vault_package(service, package_bytes, "Passphrase12345!")
     assert result["imported_count"] == 0
     assert result["skipped_count"] == 1
     assert len(service.list_secrets()) == 1
@@ -176,10 +176,10 @@ def test_vault_controller_export_and_import(backup_vault_env, qapp):
 
     # Locked controller must raise VaultLockedError
     with pytest.raises(VaultLockedError):
-        controller.export_vault("Pass12345!", export_path)
+        controller.export_vault("Passphrase12345!", export_path)
 
     with pytest.raises(VaultLockedError):
-        controller.import_vault("Pass12345!", export_path)
+        controller.import_vault("Passphrase12345!", export_path)
 
     # Unlock and test export
     controller.unlock("MasterPass123!")
@@ -209,7 +209,7 @@ def test_vault_backup_dialog_export_and_import(qapp):
     dlg._confirm_input.setText("short")
     dlg._on_submit()
     assert dlg.result() != VaultBackupDialog.DialogCode.Accepted
-    assert "at least 8" in dlg._error_lbl.text()
+    assert "at least 12" in dlg._error_lbl.text()
 
     # Export mode: mismatch
     dlg._pw_input.setText("ValidPass123!")

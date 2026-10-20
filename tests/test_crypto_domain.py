@@ -8,6 +8,7 @@ import pytest
 from core.crypto import (
     derive_key,
     derive_vault_key,
+    derive_vault_key_from_session_key,
     encrypt,
     decrypt,
     secure_zero,
@@ -53,6 +54,26 @@ def test_keys_are_deterministic(tmp_path, monkeypatch):
     k1_v = derive_vault_key(password)
     k2_v = derive_vault_key(password)
     assert k1_v == k2_v
+
+
+def test_session_key_uses_compatible_vault_hkdf():
+    """A fixed vector protects existing envelopes against a changed HKDF context."""
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    base_key = bytes(range(32))
+    legacy_key = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=None,
+        info=b"dotghostboard:vault:v2",
+    ).derive(base_key)
+    assert derive_vault_key_from_session_key(base_key) == legacy_key
+    assert legacy_key != base_key
+
+
+@pytest.mark.parametrize("key", [b"", b"a" * 31, b"b" * 33])
+def test_invalid_session_key_cannot_derive_vault_key(key):
+    with pytest.raises(ValueError, match="32 bytes"):
+        derive_vault_key_from_session_key(key)
 
 
 def test_encrypt_decrypt_roundtrip_with_both_keys(tmp_path, monkeypatch):
