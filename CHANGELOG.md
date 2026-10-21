@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+## [2.1.4] — 2026-10-21
+
+### Fixed
+
+- Keep protected local clipboard capture running after Dashboard manual/idle lock,
+  following the first successful authentication. Clear decryption keys and hide private
+  windows while preserving the process-local Vault recognition index; API/LAN services
+  remain stopped. Known Vault/CSV passwords and unavailable checks never enter history.
+- Lock quietly without opening a modal password prompt or stealing focus. Refresh history
+  after unlocking to show ordinary text captured while the Dashboard was locked.
+- Keep Pause/Resume available from the locked tray menu and distinguish active capture,
+  explicit pause, and waiting for the first unlock in its tooltip.
+- Exclude suspected new secrets while locked without a plaintext fallback or secret-review
+  popup; notifications ask the user to unlock and copy again. Honor notification settings.
+- Install Vault protection handlers before starting the clipboard backend.
+
+### Documentation
+
+- Update the security policy: supported versions, authenticated password
+  verification, Vault encryption, network behavior, backup recovery, and security tooling.
+- Prepare local GitHub About/topics payloads and main/release-tag protection rulesets,
+  with a manual application guide for the next release. These settings are not active
+  on GitHub until applied separately.
+
 ## [2.1.3] — 2026-10-20
 
 ### Added

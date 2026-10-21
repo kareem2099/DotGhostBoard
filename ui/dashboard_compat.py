@@ -407,6 +407,8 @@ class DashboardCompatibilityMixin:
             is_locked=self._is_locked(),
             is_monitoring_paused=getattr(self, "_is_monitoring_paused", False),
             has_password=has_master_password(),
+            capture_ready=bool(getattr(self, "capture_controller", None)
+                               and self.capture_controller.ready),
         )
 
     # Event handlers & coordination helpers

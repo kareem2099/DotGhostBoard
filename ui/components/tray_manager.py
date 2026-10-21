@@ -117,14 +117,19 @@ class DashboardTrayManager(QObject):
         is_locked: bool,
         is_monitoring_paused: bool,
         has_password: bool,
+        capture_ready: bool | None = None,
     ):
         """Reconstruct context menu and tooltip based on application state."""
         if not self.tray:
             return
 
         # ── Tooltip ──
+        if capture_ready is None:
+            capture_ready = not is_locked
         if is_locked:
-            self.tray.setToolTip("DotGhostBoard — 🔒 Locked (Click to unlock)")
+            state = ("Monitoring paused" if is_monitoring_paused else
+                     "Monitoring clipboard" if capture_ready else "Unlock once to start capture")
+            self.tray.setToolTip(f"DotGhostBoard — 🔒 Locked · {state} (Click to unlock)")
         elif is_monitoring_paused:
             self.tray.setToolTip("DotGhostBoard — ⏸ Monitoring paused")
         else:
@@ -144,7 +149,7 @@ class DashboardTrayManager(QObject):
         menu.addAction(show_action)
         self._actions.append(show_action)
 
-        if not is_locked:
+        if capture_ready:
             if is_monitoring_paused:
                 toggle_monitor_action = QAction("▶ Resume Monitoring", menu)
                 toggle_monitor_action.triggered.connect(
@@ -158,6 +163,7 @@ class DashboardTrayManager(QObject):
             menu.addAction(toggle_monitor_action)
             self._actions.append(toggle_monitor_action)
 
+        if not is_locked:
             settings_action = QAction("⚙ Settings", menu)
             settings_action.triggered.connect(
                 self.open_settings_requested.emit

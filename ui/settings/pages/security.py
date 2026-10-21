@@ -278,7 +278,8 @@ def build_security_tab(dialog: "SettingsDialog") -> QWidget:
     layout.addWidget(dialog._section_label("\u23f1  Dashboard Auto-Lock"))
 
     lock_hint = QLabel(
-        "Disabled by default. Optionally lock the whole app after inactivity. "
+        "Disabled by default. Hide and lock the Dashboard after inactivity. "
+        "Protected clipboard capture continues after the first unlock; use Pause to stop it. "
         "Requires a Master Password. The Vault keeps its separate idle lock."
     )
     lock_hint.setWordWrap(True)

@@ -1,7 +1,6 @@
-# Vault security model (v2.1.3, prepared locally)
+# Vault security model (v2.1.4)
 
-This describes the current source, including changes made after the published
-v2.1.2 packages. Updating this document does not update those packages. No claim
+This describes the v2.1.4 source. Earlier release packages retain their original behavior. No claim
 of an independent security audit or protection against every attack is made.
 
 ## Encryption and password modes
@@ -45,6 +44,17 @@ Successful authentication initializes secret recognition before capture resumes.
 Cancelling the independent-password prompt keeps the application locked. Vault
 idle lock remains separate from the optional Dashboard idle lock. Dashboard
 auto-lock defaults to disabled, with 5-minute, 30-minute, and 1-hour options.
+
+After successful authentication, Dashboard locking hides Dashboard and Spotlight,
+clears decryption keys, and stops API/LAN services while protected local capture
+continues using the process-local recognition index. Pause Monitoring explicitly stops
+capture and remains available from the locked tray menu. A cold locked start still
+waits for the first successful authentication, including the independent Vault step.
+New suspected secrets copied while locked are excluded without plaintext fallback or
+secret-review widgets; unlock and copy again to review them. Unknown/changed Vault
+records still fail closed. Hidden history widgets are not populated by locked captures;
+the history refreshes on the next successful unlock. Locking does not encrypt ordinary
+Dashboard history at rest.
 
 After Vault idle lock, an in-memory HMAC index recognizes stored values without
 retaining a plaintext index or writing password digests to disk. CSV password

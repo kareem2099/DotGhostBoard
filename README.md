@@ -4,7 +4,7 @@
 
 [![Ecosystem - DotSuite](https://img.shields.io/badge/Ecosystem-DotSuite-00b4d8?style=flat-square&labelColor=333333)](https://www.dotsuite.dev/en)
 
-![Version](https://img.shields.io/badge/version-v2.1.3-238636?style=flat-square&labelColor=0f0f0f)
+![Version](https://img.shields.io/badge/version-v2.1.4-238636?style=flat-square&labelColor=0f0f0f)
 ![Codename](https://img.shields.io/badge/codename-Leviathan-238636?style=flat-square&labelColor=0f0f0f)
 ![Python](https://img.shields.io/badge/python-3.11+-238636?style=flat-square&labelColor=0f0f0f)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-238636?style=flat-square&labelColor=0f0f0f)
@@ -53,9 +53,14 @@ Think **Ditto** (Windows) or **CopyQ** (Linux) — but built for the DotSuite ec
   ordinary text is recorded immediately and stored Vault values stay out of history and
   sync even with heuristic detection disabled. The Vault still auto-locks independently
   after its idle timeout; recognition continues until the application exits. Locking the
-  whole session locks both. Unified unlock is included in v2.1.3.
+  whole session locks both. Unified unlock was introduced in v2.1.3.
 - **Dashboard auto-lock** — Optional in Settings → Eclipse: Disabled (default), 5 minutes,
-  30 minutes, or 1 hour of inactivity. The Vault keeps its separate idle lock.
+  30 minutes, or 1 hour of inactivity. Locking hides Dashboard and Spotlight and clears
+  decryption keys, while protected local capture continues after the first successful
+  login. API and LAN sync stay stopped while locked. Pause Monitoring explicitly stops
+  capture, including while locked; tray status shows the difference. New suspected secrets
+  are excluded while locked until you unlock and copy again to review. The Vault keeps
+  its separate idle lock.
 - **Imported-password protection** — The password field of CSV-imported records is also
   recognized independently of the full username/URL/notes record, including existing
   imports. An unreadable Vault key displays an error and exits safely without resetting data.
@@ -277,12 +282,17 @@ DotGhostBoard/
 
 ## 📥 Download
 
-Packages below are for **v2.1.3**. Download links become available when the GitHub release is published.
+Packages below are for **v2.1.4**. Download links become available when the GitHub release is published.
 
-- 🐧 **[AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/DotGhostBoard-2.1.3-x86_64.AppImage)** — Portable Linux build
-- 📦 **[DEB](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.deb)** — Debian / Ubuntu / Kali
-- 📦 **[Arch package](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard-2.1.3-1-x86_64.pkg.tar.zst)** — `.pkg.tar.zst`
-- 🗜️ **[Portable tarball](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.tar.gz)** — Extract & run anywhere
+**Binary compatibility:** these builds were produced on Kali Rolling 2026.3 and
+include a library requiring `GLIBC_2.43`. Older Debian/Ubuntu systems may not run
+them; AppImage has the same runtime requirement. Older-distribution compatibility
+has not yet been established by rebuilding and testing on those systems.
+
+- 🐧 **[AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/DotGhostBoard-2.1.4-x86_64.AppImage)** — Portable Linux build
+- 📦 **[DEB](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/dotghostboard_2.1.4_amd64.deb)** — Debian / Ubuntu / Kali
+- 📦 **[Arch package](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/dotghostboard-2.1.4-1-x86_64.pkg.tar.zst)** — `.pkg.tar.zst`
+- 🗜️ **[Portable tarball](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/dotghostboard_2.1.4_amd64.tar.gz)** — Extract & run on compatible Linux systems
 
 ---
 
@@ -330,11 +340,11 @@ dotghostboard
 
 ### Option D — AppImage (Portable)
 
-Download the [v2.1.3 AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/DotGhostBoard-2.1.3-x86_64.AppImage), then:
+Download the [v2.1.4 AppImage](https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/DotGhostBoard-2.1.4-x86_64.AppImage), then:
 
 ```bash
-chmod +x DotGhostBoard-2.1.3-x86_64.AppImage
-./DotGhostBoard-2.1.3-x86_64.AppImage
+chmod +x DotGhostBoard-2.1.4-x86_64.AppImage
+./DotGhostBoard-2.1.4-x86_64.AppImage
 ```
 
 No installation required. Runs on compatible 64-bit Linux distributions.
@@ -364,11 +374,11 @@ chmod +x scripts/build_appimage.sh
 **Quick install from Releases:**
 
 ```bash
-# Download v2.1.3 from GitHub Releases
-wget https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.3/dotghostboard_2.1.3_amd64.deb
+# Download v2.1.4 from GitHub Releases
+wget https://github.com/kareem2099/DotGhostBoard/releases/download/v2.1.4/dotghostboard_2.1.4_amd64.deb
 
 # Install via apt
-sudo apt install ./dotghostboard_2.1.3_amd64.deb
+sudo apt install ./dotghostboard_2.1.4_amd64.deb
 
 # Run
 dotghostboard
@@ -441,7 +451,7 @@ The Vault (`Ctrl+Shift+V`) is a physically isolated, encrypted credential storag
   - **Passphrase Security**: Protected by an independent passphrase chosen at export. Passphrases are never stored; backups cannot be decrypted if the passphrase is forgotten.
 * **Authenticated Import**: Clicking `📥 Import` prompts for the backup passphrase, verifies the package's cryptographic integrity tag, and imports secrets into your Vault while automatically skipping exact duplicates.
 
-These password-mode, private-metadata, and backup-v2 changes are included in v2.1.3.
+These password-mode, private-metadata, and backup-v2 changes were introduced in v2.1.3.
 See the [security model and migration notes](docs/security-model.md) for exact guarantees,
 remaining limits, and files required for recovery.
 
@@ -495,7 +505,8 @@ Latest verification (headless Qt):
 | v2.0.0 | Cerberus | ✅ Released | The Vault UI, Zero-Log Secret Detector, FreeDesktop Notifications, 2.0.0 Icon Architecture (470 tests) |
 | v2.0.1 | Cerberus | ✅ Released | Tiling Window Manager EWMH Migration (Qtile/Openbox), Workspace Toggle Fix, Vault & Notification Hardening (489 tests) |
 | v2.1.0 | Leviathan | ✅ Released | Smart Auto-Tagging, Contextual Card Actions, Vault Generator, Password History, Vault Export/Import, Secret Expiry, Vault Sweep, Auto-Purge (522 tests) |
-| v2.1.3 | Leviathan | Current version | Independent Vault password, encrypted recovery versions, unified unlock, searchable selection, responsive recovery operations |
+| v2.1.4 | Leviathan | Current version | Quiet Dashboard lock with continued protected clipboard capture, locked-state Pause/Resume, explicit tray status |
+| v2.1.3 | Leviathan | ✅ Released | Independent Vault password, encrypted recovery versions, unified unlock, searchable selection, responsive recovery operations |
 | v2.1.2 | Leviathan | ✅ Released | Vault clipboard protection, configurable notifications, PRIMARY fixes, runtime-only packaging (589 tests) |
 | v2.1.1 | Leviathan | ✅ Released | Primary Selection (Issue #2), Mouse Ergonomics & Badges, Middle-Click to PRIMARY, UI Audio Feedback & Sound Synthesizer, Vault CSV Importer (546 tests) |
 

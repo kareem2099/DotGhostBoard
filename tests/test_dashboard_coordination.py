@@ -99,12 +99,13 @@ def test_manual_card_copy_does_not_sync_to_peer(mock_dashboard):
     mock_dashboard.sync_service.push_text.assert_not_called()
 
 
-def test_lock_state_signal_stops_monitoring(mock_dashboard):
+def test_lock_state_signal_preserves_authenticated_monitoring(mock_dashboard):
     mock_watcher = MagicMock()
     mock_dashboard.watcher = mock_watcher
 
     # Session locks via SecurityController
     mock_dashboard.security_controller.lock()
 
-    mock_watcher.stop.assert_called_once()
+    mock_watcher.stop.assert_not_called()
+    mock_watcher.start.assert_called_once()
     assert mock_dashboard._auto_lock_timer.isActive() is False

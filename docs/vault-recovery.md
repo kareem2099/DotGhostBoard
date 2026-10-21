@@ -1,7 +1,7 @@
 # Vault Backup & Recovery
 
-These features are in the v2.1.3 source, prepared locally for release. Existing v2.1.2 packages have not
-been replaced. Recovery requires an existing, readable backup and its passphrase.
+Recovery was introduced in v2.1.3 and remains available in v2.1.4. Earlier packages
+have not been replaced. Recovery requires an existing, readable backup and its passphrase.
 
 ## Set up recovery copies
 

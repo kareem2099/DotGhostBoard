@@ -42,6 +42,7 @@ class SecurityController(QObject):
         self._service = service
         self._parent_window = parent_window
         self.vault_unlock_callback = None
+        self._unlock_pending = False
 
         self._auto_lock_timer = QTimer(self)
         self._auto_lock_timer.setSingleShot(True)
@@ -67,7 +68,7 @@ class SecurityController(QObject):
 
     @property
     def is_locked(self) -> bool:
-        return self._service.is_locked
+        return self._unlock_pending or self._service.is_locked
 
     @property
     def has_master_password(self) -> bool:
@@ -82,10 +83,14 @@ class SecurityController(QObject):
         if key is None:
             self._service.lock()
         else:
-            self._service.set_session_key(key)
-            if self.vault_unlock_callback and not self.vault_unlock_callback():
-                self.lock()
-                return False
+            self._unlock_pending = True
+            try:
+                self._service.set_session_key(key)
+                if self.vault_unlock_callback and not self.vault_unlock_callback():
+                    self.lock()
+                    return False
+            finally:
+                self._unlock_pending = False
 
         self.lock_state_changed.emit(self.is_locked)
         return True

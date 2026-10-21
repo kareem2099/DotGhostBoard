@@ -44,6 +44,7 @@ from ui.window_utils import (
     prepare_dialog_for_current_workspace,
 )
 from ui.dashboard_compat import DashboardCompatibilityMixin
+from ui.controllers.capture_controller import CaptureController
 
 logger = logging.getLogger(__name__)
 QSS_PATH = resource_path("ui", "ghost.qss")
@@ -97,9 +98,11 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         self._load_stylesheet()
         self._build_ui()
         self.security_controller.vault_unlock_callback = self._unlock_independent_vault
+        self.capture_controller = CaptureController(self)
         self._setup_tray()
         self._start_watcher()
         attach_send_to_vault(self)
+        self.capture_controller.refresh()
         self._load_history()
         self._refresh_sidebar()
         self._clean_captures()
@@ -249,8 +252,8 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         if key is not None:
             self._startup_locked = False
             w = getattr(self, "watcher", None)
-            if w and not self._is_monitoring_paused:
-                self.watcher.start()
+            if w:
+                self.capture_controller.session_changed(self._is_locked())
             self._start_api_server()
             self._start_discovery()
             self._init_sync_engine()
@@ -263,20 +266,24 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
             # still stop its timers, clear copied secrets and refresh the panel.
             if vc:
                 vc.lock()
-            if getattr(self, "watcher", None):
-                self.watcher.stop()
+            self.history_controller.on_session_locked()
+            self.hide()
+            spotlight = getattr(self, "spotlight_dialog", None)
+            if spotlight:
+                spotlight.hide()
+            toast = getattr(self, "_active_toast", None)
+            if toast:
+                toast.hide()
             if getattr(self, "sync_controller", None):
                 self.sync_controller.stop_all()
         else:
             self._startup_locked = False
             if vc:
                 vc.on_session_unlocked()
-            w = getattr(self, "watcher", None)
-            if w and not self._is_monitoring_paused:
-                self.watcher.start()
             self._start_api_server()
             self._start_discovery()
             self._init_sync_engine()
+        self.capture_controller.session_changed(is_locked)
         self._reset_auto_lock()
         self._update_tray_menu_and_tooltip()
 
@@ -310,11 +317,11 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         self.statusBar().showMessage("⏸ Clipboard monitoring paused")
 
     def _resume_monitoring(self):
-        if self._is_locked():
+        if not self.capture_controller.ready:
             self._is_monitoring_paused = True
             self._update_tray_menu_and_tooltip()
             self.statusBar().showMessage(
-                "🔒 Unlock DotGhostBoard before resuming clipboard monitoring"
+                "🔒 Unlock once to initialize protected clipboard capture"
             )
             return
         self._is_monitoring_paused = False
@@ -376,16 +383,8 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
         w.set_monitor_primary(self._settings.get("monitor_primary_selection", False))
         w.set_sync_primary_to_clipboard(self._settings.get("sync_primary_to_clipboard", True))
         w.set_capture_sound_enabled(self._settings.get("capture_sound_enabled", False))
-        w.primary_fragment_replaced.connect(self.history_controller.remove_card)
-        w.new_text_captured.connect(self.history_controller.on_text_captured)
-        w.new_text_captured.connect(
-            lambda iid, text: self.sync_controller.broadcast_text(text)
-        )
-        w.new_image_captured.connect(self.history_controller.on_image_captured)
-        w.new_video_captured.connect(self.history_controller.on_video_captured)
-        w.thumb_ready.connect(self.history_controller.on_thumb_ready)
-        if not self._is_locked():
-            w.start()
+        self.capture_controller.attach(w)
+        # Start only after attach_send_to_vault has installed the protection checks.
 
     # ══════════════════════════════════════════
     # Spotlight, Navigation & Shutdown
@@ -424,16 +423,8 @@ class Dashboard(DashboardCompatibilityMixin, QMainWindow):
             self.security_controller.lock()
         else:
             self._active_key = None
-        if getattr(self, "watcher", None):
-            self.watcher.stop()
-        if getattr(self, "sync_controller", None):
-            self.sync_controller.stop_all()
-        self._update_tray_menu_and_tooltip()
-        hc = getattr(self, "history_controller", None)
-        if hc:
-            hc.on_session_locked()
         self.hide()
-        self._show_lock_screen()
+        # Lock quietly; ask for credentials only when the user opens the app again.
 
     def _show_lock_screen(self, *, show_dashboard: bool = True) -> bool:
         if hasattr(self, "security_controller"):

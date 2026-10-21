@@ -194,6 +194,21 @@ def attach_send_to_vault(dashboard: Dashboard) -> None:
                 dashboard.history_controller.reload()
             return
 
+        if dashboard._is_locked():
+            # No session key is retained during lock, so neither show a secret
+            # prompt nor fall back to plaintext. Known values were checked above.
+            dashboard.statusBar().showMessage(
+                "🔒 Possible secret excluded while locked. Unlock and copy again to review."
+            )
+            tray = getattr(dashboard, "tray_manager", None)
+            if tray:
+                tray.show_message(
+                    "DotGhostBoard — Possible secret excluded",
+                    "Unlock and copy again to review. Ordinary clipboard capture is still active.",
+                    category="security", dedupe_key="locked_secret_excluded", cooldown=30,
+                )
+            return
+
         # Consecutive duplicate copy while toast is active: do not duplicate toast or fallback
         if active_toast[0] and getattr(active_toast[0], "_candidate_text", "") == cand_text:
             return
